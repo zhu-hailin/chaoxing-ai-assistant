@@ -3,7 +3,7 @@
     const source = window.deliverySource || await (await fetch('../学习通AI助手.user.js')).text();
     const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
     if (!source.includes(entry)) throw new Error('测试导出入口未匹配');
-    const instrumented = source.replace(entry, `globalThis.testAPI = { initQuizAssistant, ensureFontDecoded, extract, signature, normalize, prefill, prefillChecked, resolveQuizHeader, runAnswerFlow, savedKeys, startQuizObserver, getWebEvidence, get controller(){ return controller; } };`);
+    const instrumented = source.replace(entry, `globalThis.testAPI = { initQuizAssistant, ensureFontDecoded, extract, signature, normalize, prefill, prefillChecked, resolveQuizHeader, runAnswerFlow, splitQuestionBatches, savedKeys, startQuizObserver, getWebEvidence, get controller(){ return controller; } };`);
     const template = `<style>body{font:14px/1.5 system-ui;margin:0;color:#172038}.newTestTitle{padding:16px 24px;background:#f6f8fb;border-bottom:1px solid #dde3ef;display:flex;justify-content:space-between}.CeYan{padding:28px}.ceyan_name h3{font-size:20px;margin:0 0 12px}.ceyan_name p{color:#8693ab}.singleQuesId{padding-top:28px}.Zy_ulTop{padding:0;list-style:none}.Zy_ulTop li{display:flex;gap:16px;padding:10px;cursor:pointer}.num_option{border:1px solid #dce3ef;border-radius:50%;width:28px;height:28px;display:inline-flex;justify-content:center;align-items:center}.num_option.check{background:#5b80fa;color:white}input,textarea{max-width:100%}</style>
     <div id="RightCon"><div class="newTestTitle"><span>章节测验</span><span class="testTit_status">待完成</span></div><div class="radiusBG"><div class="CeYan"><div class="ceyan_name"><h3>计算机网络的定义和分类</h3><p>题量：4　满分：100</p></div><form><div class="ZyBottom" id="questions"></div><button type="button" id="save">暂时保存</button><button type="submit" id="submit">提交</button></form></div></div></div>`;
     const choice = (id, type, values) => `<div class="singleQuesId" ${id ? `data="${id}" id="question${id}"` : ''}><div class="Zy_TItle"><div class="fontLabel">【${type}题】测试题目${id || '无ID'}</div></div><ul class="Zy_ulTop">${values.map(([key, text]) => `<li role="${type === '多选' ? 'checkbox' : 'radio'}"><span class="num_option" data="${key}">${key}</span><a class="after">${text}</a></li>`).join('')}</ul><input type="hidden" name="answer${id || 'local-1'}"></div>`;
@@ -183,11 +183,67 @@
             await f.api.controller.extractOnly();assert(f.api.controller.state.phase==='error','错误放行未解密结果页');f.remove();
         }
     });
-    await test('无标题时降级到首题前方；未知题型和超过25题报错', async () => {
+    await test('无标题时降级到首题前方；未知题型仍报错，101题提取通过', async () => {
         const f=await fixture();f.d.querySelector('.ceyan_name').remove();f.d.getElementById('cx-ai-toolbar')?.remove();f.api.initQuizAssistant();
         assert(f.d.querySelector('.singleQuesId').previousElementSibling.id==='cx-ai-toolbar','降级位置错误');
         f.d.querySelector('.fontLabel').textContent='【问答题】未知';let throws=0;try{f.api.extract()}catch{throws++}
-        f.d.getElementById('questions').innerHTML=Array.from({length:26},(_,i)=>choice(String(i),'单选',[['A','甲']])).join('');try{f.api.extract()}catch{throws++}assert(throws===2,'提取边界未校验');f.remove();
+        assert(throws===1,'未知题型被放行');
+        f.d.getElementById('questions').innerHTML=Array.from({length:101},(_,i)=>choice(String(i+1),'单选',[['A','甲']])).join('');assert(f.api.extract().total===101,'仍限制总题数');f.remove();
+    });
+    const manyQuestions = n => Array.from({length:n},(_,i)=>choice(String(i+1),'单选',[['A','甲'],['B','乙']])).join('');
+    function respondBatch(f) {
+        const payload=JSON.parse(f.requests[0].data);
+        const questions=JSON.parse(payload.messages[1].content).questions;
+        f.respond({choices:[{finish_reason:'stop',message:{content:JSON.stringify({answers:questions.map(q=>({id:q.id,answer:['A'],reason:'模拟分批'}))})}}]});
+        return questions;
+    }
+    await test('26题分3批生成，全部成功后统一预填，互斥与加载保持', async () => {
+        const f=await fixture({questions:manyQuestions(26)});const p=f.api.runAnswerFlow();const sizes=[];
+        for(let i=0;i<3;i++) {
+            await pending(f);assert(f.clicks===0,'未完成全部批次就预填');assert(f.api.controller.state.busy,'批间解除互斥');
+            assert(!f.d.getElementById('cx-ai-toolbar').shadowRoot.querySelector('.spinner').hidden,'批间隐藏加载');
+            await f.api.runAnswerFlow();assert(f.requests.length===1,'重复点击新增请求');
+            sizes.push(respondBatch(f).length);
+        }
+        await p;const payload=JSON.parse(f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output').value);
+        assert(sizes.join(',')==='10,10,6' && payload.prefill.filled===26 && payload.batchCount===3,'跨批合并或预填失败');
+        assert(f.submits===0 && !f.api.controller.state.busy,'结束状态错误');f.remove();
+    });
+    await test('101题分11批分析，保持原题ID、全局编号及顺序', async () => {
+        const f=await fixture({questions:manyQuestions(101)});const p=f.api.runAnswerFlow({autoPrefill:false});const ids=[];
+        for(let i=0;i<11;i++) {await pending(f);assert(f.api.controller.state.message.includes(`第 ${i+1}/11 批`),'批进度错误');ids.push(...respondBatch(f).map(q=>q.id));}
+        await p;const payload=JSON.parse(f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output').value);
+        assert(payload.total===101 && payload.answers.every((a,i)=>a.id===String(i+1) && a.number===i+1),'ID编号或顺序错误');
+        assert(new Set(ids).size===101 && f.clicks===0 && payload.batchCount===11,'题目丢失、重复或错误预填');f.remove();
+    });
+    await test('长题按内容提前拆批，单题保持完整', async () => {
+        const f=await fixture();const questions=Array.from({length:3},(_,i)=>({id:String(i),number:i+1,question:'长'.repeat(7000),options:[]}));
+        const batches=f.api.splitQuestionBatches(questions);assert(batches.length===3 && batches.flat().every((q,i)=>q===questions[i]),'长题切分丢失内容');f.remove();
+    });
+    await test('第二批失败时不预填，清空旧结果并恢复按钮', async () => {
+        const f=await fixture({questions:manyQuestions(26)});const output=f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output');output.value='旧结果';
+        const p=f.api.runAnswerFlow();await pending(f);respondBatch(f);await pending(f);f.requests.shift().ontimeout();await p;
+        assert(f.clicks===0 && f.api.controller.last===null && output.value==='' && !f.api.controller.state.busy,'失败预填或残留旧结果');
+        assert(f.api.controller.state.message.includes('第 2/3 批'),'未定位失败批次');f.remove();
+    });
+    await test('批间题目变化停止后续请求，未完成批次不预填', async () => {
+        const f=await fixture({questions:manyQuestions(26)});const p=f.api.runAnswerFlow();await pending(f);
+        f.d.querySelector('.fontLabel').append('改变');respondBatch(f);await p;
+        assert(!f.requests.length && f.clicks===0 && f.api.controller.state.phase==='error','题目变化后继续请求或预填');f.remove();
+    });
+    await test('21题联网检索按批处理，来源按题ID合并且不混入其他批次', async () => {
+        const f=await fixture({questions:manyQuestions(21)});f.storage.set('cx_search',true);const p=f.api.runAnswerFlow({autoPrefill:false});let searched=0;
+        for(const size of [10,10,1]) {
+            for(let j=0;j<size;j++) {
+                await pending(f);assert(f.requests[0].url.includes('/anthropic/'),'未先执行检索');searched++;
+                f.respond({content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:`https://example.com/source/${searched}`,title:'模拟来源'}]}]});
+            }
+            await pending(f);const body=JSON.parse(f.requests[0].data);const input=JSON.parse(body.messages[1].content);
+            assert(Object.keys(input.evidence).length===size && input.questions.every(q=>input.evidence[q.id]),'检索来源与批次不匹配');respondBatch(f);
+        }
+        await p;const payload=JSON.parse(f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output').value);
+        assert(payload.total===21 && Object.keys(payload.evidence).length===21 && payload.evidence['21'][0].url.endsWith('/21'),'合并检索来源丢失');
+        assert(f.clicks===0 && f.api.controller.state.phase==='done','联网分批失败');f.remove();
     });
     const preview=await fixture({preview:true});
     // 预览使用生产启动观察器，核对动态替换和窄屏布局。

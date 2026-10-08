@@ -53,7 +53,6 @@
     function extract() {
         const nodes = [...document.querySelectorAll(QUESTION_SELECTOR)];
         if (!nodes.length) throw new Error('没有检测到题目，请先进入章节测验');
-        if (nodes.length > 25) throw new Error('一次最多分析 25 道题');
         const questions = nodes.map((el, index) => {
             const question = clean(el.querySelector('.Zy_TItle .fontLabel')?.textContent
                 ?? el.querySelector('.Zy_TItle')?.textContent);

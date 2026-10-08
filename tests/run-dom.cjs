@@ -17,7 +17,7 @@ const dom = new JSDOM(fs.readFileSync(path.join(__dirname, '离线验证.html'),
     });
   }
 });
-const deadline = Date.now() + 25000;
+const deadline = Date.now() + 45000;
 const timer = setInterval(() => {
   const result = dom.window.testResults;
   if (!result && Date.now() < deadline) return;

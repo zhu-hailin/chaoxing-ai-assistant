@@ -266,10 +266,54 @@
     function summaryText(s) {
         return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
     }
+    const MAX_BATCH_QUESTIONS = 10;
+    const MAX_BATCH_CHARACTERS = 12000;
+    function splitQuestionBatches(questions) {
+        const batches = [];
+        let batch = [], size = 2;
+        for (const question of questions) {
+            const weight = JSON.stringify(question).length + 1;
+            if (batch.length && (batch.length >= MAX_BATCH_QUESTIONS || size + weight > MAX_BATCH_CHARACTERS)) {
+                batches.push(batch); batch = []; size = 2;
+            }
+            // 单道长题保持完整；不切断题干或选项，也不把批大小当总题数限制。
+            batch.push(question); size += weight;
+        }
+        if (batch.length) batches.push(batch);
+        return batches;
+    }
+    async function solveQuestionBatches(snapshot, settings, report) {
+        const batches = splitQuestionBatches(snapshot.questions);
+        const answers = [], evidence = {};
+        for (let i = 0; i < batches.length; i++) {
+            checkSnapshot(snapshot);
+            const batch = batches[i];
+            const prefix = `第 ${i + 1}/${batches.length} 批（第 ${batch[0].number}–${batch.at(-1).number} 题，已分析 ${answers.length}/${snapshot.questions.length} 题）`;
+            try {
+                let batchEvidence = {};
+                if (settings.search) {
+                    report(`${prefix}：正在联网检索…`, 'searching');
+                    batchEvidence = await getWebEvidence(batch, settings.key, settings.model,
+                        message => { checkSnapshot(snapshot); report(`${prefix}：${message}`, 'searching'); });
+                    checkSnapshot(snapshot);
+                }
+                report(`${prefix}：正在请求 ${settings.model}…`, 'generating');
+                const result = await askDeepSeek(settings.key, settings.model, batch,
+                    settings.thinking, settings.effort, batchEvidence);
+                checkSnapshot(snapshot);
+                answers.push(...result.answers);
+                Object.assign(evidence, batchEvidence);
+            } catch (error) {
+                throw new Error(`第 ${i + 1}/${batches.length} 批未完成：${error.message}；本次尚未预填`);
+            }
+        }
+        return { answers, evidence, batchCount: batches.length };
+    }
     async function runAnswerFlow({ autoPrefill = true } = {}) {
         const ctl = controller;
         if (ctl.state.busy) return;
         ctl.last = null;
+        ctl.clearOutput();
         ctl.report('正在检查配置…', 'decoding', true);
         try {
             const settings = { key: get(KEY_DS), model: get(KEY_MODEL, 'deepseek-flash'), thinking: Boolean(get(KEY_THINKING, false)), effort: get(KEY_EFFORT, 'high'), search: Boolean(get(KEY_SEARCH, false)) };
@@ -279,13 +323,11 @@
             ctl.report('正在提取题目…', 'extracting');
             const data = extract();
             const snapshot = { questions: data.questions, signature: signature(data.questions) };
-            ctl.report('正在联网检索…', 'searching');
-            const evidence = settings.search ? await getWebEvidence(data.questions, settings.key, settings.model, text => ctl.report(text, 'searching')) : {};
+            const result = await solveQuestionBatches(snapshot, settings,
+                (message, phase) => ctl.report(message, phase));
+            const evidence = result.evidence;
             checkSnapshot(snapshot);
-            ctl.report(`正在请求 ${settings.model}…`, 'generating');
-            const result = await askDeepSeek(settings.key, settings.model, data.questions, settings.thinking, settings.effort, evidence);
-            checkSnapshot(snapshot);
-            const payload = { version: '0.7.0', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, answers: result.answers, ...(settings.search ? { evidence } : {}) };
+            const payload = { version: '0.7.0', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, batchCount: result.batchCount, answers: result.answers, ...(settings.search ? { evidence } : {}) };
             ctl.output(payload);
             ctl.last = { ...snapshot, answers: result.answers };
             if (autoPrefill) {
@@ -322,6 +364,7 @@
                 }
             },
             output(data) { panelView.shadow.getElementById('output').value = JSON.stringify(data, null, 2); },
+            clearOutput() { panelView.shadow.getElementById('output').value = ''; },
             runAnswerFlow,
             async extractOnly() {
                 if (ctl.state.busy) return;

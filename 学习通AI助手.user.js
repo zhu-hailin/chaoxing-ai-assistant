@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通 AI 学习助手 - DeepSeek JSON
 // @namespace    local.chaoxing.quiz
-// @version      1.0
+// @version      1.01
 // @description  字体解密、后台播放优化、DeepSeek 分析与一键预填；不主动保存或提交
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -53,7 +53,6 @@
     function extract() {
         const nodes = [...document.querySelectorAll(QUESTION_SELECTOR)];
         if (!nodes.length) throw new Error('没有检测到题目，请先进入章节测验');
-        if (nodes.length > 25) throw new Error('一次最多分析 25 道题');
         const questions = nodes.map((el, index) => {
             const question = clean(el.querySelector('.Zy_TItle .fontLabel')?.textContent
                 ?? el.querySelector('.Zy_TItle')?.textContent);
@@ -76,7 +75,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.0', total: questions.length, questions };
+        return { version: '1.01', total: questions.length, questions };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -541,14 +540,14 @@
           #about[hidden]{display:none}#about p{margin:8px 0}.free{color:#1a7448}
         </style>
         <div id="panel" hidden>
-          <div class="head"><strong>学习通AI助手 v1.0</strong><div class="head-actions">
+          <div class="head"><strong>学习通AI助手 v1.01</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页">GitHub</button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="close" class="secondary">关闭</button>
           </div></div>
           <section id="about" hidden aria-label="项目介绍">
             <strong>学习通AI助手 · Chaoxing AI Assistant</strong>
-            <p>将超星字体解密、视频后台播放优化和 DeepSeek AI 学习辅助整合到一个油猴脚本中，支持章节题目提取、答案分析与一键预填，帮助整理学习内容和核对思路。</p>
+            <p>将超星字体解密、视频后台播放优化和 DeepSeek AI 学习辅助整合到一个油猴脚本中，支持章节题目提取、分批答案分析与一键预填。不再限制为 25 题，支持当前页面的全部题目；所有批次成功后统一预填。</p>
             <p><strong class="free">本脚本免费使用，无需购买或付费解锁。</strong>请自备 DeepSeek API Key；模型调用及联网检索可能由服务商单独计费，这部分费用不是脚本收费。</p>
             <p>不会主动保存或提交测验；会保留已有不同答案。视频优化仅处理鼠标移出页面导致的暂停。AI 结果请自行核对。</p>
             <p>本项目是第三方工具，与超星、学习通及 DeepSeek 官方无隶属关系。字体解密基于 wyn665817 的「超星字体解密」脚本，保留 MIT 许可与作者署名。</p>
@@ -683,10 +682,54 @@
     function summaryText(s) {
         return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
     }
+    const MAX_BATCH_QUESTIONS = 10;
+    const MAX_BATCH_CHARACTERS = 12000;
+    function splitQuestionBatches(questions) {
+        const batches = [];
+        let batch = [], size = 2;
+        for (const question of questions) {
+            const weight = JSON.stringify(question).length + 1;
+            if (batch.length && (batch.length >= MAX_BATCH_QUESTIONS || size + weight > MAX_BATCH_CHARACTERS)) {
+                batches.push(batch); batch = []; size = 2;
+            }
+            // 单道长题保持完整；不切断题干或选项，也不把批大小当总题数限制。
+            batch.push(question); size += weight;
+        }
+        if (batch.length) batches.push(batch);
+        return batches;
+    }
+    async function solveQuestionBatches(snapshot, settings, report) {
+        const batches = splitQuestionBatches(snapshot.questions);
+        const answers = [], evidence = {};
+        for (let i = 0; i < batches.length; i++) {
+            checkSnapshot(snapshot);
+            const batch = batches[i];
+            const prefix = `第 ${i + 1}/${batches.length} 批（第 ${batch[0].number}–${batch.at(-1).number} 题，已分析 ${answers.length}/${snapshot.questions.length} 题）`;
+            try {
+                let batchEvidence = {};
+                if (settings.search) {
+                    report(`${prefix}：正在联网检索…`, 'searching');
+                    batchEvidence = await getWebEvidence(batch, settings.key, settings.model,
+                        message => { checkSnapshot(snapshot); report(`${prefix}：${message}`, 'searching'); });
+                    checkSnapshot(snapshot);
+                }
+                report(`${prefix}：正在请求 ${settings.model}…`, 'generating');
+                const result = await askDeepSeek(settings.key, settings.model, batch,
+                    settings.thinking, settings.effort, batchEvidence);
+                checkSnapshot(snapshot);
+                answers.push(...result.answers);
+                Object.assign(evidence, batchEvidence);
+            } catch (error) {
+                throw new Error(`第 ${i + 1}/${batches.length} 批未完成：${error.message}；本次尚未预填`);
+            }
+        }
+        return { answers, evidence, batchCount: batches.length };
+    }
     async function runAnswerFlow({ autoPrefill = true } = {}) {
         const ctl = controller;
         if (ctl.state.busy) return;
         ctl.last = null;
+        ctl.clearOutput();
         ctl.report('正在检查配置…', 'decoding', true);
         try {
             const settings = { key: get(KEY_DS), model: get(KEY_MODEL, 'deepseek-flash'), thinking: Boolean(get(KEY_THINKING, false)), effort: get(KEY_EFFORT, 'high'), search: Boolean(get(KEY_SEARCH, false)) };
@@ -696,13 +739,11 @@
             ctl.report('正在提取题目…', 'extracting');
             const data = extract();
             const snapshot = { questions: data.questions, signature: signature(data.questions) };
-            ctl.report('正在联网检索…', 'searching');
-            const evidence = settings.search ? await getWebEvidence(data.questions, settings.key, settings.model, text => ctl.report(text, 'searching')) : {};
+            const result = await solveQuestionBatches(snapshot, settings,
+                (message, phase) => ctl.report(message, phase));
+            const evidence = result.evidence;
             checkSnapshot(snapshot);
-            ctl.report(`正在请求 ${settings.model}…`, 'generating');
-            const result = await askDeepSeek(settings.key, settings.model, data.questions, settings.thinking, settings.effort, evidence);
-            checkSnapshot(snapshot);
-            const payload = { version: '1.0', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, answers: result.answers, ...(settings.search ? { evidence } : {}) };
+            const payload = { version: '1.01', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, batchCount: result.batchCount, answers: result.answers, ...(settings.search ? { evidence } : {}) };
             ctl.output(payload);
             ctl.last = { ...snapshot, answers: result.answers };
             if (autoPrefill) {
@@ -739,6 +780,7 @@
                 }
             },
             output(data) { panelView.shadow.getElementById('output').value = JSON.stringify(data, null, 2); },
+            clearOutput() { panelView.shadow.getElementById('output').value = ''; },
             runAnswerFlow,
             async extractOnly() {
                 if (ctl.state.busy) return;
