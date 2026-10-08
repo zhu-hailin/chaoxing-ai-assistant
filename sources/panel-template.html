@@ -3,18 +3,50 @@
           *{box-sizing:border-box} #panel{font:14px/1.55 system-ui,sans-serif;color:#222}
           button,input,select,textarea{font:inherit} button{border:0;border-radius:7px;background:#3268df;color:white;cursor:pointer;padding:8px 12px}
           button.secondary{background:#eef0f4;color:#222} button:disabled{opacity:.55;cursor:wait}
-          #open{box-shadow:0 4px 15px #0003} #panel{width:min(630px,calc(100vw - 26px));max-height:78vh;overflow:auto;background:white;
+          #open{box-shadow:0 4px 15px #0003} #panel{width:min(876px,calc(100vw - 26px));max-height:78vh;overflow:auto;background:white;
              border:1px solid #dadee3;border-radius:12px;padding:14px;box-shadow:0 8px 28px #0004;margin-bottom:8px}
           #panel[hidden]{display:none} .head,.row,.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-          .head{justify-content:space-between;margin-bottom:10px}.row{margin:8px 0}.row label{min-width:65px}
+          .head{cursor:grab;touch-action:none;user-select:none;justify-content:space-between;margin-bottom:10px}.row{margin:8px 0}.row label{min-width:65px}
+          .sidebar-tools{flex:none;margin:0 0 8px}#catalog-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:5px;color:#415168}#catalog-toggle svg{width:20px;height:20px}#catalog-toggle[aria-expanded=true]{background:#e8efff;color:#245bcb}
           input[type=password]{min-width:0;width:185px;flex:1} .row>*{max-width:100%} input,select,textarea{background:white;color:#222;border:1px solid #cbd1dd;border-radius:6px;padding:8px}
           input[type=checkbox]{width:16px;height:16px;margin:0} .actions{margin:12px 0}
-          textarea{width:100%;height:240px;resize:vertical;font:12px/1.45 Consolas,monospace}
+          #output{width:100%;min-height:220px;max-height:360px;overflow:auto;border:1px solid #dce2ed;border-radius:8px;padding:12px;overscroll-behavior:contain;overflow-wrap:anywhere}
+          #output:focus-visible{outline:2px solid #3268df;outline-offset:2px}.result-empty{margin:0;color:#798494;font-size:13px}
+          .result-summary{margin:0 0 12px;font-size:12px;color:#657185}.question-list,.option-list{list-style:none;margin:0;padding:0}
+          .question-card{padding:12px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border-top:0;padding-top:0}.question-card:last-child{padding-bottom:0}
+          .question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#657185}.question-number{font-weight:700;color:#273a56}
+          .question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:6px 0 9px;white-space:pre-wrap;color:#222}
+          .option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:#657185}
+          .option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}
+          .ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}
+          .answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:#3268df}
           #status{font-size:12px;white-space:pre-wrap;color:#415168;margin:8px 0} .note{font-size:12px;color:#657185}
           hr{border:0;border-top:1px solid #e7e9ed;margin:10px 0}
+          .panel-body{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start}.assistant-main{min-width:0}
+          #panel[data-catalog-hidden=true]{width:min(630px,calc(100vw - 26px))}#panel[data-catalog-hidden=true] .panel-body{grid-template-columns:minmax(0,1fr)}
+          #course-nav{display:flex;flex-direction:column;max-height:var(--catalog-height,490px);min-height:0;min-width:0;background:#f8faff;border:1px solid #e3e8f1;border-radius:8px;padding:10px;position:sticky;top:0}#course-nav[hidden]{display:none}
+          .catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px}.catalog-heading strong{font-size:13px}
+          #catalog-refresh{font-size:12px;padding:4px 7px}#catalog-search{flex:none;width:100%;min-width:0;font-size:12px;padding:7px}
+          #catalog-status{flex:none;font-size:11px;color:#71809a;margin:7px 0}#catalog-list{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+          #catalog-list,.catalog-children{list-style:none;margin:0;padding:0}.catalog-children{margin-left:9px;padding-left:7px;border-left:1px solid #dfe5ee}.catalog-children[hidden]{display:none}
+          .catalog-row{display:flex;align-items:flex-start;gap:2px;border-radius:5px}.catalog-row.is-active{background:#e8efff}.catalog-row.is-group{margin-top:7px}
+          .catalog-link{min-width:0;flex:1;text-align:left;background:transparent;color:#263951;border-radius:5px;padding:7px 4px;font-size:12px;line-height:1.5}
+          .catalog-link:hover{background:#edf2fb}.catalog-link[aria-current=page] .catalog-title{color:#245bcb;font-weight:650}.is-group .catalog-title{font-weight:700}
+          .catalog-title{display:block;overflow-wrap:anywhere}.catalog-meta{display:flex;gap:4px 7px;flex-wrap:wrap;margin-top:3px;font-size:10px;color:#758197}
+          .catalog-state.is-complete{color:#268459}.catalog-score{color:#aa5725}.catalog-fold{flex:none;width:18px;height:25px;padding:0;margin-top:4px;background:transparent;color:#71809a}
+          .catalog-fold-space{width:18px;flex:none}.catalog-link:focus-visible,.catalog-fold:focus-visible{outline:2px solid #3268df;outline-offset:1px}.catalog-empty{padding:12px 2px;font-size:12px;color:#758197}
+          @media(max-width:759px){.panel-body{grid-template-columns:minmax(0,1fr)}#course-nav{position:static}#catalog-list{max-height:180px}}
         </style>
         <div id="panel" hidden>
           <div class="head"><strong>学习通AI助手 v0.7.3</strong><button type="button" id="close" class="secondary">关闭</button></div>
+          <div class="panel-body">
+            <aside id="course-nav" aria-label="课程目录">
+              <div class="catalog-heading"><strong>课程目录</strong><button type="button" id="catalog-refresh" class="secondary">刷新</button></div>
+              <input id="catalog-search" type="search" placeholder="搜索章节" aria-label="搜索课程目录" />
+              <p id="catalog-status" role="status"></p><ol id="catalog-list" aria-label="章节列表"></ol>
+            </aside>
+            <div class="assistant-main">
+          <div class="sidebar-tools"><button type="button" id="catalog-toggle" class="secondary" aria-controls="course-nav" aria-expanded="false" aria-label="展开课程目录侧栏" title="课程目录侧栏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5.5 8h1M5.5 12h1M5.5 16h1"/></svg></button></div>
           <div class="row"><label>DeepSeek</label><input id="ds-key" type="password" placeholder="DeepSeek API Key" autocomplete="off" />
             <button type="button" id="save-ds">保存</button><button type="button" id="clear-ds" class="secondary">清除</button></div>
           <div class="row"><label>模型</label><select id="model">
@@ -23,9 +55,10 @@
           <div class="row"><label><input type="checkbox" id="thinking" /> 深度思考</label>
             <span>强度</span><select id="effort"><option value="low">Low</option><option value="high">High</option><option value="max">Max</option></select></div>
           <hr/>
-          <div class="row"><label><input type="checkbox" id="search" /> 网络检索</label><span class="note">DeepSeek 原生 Web Search · 与 AI 共用同一个 Key · 每题有额外 Token 消耗</span></div>
+          <div class="row"><label><input type="checkbox" id="search" /> 网络检索</label></div>
           <div class="actions"><button type="button" id="extract">提取题目</button><button type="button" id="solve">AI 分析</button>
-            <button type="button" id="prefill" class="secondary" disabled>预填答案</button><button type="button" id="copy" class="secondary">复制 JSON</button></div>
-          <div id="status" role="status"></div><textarea id="output" readonly placeholder="题目和 AI 答案将显示在这里"></textarea>
-          <p class="note">已合并字体解密与鼠标移出播放优化。不会自动保存或提交测验；不同的已有选择不会被覆盖。</p>
+            <button type="button" id="prefill" class="secondary" disabled>预填答案</button><button type="button" id="copy" class="secondary">复制列表</button></div>
+          <div id="status" role="status"></div><div id="output" role="region" aria-label="题目列表" tabindex="0"><p class="result-empty">提取后将在这里显示题目列表</p></div>
+            </div>
+          </div>
         </div>

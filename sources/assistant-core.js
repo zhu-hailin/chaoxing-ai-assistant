@@ -1,6 +1,7 @@
 // ==UserScript==
-// @name         学习通 AI 学习助手 - DeepSeek JSON
+// @name         学习通 AI 助手
 // @namespace    local.chaoxing.quiz
+// @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @version      0.7.3
 // @description  字体解密、后台播放优化、DeepSeek 分析与一键预填；不主动保存或提交
 // @match        *://*.chaoxing.com/*
@@ -50,6 +51,21 @@
         return data || (type === 'judge' ? ['true', 'false'][index] : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[index]);
     }
 
+    function optionText(li, key) {
+        let text;
+        const answer = li.querySelector('a.after');
+        if (answer) text = clean(answer.textContent);
+        else if (li.hasAttribute('aria-label')) text = clean(li.getAttribute('aria-label'));
+        else {
+            const copy = li.cloneNode(true);
+            copy.querySelectorAll('.num_option').forEach(node => node.remove());
+            text = clean(copy.textContent);
+        }
+        // 仅移除当前选项键加分隔符的前缀；A1、A型等正文保持原样。
+        if (/^[A-Z]$/.test(key)) text = text.replace(new RegExp('^' + key + '\\s*[、.．:：)）]\\s*'), '');
+        return text;
+    }
+
     function extract() {
         const nodes = [...document.querySelectorAll(QUESTION_SELECTOR)];
         if (!nodes.length) throw new Error('没有检测到题目，请先进入章节测验');
@@ -57,11 +73,10 @@
             const question = clean(el.querySelector('.Zy_TItle .fontLabel')?.textContent
                 ?? el.querySelector('.Zy_TItle')?.textContent);
             const type = detectType(question);
-            const options = [...el.querySelectorAll('.Zy_ulTop li')].map((li, j) => ({
-                key: optionKey(li, j, type),
-                text: clean(li.querySelector('a.after')?.textContent
-                    ?? li.getAttribute('aria-label') ?? li.textContent)
-            }));
+            const options = [...el.querySelectorAll('.Zy_ulTop li')].map((li, j) => {
+                const key = optionKey(li, j, type);
+                return { key, text: optionText(li, key) };
+            });
             return {
                 number: index + 1,
                 id: questionId(el, index),

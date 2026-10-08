@@ -1,11 +1,11 @@
 {
   "name": "chaoxing-ai-assistant",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "学习通AI助手的本地 DOM 模拟验证",
   "scripts": {
     "build": "python build_script.py",
-    "test": "python tests/build_offline.py && node tests/run-dom.cjs"
+    "test": "python tests/build_offline.py && node tests/run-dom.cjs && node tests/study-dom.cjs"
   },
   "engines": { "node": ">=22.13.0" },
   "devDependencies": { "jsdom": "29.1.1" }
