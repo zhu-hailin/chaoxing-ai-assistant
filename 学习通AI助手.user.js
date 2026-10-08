@@ -2,7 +2,7 @@
 // @name         学习通 AI 助手
 // @namespace    local.chaoxing.quiz
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
-// @version      1.02
+// @version      1.03
 // @description  字体解密、后台播放优化、DeepSeek 分析与一键预填；不主动保存或提交
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -90,7 +90,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.02', total: questions.length, questions };
+        return { version: '1.03', total: questions.length, questions };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -936,7 +936,7 @@
           #about[hidden]{display:none}#about p{margin:8px 0}.free{color:#1a7448}
         </style>
         <div id="panel" hidden>
-          <div class="head"><strong>学习通AI助手 v1.02</strong><div class="head-actions">
+          <div class="head"><strong>学习通AI助手 v1.03</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页">GitHub</button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="close" class="secondary">关闭</button>
@@ -1244,7 +1244,7 @@
                 (message, phase) => ctl.report(message, phase));
             const evidence = result.evidence;
             checkSnapshot(snapshot);
-            const payload = { version: '1.02', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, batchCount: result.batchCount, questions: snapshot.questions, answers: result.answers, ...(settings.search ? { evidence } : {}) };
+            const payload = { version: '1.03', model: settings.model, thinking: settings.thinking, searchEnabled: settings.search, total: result.answers.length, batchCount: result.batchCount, questions: snapshot.questions, answers: result.answers, ...(settings.search ? { evidence } : {}) };
             ctl.output(payload);
             ctl.last = { ...snapshot, answers: result.answers };
             if (autoPrefill) {
