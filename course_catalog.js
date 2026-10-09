@@ -47,6 +47,17 @@
         return course && classroom && student ? COURSE_SCORE_PREFIX + [course, classroom, student].map(encodeURIComponent).join(':') : null;
     }
 
+    function courseCatalogMarker(row, selector) {
+        // 目录折叠不改变完成状态；只忽略行内部隐藏的状态模板。
+        return [...row.querySelectorAll(selector)].find(node=>{
+            for(let current=node;current && current!==row;current=current.parentElement) {
+                if(current.hidden || current.getAttribute('aria-hidden')==='true')return false;
+                const style=current.ownerDocument.defaultView.getComputedStyle(current);
+                if(style.display==='none'||style.visibility==='hidden')return false;
+            }
+            return true;
+        });
+    }
     function readCourseCatalog(doc = document) {
         const context = resolveCourseCatalog(doc);
         if (!context) return null;
@@ -63,9 +74,9 @@
             seenIds.add(row.id);
             const parentLi = row.closest('li')?.parentElement?.closest('li');
             const parentId = parentLi?.querySelector(':scope > .posCatalog_select')?.id || null;
-            const pendingText = clean(row.querySelector('.orangeNew')?.textContent);
+            const pendingText = clean(courseCatalogMarker(row,'.orangeNew')?.textContent);
             const pending = /^\d+$/.test(pendingText) ? Number(pendingText) : null;
-            const completed = Boolean(row.querySelector('.icon_Completed'));
+            const completed = Boolean(courseCatalogMarker(row,'.icon_Completed'));
             entries.push({ id: row.id, chapterId: row.id.replace(/^cur/, ''), number, title, parentId,
                 isGroup: !target, target, active: row.classList.contains('posCatalog_active'),
                 completed, pending, scores: [] });
@@ -148,7 +159,7 @@
                     row.append(fold);
                 } else row.append(make('span', 'catalog-fold-space'));
                 const button = make('button', 'catalog-link'); button.type = 'button';
-                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = controller.state.busy; }
+                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = controller.state.busy || courseRunActive(); }
                 if (entry.active) button.setAttribute('aria-current', 'page');
                 button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
                 const meta = make('span', 'catalog-meta');
@@ -184,7 +195,7 @@
     }
 
     function navigateCourseChapter(id) {
-        if (controller.state.busy) return controller.report('请等待本次操作完成后切换章节');
+        if (controller.state.busy || courseRunActive()) return controller.report('请等待本次操作完成后切换章节');
         const entry = readCourseCatalog()?.entries.find(item => item.id === id);
         if (!entry?.target?.isConnected) return controller.report('章节入口已变化，请刷新课程目录');
         if (entry.active) return controller.report(`当前章节：${entry.title}`);
@@ -214,24 +225,8 @@
     function initCourseSidebar() {
         panelView.catalog = { context: null, collapsed: new Set(), observer: null, observedRoot: null, timer: null };
         const { shadow } = panelView;
-        const show = visible => {
-            shadow.getElementById('course-nav').hidden = !visible;
-            shadow.getElementById('panel').dataset.catalogHidden = String(!visible);
-            shadow.getElementById('catalog-toggle').setAttribute('aria-expanded', String(visible));
-            shadow.getElementById('catalog-toggle').setAttribute('aria-label', visible ? '收起课程目录侧栏' : '展开课程目录侧栏');
-        };
-        shadow.getElementById('catalog-toggle').onclick = () => {
-            const before = panelView.host.getBoundingClientRect();
-            show(shadow.getElementById('course-nav').hidden); refreshCourseSidebar();
-            const after = panelView.host.getBoundingClientRect();
-            // 保持右侧主内容位置：新增宽度从窗口左侧展开，收起时反向收回。
-            if (before.width > 0 && after.width > 0) {
-                panelView.userPosition = setPanelPosition(before.left + before.width - after.width, before.top);
-            } else positionAssistantPanel();
-        };
         shadow.getElementById('catalog-search').oninput = renderCourseCatalog;
         shadow.getElementById('catalog-refresh').onclick = refreshCourseSidebar;
-        show(false);
         refreshCourseSidebar();
         window.addEventListener('pagehide', () => {
             panelView?.catalog?.observer?.disconnect();

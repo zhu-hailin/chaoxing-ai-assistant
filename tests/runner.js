@@ -84,7 +84,7 @@
         catch(e) { logs.push(`FAIL ${name}: ${e.message}`); }
         document.getElementById('results').textContent = logs.join('\n');
     }
-    async function pending(f) { for(let i=0;i<60 && !f.requests.length;i++)await delay(10);assert(f.requests.length,'请求未开始'); }
+    async function pending(f, polls=60) { for(let i=0;i<polls && !f.requests.length;i++)await delay(10);assert(f.requests.length,'请求未开始'); }
     await test('真实标题定位、工具条顺序、无旧悬浮按钮、重复初始化', async () => {
         const f=await fixture();
         assert(f.api.resolveQuizHeader()===f.d.querySelector('.ceyan_name'),'标题定位错误');
@@ -126,7 +126,7 @@
         assert(s.getElementById('about').hidden,'介绍默认未收起');
         s.getElementById('about-toggle').click();
         assert(!s.getElementById('about').hidden && s.getElementById('about-toggle').getAttribute('aria-expanded')==='true','问号无法展开');
-        assert(s.getElementById('about').textContent.includes('免费使用'),'免费说明缺失');
+        assert(s.getElementById('about').textContent.includes('完全免费'),'免费说明缺失');
         for (const removed of ['DeepSeek 原生 Web Search · 与 AI 共用同一个 Key · 每题有额外 Token 消耗', '已合并字体解密与鼠标移出播放优化。不会自动保存或提交测验；不同的已有选择不会被覆盖。', '请自备 DeepSeek API Key；模型调用及联网检索可能由服务商单独计费，这部分费用不是脚本收费。']) assert(!s.textContent.includes(removed),'已删除文案仍出现');
         assert(s.getElementById('about').textContent.includes('Chaoxing AI Assistant'),'英文名缺失');
         s.getElementById('about-close').click();assert(s.getElementById('about').hidden,'无法收起');
@@ -157,6 +157,11 @@
         if(mode==='401')f.respond({error:{message:'Unauthorized'}},401);
         if(mode==='timeout')f.requests.shift().ontimeout();
         if(mode==='network')f.requests.shift().onerror();
+        if(mode==='timeout'||mode==='network') {
+            await pending(f,260);
+            const retry=f.requests.shift();
+            if(mode==='timeout')retry.ontimeout();else retry.onerror();
+        }
         if(mode==='json')f.requests.shift().onload({status:200,responseText:'not json'});
         if(mode==='answers')f.respond({choices:[{finish_reason:'stop',message:{content:'{"answers":[]}'}}]});
         await p;assert(!f.api.controller.state.busy && f.api.controller.state.phase==='error' && f.clicks===0,'失败后状态错误');f.remove();
@@ -217,11 +222,11 @@
             await f.api.controller.extractOnly();assert(f.api.controller.state.phase==='error','错误放行未解密结果页');f.remove();
         }
     });
-    await test('无标题时降级到首题前方；未知题型仍报错，101题提取通过', async () => {
+    await test('无标题时降级到首题前方；未知题型保留诊断，101题提取通过', async () => {
         const f=await fixture();f.d.querySelector('.ceyan_name').remove();f.d.getElementById('cx-ai-toolbar')?.remove();f.api.initQuizAssistant();
         assert(f.d.querySelector('.singleQuesId').previousElementSibling.id==='cx-ai-toolbar','降级位置错误');
-        f.d.querySelector('.fontLabel').textContent='【问答题】未知';let throws=0;try{f.api.extract()}catch{throws++}
-        assert(throws===1,'未知题型被放行');
+        f.d.querySelector('.fontLabel').textContent='【教师自创题】未知';const parsed=f.api.extract();
+        assert(parsed.questions[0].type==='unknown' && !parsed.questions[0].capabilities.prefill && parsed.questions[0].diagnostics.length,'未知题型未保留诊断');
         f.d.getElementById('questions').innerHTML=Array.from({length:101},(_,i)=>choice(String(i+1),'单选',[['A','甲']])).join('');assert(f.api.extract().total===101,'仍限制总题数');f.remove();
     });
     const manyQuestions = n => Array.from({length:n},(_,i)=>choice(String(i+1),'单选',[['A','甲'],['B','乙']])).join('');
@@ -255,10 +260,10 @@
         const f=await fixture();const questions=Array.from({length:3},(_,i)=>({id:String(i),number:i+1,question:'长'.repeat(7000),options:[]}));
         const batches=f.api.splitQuestionBatches(questions);assert(batches.length===3 && batches.flat().every((q,i)=>q===questions[i]),'长题切分丢失内容');f.remove();
     });
-    await test('第二批失败时不预填，清空旧结果并恢复按钮', async () => {
+    await test('第二批连续失败时不预填，保留成功答案与题目列表并恢复按钮', async () => {
         const f=await fixture({questions:manyQuestions(26)});const output=f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output');f.api.controller.output(f.api.extract());
-        const p=f.api.runAnswerFlow();await pending(f);respondBatch(f);await pending(f);f.requests.shift().ontimeout();await p;
-        assert(f.clicks===0 && f.api.controller.last===null && f.api.controller.result===null && !output.querySelector('.question-card') && !f.api.controller.state.busy,'失败预填或残留旧结果');
+        const p=f.api.runAnswerFlow();await pending(f);respondBatch(f);await pending(f);f.requests.shift().ontimeout();await pending(f,260);f.requests.shift().ontimeout();await p;
+        assert(f.clicks===0 && f.api.controller.last===null && f.api.controller.result.answers.length===10 && output.querySelectorAll('.question-card').length===26 && output.querySelectorAll('.ai-answer').length===10 && !f.api.controller.state.busy,'失败预填、成功答案丢失或丢失提取列表');
         assert(f.api.controller.state.message.includes('第 2/3 批'),'未定位失败批次');f.remove();
     });
     await test('批间题目变化停止后续请求，未完成批次不预填', async () => {
@@ -312,14 +317,14 @@
         const f=await fixture();f.d.querySelector('.fontLabel').textContent='【单选题】题干 <b>原始文字</b>';
         const s=f.d.getElementById('cx-ai-study-root').shadowRoot,p=f.api.runAnswerFlow({autoPrefill:false});await pending(f);
         assert(s.querySelectorAll('.question-card').length===4 && !s.querySelector('.ai-answer'),'请求期间未显示题目列表或提前显示旧答案');
-        assert(s.querySelector('.result-summary').textContent==='题目列表 · 共 4 题','AI 等待期间未保留题目列表');
+        assert(s.querySelector('.result-summary').textContent.startsWith('题目列表 · 共 4 题') && !s.querySelector('.result-summary').textContent.includes('AI 分析完成'),'AI 等待期间未保留题目列表或误报完成');
         const changed=answers.map(a=>({...a,reason:a.id==='1'?'<img src=x onerror="alert(1)">理由':a.reason})).reverse();
         f.respond({choices:[{finish_reason:'stop',message:{content:JSON.stringify({answers:changed})}}]});await p;
         const card=id=>s.querySelector(`[data-question-id="${id}"]`);
         assert(s.getElementById('output').getAttribute('aria-label')==='题目与答案列表','生成后仍标为未生成');
-        assert(card('1').querySelector('.ai-answer').textContent==='AI 答案：B. LAN','单选答案错位');
+        assert(card('1').querySelector('.ai-answer').textContent==='B. LAN','单选答案错位');
         assert(card('2').querySelector('.ai-answer').textContent.includes('A. 甲；C. 丙') && card('2').querySelectorAll('.is-answer').length===2,'多选未完整显示');
-        assert(card('3').querySelector('.ai-answer').textContent==='AI 答案：对' && card('4').querySelector('.ai-answer').textContent==='AI 答案：网络','判断或填空未转为可读答案');
+        assert(card('3').querySelector('.ai-answer').textContent==='对' && card('4').querySelector('.ai-answer').textContent==='网络','判断或填空未转为可读答案');
         assert(card('1').querySelector('.answer-reason').textContent.includes('<img') && !s.querySelector('img') && !card('1').querySelector('b'),'外部文本被解释为 HTML');
         assert(f.clicks===0 && f.submits===0,'仅分析时发生预填或提交');f.remove();
     });
@@ -348,29 +353,66 @@
         assert(s.querySelector('[data-chapter-button="cur102"] .catalog-state').textContent==='待完成 · 2项','待完成任务数错误');
         assert(!f.requests.length && !f.catalogClicks.length,'读取目录触发模型或章节切换');f.remove();
     });
-    await test('目录搜索保留父级，展开收起和目录栏切换正常', async () => {
+    await test('目录搜索保留父级，展开收起和图标页面切换正常', async () => {
         const f=await fixture({catalog:true});const s=f.d.getElementById('cx-ai-study-root').shadowRoot;
         const fold=s.querySelector('[data-chapter-id="100"] > .catalog-row .catalog-fold');fold.click();
         assert(s.querySelector('[data-chapter-id="100"] > .catalog-children').hidden,'目录无法收起');
         const search=s.getElementById('catalog-search');search.value='同步传输';search.dispatchEvent(new f.w.Event('input'));
         assert(s.querySelectorAll('.catalog-item').length===3 && !s.querySelector('[data-chapter-id="100"] > .catalog-children').hidden,'搜索结果没有父级或被折叠隐藏');
         search.value='不存在';search.dispatchEvent(new f.w.Event('input'));assert(s.getElementById('catalog-list').textContent==='没有匹配的章节','搜索空结果错误');
-        assert(s.getElementById('course-nav').hidden,'目录栏应默认收起');
-        const toggle=s.getElementById('catalog-toggle');assert(!toggle.closest('.head') && toggle.querySelector('svg'),'目录入口应为左侧独立图标');assert(toggle.closest('.assistant-main'),'侧栏按钮应留在主内容区上方');
-        toggle.click();assert(!s.getElementById('course-nav').hidden && toggle.getAttribute('aria-expanded')==='true','目录栏无法打开');
-        toggle.click();assert(s.getElementById('course-nav').hidden && toggle.getAttribute('aria-expanded')==='false','目录栏无法隐藏');f.remove();
+        assert(s.getElementById('course-nav').hidden,'目录页应默认关闭');
+        const tab=s.getElementById('nav-chapters');assert(!tab.closest('.head') && tab.querySelector('svg') && tab.closest('.nav-rail'),'章节入口应为左侧图标');
+        tab.click();assert(!s.getElementById('course-nav').hidden && tab.getAttribute('aria-selected')==='true','章节页无法打开');
+        s.getElementById('nav-model').click();assert(s.getElementById('course-nav').hidden && tab.getAttribute('aria-selected')==='false','模型页无法切回');assert(search.value==='不存在','切换丢失目录搜索');f.remove();
     });
-    await test('目录从左侧展开与收回，主内容宽度和右边缘保持', async () => {
+    await test('三个图标按序切换独立页面，窗口位置稳定且关闭重开保留页面', async () => {
         const f=await fixture({catalog:true});f.api.controller.openPanel();
         const host=f.d.getElementById('cx-ai-study-root'),s=host.shadowRoot;
-        host.getBoundingClientRect=()=>{const width=s.getElementById('panel').dataset.catalogHidden==='true'?630:876;const left=host.style.transform==='none'?parseFloat(host.style.left):350;return {left,top:70,width,right:left+width};};
-        const toggle=s.getElementById('catalog-toggle');
-        toggle.click();
-        assert(parseFloat(host.style.left)===104,'展开目录未向左移动新增宽度');
-        assert(876-230-16===630,'主内容区宽度发生变化');
-        assert(host.getBoundingClientRect().right===980,'展开后窗口右边缘移动');
-        toggle.click();assert(parseFloat(host.style.left)===350 && host.getBoundingClientRect().right===980,'收起后主内容未保持原位');
+        const tabs=[...s.querySelectorAll('.nav-rail [role=tab]')];assert(tabs.length===3 && tabs.map(tab=>tab.getAttribute('aria-label')).join(',')==='题目,章节,模型','图标数量或顺序错误');
+        assert(s.getElementById('nav-model').matches('.nav-model-bottom') && s.getElementById('nav-model')===tabs[2] && /\.nav-model-bottom\{[^}]*margin-top:auto/.test(s.querySelector('style').textContent),'模型入口未固定在底部');
+        assert(tabs.every(tab=>tab.querySelector('svg') && tab.textContent.trim()==='' && tab.title),'导航出现文字或缺少提示');
+        assert(s.getElementById('view-model').hidden && !s.getElementById('view-questions').hidden && s.getElementById('view-chapters').hidden,'默认页错误');
+        const before=host.style.cssText;
+        for(const tab of tabs){tab.click();assert(s.querySelectorAll('.view-page:not([hidden])').length===1,'同时展示多个页面');assert(s.getElementById(tab.getAttribute('aria-controls')).hidden===false,'导航与页面不对应');assert(host.style.cssText===before,'切换移动或扩大窗口');}
+        s.getElementById('close').click();f.api.controller.openPanel();assert(s.getElementById('nav-model').getAttribute('aria-selected')==='true','重开重置所选页');
+        assert(!s.getElementById('catalog-toggle'),'旧侧栏入口残留');
         f.remove();
+    });
+    await test('图标导航支持上下键、首末键与循环焦点，不触发 API', async () => {
+        const f=await fixture(),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
+        const press=(id,key)=>s.getElementById(id).dispatchEvent(new f.w.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+        press('nav-questions','ArrowUp');assert(s.activeElement===s.getElementById('nav-model') && !s.getElementById('view-model').hidden,'向上未循环到模型');
+        press('nav-model','Home');assert(s.activeElement===s.getElementById('nav-questions'),'首项键错误');
+        press('nav-questions','ArrowDown');assert(s.activeElement===s.getElementById('nav-chapters') && !s.getElementById('view-chapters').hidden,'向下未进入章节');
+        press('nav-chapters','End');assert(s.getElementById('nav-model').getAttribute('aria-selected')==='true','末项键错误');
+        assert(s.querySelectorAll('.nav-button[tabindex="0"]').length===1 && !f.requests.length && !f.clicks,'焦点或无副作用约束错误');f.remove();
+    });
+    await test('运行中可浏览三页，配置锁定与状态持续，切换保留结果和输入', async () => {
+        const f=await fixture({catalog:true}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
+        s.getElementById('ds-key').value='mock-unsaved-value';const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);
+        assert(!s.getElementById('view-questions').hidden,'分析未切到题目页');s.getElementById('nav-model').click();
+        assert(s.getElementById('model').disabled && s.getElementById('ds-key').disabled && f.api.controller.state.busy && s.getElementById('panel').getAttribute('aria-busy')==='true','切页解除互斥');
+        s.getElementById('nav-chapters').click();assert(!s.getElementById('status-spinner').hidden && s.getElementById('catalog-refresh').disabled,'全局状态或目录锁定丢失');
+        f.respond();await flow;assert(s.getElementById('nav-chapters').getAttribute('aria-selected')==='true' && s.getElementById('status-spinner').hidden && s.getElementById('panel').getAttribute('aria-busy')==='false','后台结果抢占页面或加载未恢复');
+        s.getElementById('nav-questions').click();const output=s.getElementById('output');assert(output.querySelectorAll('.ai-answer').length===4,'切换丢失答案');output.scrollTop=120;
+        s.getElementById('nav-model').click();assert(s.getElementById('ds-key').value==='mock-unsaved-value','切换重置输入');s.getElementById('nav-questions').click();assert(output.scrollTop===120,'切换重置题目滚动位置');f.remove();
+    });
+    await test('未配置时提示先配置模型，提取不受限，保存和清除即时更新提示', async () => {
+        const f=await fixture({key:''}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
+        assert(!s.getElementById('view-questions').hidden && !s.getElementById('model-setup-notice').hidden && s.getElementById('model-setup-message').textContent.includes('请先配置模型'),'缺少 Key 未显示配置提示');
+        await f.api.controller.extractOnly();assert(s.querySelectorAll('.question-card').length===4 && !f.requests.length,'提示阻止了提取或意外请求模型');
+        s.getElementById('model-setup-open').click();assert(!s.getElementById('view-model').hidden && s.activeElement===s.getElementById('ds-key'),'配置入口未进入设置或聚焦 Key');
+        s.getElementById('ds-key').value='mock-saved-key';s.getElementById('save-ds').click();assert(s.getElementById('model-setup-notice').hidden && !f.requests.length,'保存配置后提示未消失或自动发起请求');
+        s.getElementById('clear-ds').click();s.getElementById('nav-questions').click();assert(!s.getElementById('model-setup-notice').hidden && s.querySelectorAll('.question-card').length===4,'清除 Key 后没有提示或丢失列表');
+        await f.api.runAnswerFlow({autoPrefill:true});assert(!s.getElementById('view-model').hidden && f.api.controller.state.message.includes('请先配置模型') && !f.requests.length && !f.clicks && !f.api.controller.state.busy,'缺少配置仍分析或未恢复');f.remove();
+    });
+    await test('有 Key 但未选择模型也阻止请求，选定模型后恢复分析', async () => {
+        const f=await fixture({stored:[['cx_model','']]}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
+        assert(!s.getElementById('model-setup-notice').hidden && s.getElementById('model-setup-message').textContent.includes('选择模型'),'未选择模型没有提示');
+        await f.api.runAnswerFlow({autoPrefill:false});assert(!f.requests.length && !s.getElementById('view-model').hidden,'空模型被发送给服务商');
+        const select=s.getElementById('model');select.value='deepseek-flash';select.dispatchEvent(new f.w.Event('change'));assert(s.getElementById('model-setup-notice').hidden,'选择模型后仍提示缺少配置');
+        const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);f.respond();await flow;
+        assert(f.api.controller.state.phase==='done' && s.querySelectorAll('.ai-answer').length===4,'完成配置后未恢复分析');f.remove();
     });
     await test('章节导航委托原页面节点，清除旧结果，不调用模型或提交', async () => {
         const f=await fixture({catalog:true});const s=f.d.getElementById('cx-ai-study-root').shadowRoot;await f.api.controller.extractOnly();

@@ -45,7 +45,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert(s.getElementById('course-nav').hidden);
             assert(s.getElementById('extract').disabled && s.getElementById('solve').disabled);
             assert.equal(s.getElementById('ds-key').disabled, false);
-            s.getElementById('catalog-toggle').click();
+            s.getElementById('nav-chapters').click();
             assert.equal(s.getElementById('course-nav').hidden, false);
             s.getElementById('close').click();
             assert(s.getElementById('panel').hidden);
@@ -118,14 +118,14 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             sendPointer(head, 'pointerup', 120, 100);
             assert.equal(portal.style.left, '100px');
             assert.equal(portal.style.top, '80px');
-            const fullHeight = parseFloat(panel.getElementById('panel').style.getPropertyValue('--catalog-height'));
+            const fullHeight = parseFloat(panel.getElementById('panel').style.getPropertyValue('--content-height'));
             Object.defineProperty(f.w, 'innerHeight', { value: 420, configurable: true });
             f.w.dispatchEvent(new f.w.Event('resize'));
-            const smallHeight = parseFloat(panel.getElementById('panel').style.getPropertyValue('--catalog-height'));
+            const smallHeight = parseFloat(panel.getElementById('panel').style.getPropertyValue('--content-height'));
             assert(smallHeight < fullHeight && smallHeight > 0, '目录高度未随可用视口缩小');
-            panel.getElementById('catalog-toggle').click();
+            panel.getElementById('nav-chapters').click();
             assert.equal(panel.getElementById('course-nav').hidden, false);
-            panel.getElementById('catalog-toggle').click();
+            panel.getElementById('nav-model').click();
 
             f.w.dispatchEvent(new f.w.Event('resize'));
             assert.equal(portal.style.top, '80px');
