@@ -15,7 +15,7 @@
 | <img src="assets/screenshots/questions-panel-v1.04.png" alt="题目与答案面板" width="420" /> | <img src="assets/screenshots/question-images-v1.04.png" alt="题干图片与共享材料" width="420" /> |
 | **AI 答案与解析** | **自动刷课** |
 | <img src="assets/screenshots/ai-generated-answer-v1.04.png" alt="AI 生成答案与解析" width="420" /> | <img src="assets/screenshots/study-controls-v1.04.png" alt="自动刷课与学习开关" width="420" /> |
-| **视频进度** | **章节测验入口** |
+| **视频进度** | **AI一键答题** |
 | <img src="assets/screenshots/video-progress-v1.04.png" alt="视频播放进度" width="420" /> | <img src="assets/screenshots/quiz-page-v1.04.png" alt="章节测验助手入口" width="420" /> |
 
 ## 安装与使用
