@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.07
+// @version      1.08
 // @description  字体解密、后台播放优化、DeepSeek 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -79,7 +79,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.07', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.08', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -1194,7 +1194,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.07');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.08');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -1476,7 +1476,8 @@
         return [...new Set(buttons)];
     }
     const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
-        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000 });
+        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
+        slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000 });
     let courseRunner;
     function courseTimeoutError(message) {
         return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
@@ -1486,7 +1487,7 @@
         return Boolean(owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id'));
     }
     function courseVideoEventTrace(task) {
-        const labels={pause:'暂停',playing:'开始播放',waiting:'等待播放数据',stalled:'媒体加载停滞',error:'媒体错误',ended:'播放结束'};
+        const labels={pause:'暂停',playing:'开始播放',waiting:'等待播放数据',stalled:'媒体加载停滞',error:'媒体错误',ended:'播放结束',seeking:'开始定位',seeked:'定位结束'};
         // 兼容此前保存的报告；只输出固定诊断字段，不复制资源地址或额外属性。
         const events=Array.isArray(task.playbackEvents)?task.playbackEvents.filter(item=>item && Object.prototype.hasOwnProperty.call(labels,item.event) && Number.isFinite(item.at)).slice(-12):[];
         if(!events.length)return '';
@@ -1499,7 +1500,9 @@
             const ready=Number.isInteger(item.readyState)?item.readyState:'未知';
             const network=Number.isInteger(item.networkState)?item.networkState:'未知';
             const error=Number.isInteger(item.errorCode)?item.errorCode:'无';
-            return `+${offset} 秒 ${labels[item.event]}：视频 ${position} 秒，${visibility}${focus}，readyState=${ready}，networkState=${network}，错误码=${error}`;
+            const seek=typeof item.seeking==='boolean'?`，seeking=${item.seeking}`:'';
+            const rate=Number.isFinite(item.rate)&&item.rate>0?`，播放速率=${item.rate}`:'';
+            return `+${offset} 秒 ${labels[item.event]}：视频 ${position} 秒，${visibility}${focus}，readyState=${ready}，networkState=${network}，错误码=${error}${seek}${rate}`;
         }).join('\n');
     }
     function courseReportText(report) {
@@ -1517,6 +1520,11 @@
             const position=Number.isFinite(state.seconds)?Math.floor(state.seconds):'未知';
             return `${chapter.number} ${chapter.title} · 视频 ${task.number || 1}：暂停 ${task.pauseCount || 0} 次，恢复 ${task.resumes || 0} 次；${task.lastPause?'最后暂停时':'检测时'}课程页${visibility}${focus}；检测时位置 ${position} 秒，readyState=${state.readyState ?? '未知'}，networkState=${state.networkState ?? '未知'}，错误码=${state.errorCode ?? '无'}。暂停来源尚未确认。`+courseVideoEventTrace(task);
         }));
+        const seekStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.seekState).map(task=>{
+            const state=task.seekState,number=value=>Number.isFinite(value)?value.toFixed(2):'未知';
+            const outcomes={pending:'等待定位恢复',continuous:'进度连续，已继续',jump:'确认明显跳转，已停止',timeout:'定位等待超时'};
+            return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：定位 ${task.seekCount||1} 次；起点 ${number(state.from)} 秒，检测位置 ${number(state.to)} 秒，经过 ${number(state.elapsed)} 秒，允许前进 ${number(state.allowedForward)} 秒；${outcomes[state.outcome]||'判定未知'}，seeking=${typeof state.seeking==='boolean'?state.seeking:'未知'}，readyState=${Number.isInteger(state.readyState)?state.readyState:'未知'}。`;
+        }));
         const documentStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='document'&&task.documentState).map(task=>{
             const state=task.documentState;
             return `${chapter.number} ${chapter.title} · 资料 ${task.number||1}：位置 ${Math.round(state.top)}/${Math.round(Math.max(0,state.total-state.height))}，距底部 ${Math.round(state.distance*100)/100}px；图片 ${state.imageCount} 张，未加载 ${state.pendingImages} 张；到底校正 ${task.bottomCorrections||0} 次，快速遍历 ${task.fallbackPasses||0} 轮。`;
@@ -1528,6 +1536,7 @@
             + (timedOut.length ? `\n超时跳过 ${timedOut.length} 个章节（不计为完成）：\n` + timedOut.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
             + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '')
             + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '')
+            + (seekStates.length ? '\n视频定位记录：\n' + seekStates.join('\n') : '')
             + (documentStates.length ? '\n资料状态记录：\n' + documentStates.join('\n') : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
@@ -1699,13 +1708,38 @@
                         run.activeVideo=video;
                         if (run.skipLearned && courseTaskComplete(video) === true) {task.status='already';return;}
                         video.muted=run.muteVideo;
-                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();
+                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;
                         let lastTime=video.currentTime,lastProgress=now(),lastPlay=-Infinity,playbackCheckpoint=Number(video.currentTime),wakeMedia=null;
+                        const playbackSample=()=>{const rate=Number(video.playbackRate);return {at:now(),seconds:Number(video.currentTime),rate:Number.isFinite(rate)&&rate>0?rate:1};};
+                        let sample=playbackSample(),pendingSeek=null;
+                        const beginSeek=()=>{
+                            if(!pendingSeek){pendingSeek={startedAt:now(),anchor:{...sample},stableSince:null};task.seekCount++;}
+                            // 重复定位不延长截止时间，也不覆盖定位前的可信位置。
+                            pendingSeek.stableSince=null;
+                        };
+                        const recordSeek=(current,outcome)=>{
+                            const anchor=pendingSeek.anchor,elapsed=Math.max(0,(current.at-anchor.at)/1000);
+                            task.seekState={from:anchor.seconds,to:current.seconds,elapsed,
+                                allowedForward:elapsed*Math.max(anchor.rate,current.rate)+limits.videoSeekToleranceSeconds,
+                                outcome,seeking:Boolean(video.seeking),readyState:video.readyState};
+                            return task.seekState;
+                        };
                         // 被动记录公开媒体事件；不修改播放器回调、页面可见性或平台上报。
                         const snapshot=event=>({event,at:now(),seconds:Number(video.currentTime),duration:Number(video.duration),paused:video.paused,
-                            readyState:video.readyState,networkState:video.networkState,visibility:owner.visibilityState || 'unknown',focused:typeof owner.hasFocus==='function'?owner.hasFocus():null,errorCode:video.error?.code ?? null});
+                            readyState:video.readyState,networkState:video.networkState,seeking:Boolean(video.seeking),rate:playbackSample().rate,
+                            visibility:owner.visibilityState || 'unknown',focused:typeof owner.hasFocus==='function'?owner.hasFocus():null,errorCode:video.error?.code ?? null});
                         const onMediaEvent=event=>{
                             if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
+                            if(event.type==='seeking' || video.seeking)beginSeek();
+                            // seeked 有时先于轮询到达；仍须使用事件之前的采样进行复查。
+                            else if(event.type==='seeked' && !pendingSeek)beginSeek();
+                            if(!pendingSeek && Number.isFinite(video.currentTime))sample=playbackSample();
+                            if(pendingSeek){
+                                if(!Number.isFinite(video.currentTime) || video.readyState<2)pendingSeek.stableSince=null;
+                                recordSeek(playbackSample(),'pending');
+                            }
+                            // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
+                            if(event.type==='timeupdate'){wakeMedia?.();return;}
                             const state=snapshot(event.type);task.playbackState=state;
                             if(event.type==='pause'){task.pauseCount++;task.lastPause=state;}
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
@@ -1717,7 +1751,7 @@
                             try {await race(Promise.race([wait(limits.pollMs),mediaEvent]));}
                             finally {if(wakeMedia===wake)wakeMedia=null;}
                         };
-                        const eventTypes=['pause','playing','waiting','stalled','error','ended'];
+                        const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked'];
                         for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
                         try {
                             const startPlayback=async(recovery=false)=>{
@@ -1733,9 +1767,9 @@
                                     }
                                     if(video.paused)await race(Promise.race([Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();}),sleep(limits.videoLoadMs).then(()=>{throw courseTimeoutError('视频启动超时');})]));
                                     guard();
-                                    if(recovery){task.resumes++;task.unstableResumes++;}
+                                    if(recovery){task.resumes++;if(!pendingSeek)task.unstableResumes++;}
                                     // 恢复保留真实进度检查点；短段播放的累计进展也能证明恢复有效。
-                                    if(!recovery)playbackCheckpoint=Number(video.currentTime);
+                                    if(!recovery && !pendingSeek)playbackCheckpoint=Number(video.currentTime);
                                 } catch(error) {
                                     if(context.skipped || run.cancelled)throw error;
                                     throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
@@ -1745,14 +1779,35 @@
                             emit('已启动视频，正在读取时长…','course-video');
                             await until(()=>Number.isFinite(video.duration)&&video.duration>0,limits.videoLoadMs,'视频时长无法读取或仍在加载');
                             task.durationSeconds=Number(video.duration);lastProgress=now();
-                            while(!video.ended) {
+                            while(true) {
                                 guard();
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if (video.seeking) throw new Error('检测到视频进度跳转，无法确认完整播放');
+                                if(video.seeking)beginSeek();
+                                if(pendingSeek) {
+                                    const current=playbackSample(),state=recordSeek(current,'pending');
+                                    if(current.at-pendingSeek.startedAt>=limits.videoSeekTimeoutMs){
+                                        recordSeek(current,'timeout');
+                                        throw courseTimeoutError('视频定位长时间未恢复，请检查播放器或网络');
+                                    }
+                                    if(video.seeking || !Number.isFinite(current.seconds) || video.readyState<2)pendingSeek.stableSince=null;
+                                    else if(pendingSeek.stableSince===null)pendingSeek.stableSince=current.at;
+                                    if(pendingSeek.stableSince===null || current.at-pendingSeek.stableSince<limits.videoSeekStableMs){
+                                        await waitForMedia();continue;
+                                    }
+                                    const delta=current.seconds-pendingSeek.anchor.seconds;
+                                    if(!Number.isFinite(pendingSeek.anchor.seconds) || delta < -limits.videoSeekToleranceSeconds || delta>state.allowedForward){
+                                        recordSeek(current,'jump');
+                                        throw new Error(`检测到视频进度跳转（${Number.isFinite(state.from)?state.from.toFixed(2):'未知'} → ${current.seconds.toFixed(2)} 秒），无法确认完整播放`);
+                                    }
+                                    recordSeek(current,'continuous');pendingSeek=null;sample=current;
+                                }
+                                // 定位到末尾触发 ended，也必须先检查实际进度连续性。
+                                if(video.ended)break;
                                 const observedTime=Number(video.currentTime);
+                                if(Number.isFinite(observedTime))sample=playbackSample();
                                 if(observedTime>lastTime+0.05){lastProgress=now();lastTime=observedTime;}
                                 // 首次启动不算恢复；累计真实进度增加 10 秒后重置连续恢复预算。
                                 // play() resolve 或后台经过了足够墙钟时间，都不能证明恢复有效。
@@ -2129,6 +2184,20 @@
     }
     function initCourseRunControls(doc, ctl) {
         const owner=studyOwnerDocument(doc),s=panelView.shadow;
+        const stopButton=s.getElementById('course-stop');
+        let stopRunId=null,stopUntil=0,stopTimer=null,stopCountdownTimer=null;
+        const clearStopConfirmation=()=>{
+            if(stopTimer!==null)doc.defaultView?.clearTimeout(stopTimer);
+            if(stopCountdownTimer!==null)doc.defaultView?.clearInterval(stopCountdownTimer);
+            stopTimer=null;stopCountdownTimer=null;stopRunId=null;stopUntil=0;
+            stopButton.textContent='停止';stopButton.classList.remove('stop-confirm');
+        };
+        const updateStopCountdown=()=>{
+            if(!stopRunId)return;
+            const seconds=Math.ceil((stopUntil-Date.now())/1000);
+            if(seconds<=0){clearStopConfirmation();return;}
+            stopButton.textContent=`确认停止（${seconds}s）`;
+        };
         const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video');
         const autoSubmit=s.getElementById('course-auto-submit');
         for(const [control,key,fallback] of [[autoSubmit,'cx_course_auto_submit',true],[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true]]) {
@@ -2139,6 +2208,8 @@
         const render=()=>{
             const running=courseRunActive(doc),report=latestReport();
             const lease=owner?.getElementById('cx-ai-course-lease');
+            if(stopRunId && (!running || lease?.getAttribute('data-run-id')!==stopRunId || Date.now()>=stopUntil))clearStopConfirmation();
+            updateStopCountdown();
             const duration=Number(lease?.getAttribute('data-video-duration'));
             const raw=lease?.getAttribute('data-video-current'), elapsed=Number(raw);
             const valid=running && lease?.getAttribute('data-phase')==='course-video' && raw!==null && Number.isFinite(duration) && duration>0 && Number.isFinite(elapsed);
@@ -2165,12 +2236,25 @@
         }
         s.getElementById('course-start').onclick=()=>owner?.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-course-start',{detail:{submit:s.getElementById('course-auto-submit').checked,skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked}}));
         s.getElementById('course-skip').onclick=()=>owner?.dispatchEvent(new owner.defaultView.Event('cx-ai-course-skip'));
-        s.getElementById('course-stop').onclick=()=>owner?.dispatchEvent(new owner.defaultView.Event('cx-ai-course-stop'));
+        stopButton.onclick=()=>{
+            const runId=owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id');
+            if(!runId){clearStopConfirmation();return;}
+            if(stopRunId===runId && Date.now()<stopUntil){
+                clearStopConfirmation();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-stop'));return;
+            }
+            clearStopConfirmation();stopRunId=runId;stopUntil=Date.now()+5000;
+            updateStopCountdown();stopButton.classList.add('stop-confirm');
+            stopTimer=doc.defaultView.setTimeout(clearStopConfirmation,5000);
+            stopCountdownTimer=doc.defaultView.setInterval(updateStopCountdown,1000);
+        };
+        s.getElementById('close').addEventListener('click',clearStopConfirmation);
         s.getElementById('course-copy-report').onclick=async()=>{
             try{await navigator.clipboard.writeText(courseReportText(latestReport()));ctl.report('刷课报告已复制');}
             catch{ctl.report('无法复制，请选中报告后复制');}
         };
         const disconnect=()=>{
+            clearStopConfirmation();
+            s.getElementById('close').removeEventListener('click',clearStopConfirmation);
             owner?.removeEventListener('cx-ai-course-update',update);
             doc.removeEventListener('cx-ai-course-state',update);
         };
@@ -2662,6 +2746,7 @@
           *{box-sizing:border-box}[hidden]{display:none!important}
           #panel{--accent:#315fbd;--ink:#26354a;--muted:#6c7b90;--line:#e3e8ef;font:14px/1.6 "Microsoft YaHei","PingFang SC",sans-serif;color:var(--ink);width:min(720px,calc(100vw - 26px));height:min(620px,78vh);max-height:78vh;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#fff;border:1px solid #d7dfe9;border-radius:12px;box-shadow:0 16px 48px #172b4a30;margin-bottom:8px}
           button,input,select{font:inherit}button{border:1px solid transparent;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer;padding:7px 11px;line-height:1.5}button.secondary{background:#f0f3f7;color:var(--ink)}button:hover:not(:disabled){filter:brightness(.96)}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #729adc;outline-offset:2px}
+          button.stop-confirm{background:#dc2626;color:#fff}
           .head{flex:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px 9px 16px;border-bottom:1px solid var(--line);background:#fbfcfe;cursor:grab;touch-action:none;user-select:none}.head strong{font-size:14px;letter-spacing:.1px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.head:active{cursor:grabbing}.head-actions{display:flex;align-items:center;gap:5px;flex:none}.head-actions button{padding:5px 9px;font-size:12px;min-height:28px}#github,#about-toggle,#close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0}#about-toggle{border-radius:50%;font-weight:700;font-size:16px}#close svg{width:16px;height:16px}#github svg{width:18px;height:18px}
           .panel-body{flex:1;display:grid;grid-template-columns:54px minmax(0,1fr);min-height:0;max-height:var(--content-height,none);overflow:hidden}.nav-rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0;background:#f7f9fc;border-right:1px solid var(--line)}.nav-button{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:8px;border-radius:7px;background:transparent;color:#78889d}.nav-model-bottom{margin-top:auto;flex-shrink:0}.nav-button svg{width:20px;height:20px;flex:none}.nav-button[aria-selected=true]{background:#e7effc;color:var(--accent)}.nav-button[aria-selected=true]::before{content:"";position:absolute;left:-9px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}.assistant-main{min-width:0;min-height:0;overflow:hidden}.view-page{height:100%;min-height:0;min-width:0;padding:18px;overflow:auto;overscroll-behavior:contain}.view-heading{flex:none;margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;gap:8px}.view-heading h2{font-size:17px;line-height:1.4;letter-spacing:.3px;margin:0;font-weight:700}.view-tag{font-size:11px;color:var(--muted);padding:2px 7px;background:#f3f6fa;border-radius:4px}
           .settings-block{border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:17px}.settings-block:last-child{border:0;margin:0}.field-caption{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{max-width:100%}.row>label{min-width:65px}input,select{background:#fff;color:var(--ink);border:1px solid #cbd5e3;border-radius:6px;padding:8px;min-width:0}input[type=password]{min-width:120px;flex:1;width:180px}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent);flex:none}.check-label{display:inline-flex;align-items:center;gap:7px}.row select{max-width:100%}.setting-label{font-size:13px;color:var(--muted)}
@@ -2679,7 +2764,7 @@
           @media(prefers-reduced-motion:reduce){#status-spinner{animation:none}}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.07</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.08</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -3097,7 +3182,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.07',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.08',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

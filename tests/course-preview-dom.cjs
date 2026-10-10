@@ -23,7 +23,7 @@ const logs=[],failures=[];
    const search=s.getElementById('catalog-search');search.value='后续';search.dispatchEvent(new w.Event('input'));assert(s.getElementById('catalog-list').textContent.includes('后续视频'));
    s.getElementById('chapter-tab-catalog').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(!run.hidden&&catalog.hidden);assert.equal(s.activeElement.id,'chapter-tab-run');
    if(mode==='running'){
-    assert(f.runner.busy);assert.equal(f.events.filter(x=>x.startsWith('play:')).length,1);s.getElementById('course-stop').click();
+    assert(f.runner.busy);assert.equal(f.events.filter(x=>x.startsWith('play:')).length,1);s.getElementById('course-stop').click();assert(f.runner.busy);assert.equal(s.getElementById('course-stop').textContent,'确认停止（5s）');s.getElementById('course-stop').click();
     for(let i=0;i<50&&f.runner.report?.status==='running';i++)await delay(10);assert(!f.runner.busy);assert.equal(f.runner.report.status,'stopped');assert(s.getElementById('video-progress-wrap').hidden);
    }else assert.equal(f.requests.length,0);
    s.getElementById('chapter-tab-run').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert(!catalog.hidden);assert.equal(search.value,'后续');
@@ -46,7 +46,7 @@ const logs=[],failures=[];
    s.getElementById('nav-questions').click();nav.click();assert(!developer.hidden);s.getElementById('close').click();f.api.controller.openPanel();assert(!developer.hidden);
    s.getElementById('settings-tab-developer').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(!model.hidden&&developer.hidden);assert.equal(input.value,value);assert.equal(s.activeElement.id,'settings-tab-model');
    s.getElementById('settings-tab-developer').click();f.api.controller.openPanel('model');assert(!model.hidden&&developer.hidden);
-   if(mode==='running'){assert(input.disabled);assert(f.runner.busy);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert(!s.getElementById('video-progress-wrap').hidden);s.getElementById('nav-chapters').click();s.getElementById('course-stop').click();for(let i=0;i<50&&f.runner.report?.status==='running';i++)await delay(10);assert(!f.runner.busy);assert.equal(f.runner.report.status,'stopped');assert(s.getElementById('video-progress-wrap').hidden);assert(!input.disabled);}
+   if(mode==='running'){assert(input.disabled);assert(f.runner.busy);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert(!s.getElementById('video-progress-wrap').hidden);s.getElementById('nav-chapters').click();s.getElementById('course-stop').click();assert(f.runner.busy);assert.equal(s.getElementById('course-stop').textContent,'确认停止（5s）');s.getElementById('course-stop').click();for(let i=0;i<50&&f.runner.report?.status==='running';i++)await delay(10);assert(!f.runner.busy);assert.equal(f.runner.report.status,'stopped');assert(s.getElementById('video-progress-wrap').hidden);assert(!input.disabled);}
    assert.equal(f.requests.length,0);assert.deepEqual(errors,[]);logs.push(`PASS ${label}`);
   }catch(error){failures.push(`${label}: ${error.stack}`);}finally{if(dom?.window.courseDemo?.runner.report?.status==='running'){dom.window.courseDemo.runner.stop();await delay(200);}dom?.window.courseDemo?.close();dom?.window.close();}
  }

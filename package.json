@@ -1,6 +1,6 @@
 {
   "name": "chaoxing-ai-assistant",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "学习通AI助手的本地 DOM 模拟验证",
   "scripts": {
