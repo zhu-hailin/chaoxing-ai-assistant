@@ -2,8 +2,8 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parent
-# 本地开发保持 v1.05；正式发布升级时每次只增加 0.01。
-VERSION = '1.05'
+# 正式发布版本；每次升级增加 0.01。
+VERSION = '1.06'
 core = (ROOT / 'sources/assistant-core.js').read_text(encoding='utf-8')
 template = (ROOT / 'sources/panel-template.html').read_text(encoding='utf-8')
 intro = (ROOT / 'sources/project-intro.html').read_text(encoding='utf-8')

@@ -2,7 +2,9 @@
 // @name         学习通 AI 助手
 // @namespace    local.chaoxing.quiz
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
-// @version      1.05
+// @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
+// @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
+// @version      1.06
 // @description  字体解密、后台播放优化、DeepSeek 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -77,7 +79,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.05', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.06', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -1446,8 +1448,8 @@
                 && /^(确定|确认|确认提交|提交|交卷)$/.test(clean(node.value || node.textContent)));
         return [...new Set(buttons)];
     }
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, completionMs:30000,
-        stallMs:90000, resumeMs:3000, maxResumes:8, slideMs:1000, documentMs:300000, submitMs:30000 });
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, submitMs:30000 });
     let courseRunner;
     function courseTimeoutError(message) {
         return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
@@ -1455,6 +1457,23 @@
     function courseRunActive(doc = document) {
         const owner = studyOwnerDocument(doc);
         return Boolean(owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id'));
+    }
+    function courseVideoEventTrace(task) {
+        const labels={pause:'暂停',playing:'开始播放',waiting:'等待播放数据',stalled:'媒体加载停滞',error:'媒体错误',ended:'播放结束'};
+        // 兼容此前保存的报告；只输出固定诊断字段，不复制资源地址或额外属性。
+        const events=Array.isArray(task.playbackEvents)?task.playbackEvents.filter(item=>item && Object.prototype.hasOwnProperty.call(labels,item.event) && Number.isFinite(item.at)).slice(-12):[];
+        if(!events.length)return '';
+        const hasStart=Number.isFinite(task.startedAt),start=hasStart?task.startedAt:events[0].at;
+        return `\n最近播放事件（${hasStart?'相对启动时间':'相对首条保留记录'}）：\n`+events.map(item=>{
+            const offset=Math.max(0,(item.at-start)/1000).toFixed(1);
+            const position=Number.isFinite(item.seconds)?Math.floor(item.seconds):'未知';
+            const visibility=item.visibility==='hidden'?'后台':item.visibility==='visible'?'可见':'可见性未知';
+            const focus=item.focused===false?'、窗口失焦':item.focused===true?'、窗口有焦点':'';
+            const ready=Number.isInteger(item.readyState)?item.readyState:'未知';
+            const network=Number.isInteger(item.networkState)?item.networkState:'未知';
+            const error=Number.isInteger(item.errorCode)?item.errorCode:'无';
+            return `+${offset} 秒 ${labels[item.event]}：视频 ${position} 秒，${visibility}${focus}，readyState=${ready}，networkState=${network}，错误码=${error}`;
+        }).join('\n');
     }
     function courseReportText(report) {
         if (!report) return '尚未开始自动学习';
@@ -1464,12 +1483,20 @@
         const skipped = report.chapters.filter(item => item.status === 'skipped');
         const timedOut=report.chapters.filter(item=>item.status==='timed-out');
         const issues = report.chapters.flatMap(chapter => chapter.issues.map(issue => `${chapter.number} ${chapter.title}${issue.number ? ` · 第 ${issue.number} 题` : ''}：${issue.reason}`));
+        const videoStates = report.chapters.flatMap(chapter => chapter.tasks.filter(task => task.type==='video' && ['stopped','timed-out'].includes(task.status) && task.playbackState).map(task => {
+            const state=task.playbackState, pause=task.lastPause || state;
+            const visibility=pause.visibility==='hidden'?'后台':pause.visibility==='visible'?'可见':'可见性未知';
+            const focus=pause.focused===false?'、窗口失焦':pause.focused===true?'、窗口有焦点':'';
+            const position=Number.isFinite(state.seconds)?Math.floor(state.seconds):'未知';
+            return `${chapter.number} ${chapter.title} · 视频 ${task.number || 1}：暂停 ${task.pauseCount || 0} 次，恢复 ${task.resumes || 0} 次；${task.lastPause?'最后暂停时':'检测时'}课程页${visibility}${focus}；检测时位置 ${position} 秒，readyState=${state.readyState ?? '未知'}，networkState=${state.networkState ?? '未知'}，错误码=${state.errorCode ?? '无'}。暂停来源尚未确认。`+courseVideoEventTrace(task);
+        }));
         return `${report.status === 'done' ? (skipped.length || taskFree.length || timedOut.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (completedQuizzes ? `\n${completedQuizzes} 个章节测验已完成，已跳过作答。` : '')
             + (taskFree.length ? `\n${taskFree.length} 个章节无任务点，已直接继续下一节。` : '')
             + (skipped.length ? `\n用户跳过 ${skipped.length} 个章节（不计为完成）：\n` + skipped.map(chapter => `${chapter.number} ${chapter.title}`).join('\n') : '')
             + (timedOut.length ? `\n超时跳过 ${timedOut.length} 个章节（不计为完成）：\n` + timedOut.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
-            + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '');
+            + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '')
+            + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
         const owner=studyOwnerDocument(doc),scope=owner&&courseScoreKey(owner);
@@ -1623,8 +1650,12 @@
                     };
                     const until = async (test, timeout, message) => {
                         const end = now()+timeout;
-                        do { guard(); const value = test(); if (value) return value; await wait(limits.pollMs); } while(now()<end);
-                        throw context.submitting ? new Error(message) : courseTimeoutError(message);
+                        // 后台计时器可晚于期限才唤醒；先复查当前状态，再决定超时。
+                        while(true) {
+                            guard(); const value=test(); if(value)return value;
+                            if(now()>=end)throw context.submitting ? new Error(message) : courseTimeoutError(message);
+                            await wait(Math.min(limits.pollMs,Math.max(0,end-now())));
+                        }
                     };
                     const race = async promise => {
                         const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw new Error(run.reason);})]); guard(); return value;
@@ -1636,45 +1667,75 @@
                         run.activeVideo=video;
                         if (run.skipLearned && courseTaskComplete(video) === true) {task.status='already';return;}
                         video.muted=run.muteVideo;
-                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.startedAt=now();
-                        let lastTime=video.currentTime,lastProgress=now(),lastPlay=-Infinity;
-                        const startPlayback=async()=>{
-                            guard();
-                            if(task.resumes>=limits.maxResumes)throw new Error('视频反复暂停，超过恢复次数');
-                            lastPlay=now();
-                            try {
-                                video.muted=run.muteVideo;
-                                const button=courseVideoStartButton(video);
-                                if(button) {
-                                    guard();button.click();
-                                    await until(()=>!video.paused || Number.isFinite(video.duration)&&video.duration>0,limits.loadMs,'播放入口已点击，但视频尚未加载');
-                                }
-                                if(video.paused)await race(Promise.race([Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();}),sleep(limits.loadMs).then(()=>{throw courseTimeoutError('视频启动超时');})]));
-                                guard();task.resumes++;
-                            } catch(error) {
-                                if(context.skipped || run.cancelled)throw error;
-                                throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
-                            }
+                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();
+                        let lastTime=video.currentTime,lastProgress=now(),lastPlay=-Infinity,playbackCheckpoint=Number(video.currentTime),wakeMedia=null;
+                        // 被动记录公开媒体事件；不修改播放器回调、页面可见性或平台上报。
+                        const snapshot=event=>({event,at:now(),seconds:Number(video.currentTime),duration:Number(video.duration),paused:video.paused,
+                            readyState:video.readyState,networkState:video.networkState,visibility:owner.visibilityState || 'unknown',focused:typeof owner.hasFocus==='function'?owner.hasFocus():null,errorCode:video.error?.code ?? null});
+                        const onMediaEvent=event=>{
+                            if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
+                            const state=snapshot(event.type);task.playbackState=state;
+                            if(event.type==='pause'){task.pauseCount++;task.lastPause=state;}
+                            task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
+                            wakeMedia?.();
                         };
-                        if(video.paused)await startPlayback();
-                        emit('已启动视频，正在读取时长…','course-video');
-                        await until(()=>Number.isFinite(video.duration)&&video.duration>0,limits.loadMs,'视频时长无法读取或仍在加载');
-                        task.durationSeconds=Number(video.duration);lastProgress=now();
-                        while(!video.ended) {
-                            guard();
-                            if (!video.isConnected) throw new Error('视频节点已替换，已停止');
-                            if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
-                            video.muted=run.muteVideo;
-                            if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                            if (video.seeking) throw new Error('检测到视频进度跳转，无法确认完整播放');
-                            if(video.paused && now()-lastPlay>=limits.resumeMs)await startPlayback();
-                            if (video.currentTime>lastTime+0.05) {lastProgress=now();lastTime=video.currentTime;}
-                            if (now()-lastProgress>=limits.stallMs) throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
-                            const remaining=Math.max(0,video.duration-video.currentTime);
-                            emit(`第 ${run.chapterIndex+1}/${queue.length} 章：视频 ${Math.floor(video.currentTime)}/${Math.floor(video.duration)} 秒，剩余约 ${Math.ceil(remaining)} 秒`,'course-video');
-                            await wait(limits.pollMs);
+                        // 媒体事件唤醒当前轮询；避免暂停后只能等后台定时器恢复调度。
+                        const waitForMedia=async()=>{
+                            let wake;const mediaEvent=new Promise(resolve=>{wake=resolve;wakeMedia=resolve;});
+                            try {await race(Promise.race([wait(limits.pollMs),mediaEvent]));}
+                            finally {if(wakeMedia===wake)wakeMedia=null;}
+                        };
+                        const eventTypes=['pause','playing','waiting','stalled','error','ended'];
+                        for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
+                        try {
+                            const startPlayback=async(recovery=false)=>{
+                                guard();
+                                if(recovery && task.unstableResumes>=limits.maxResumes)throw new Error('视频连续恢复后仍反复暂停，请检查播放器或页面提示');
+                                lastPlay=now();
+                                try {
+                                    video.muted=run.muteVideo;
+                                    const button=courseVideoStartButton(video);
+                                    if(button) {
+                                        guard();button.click();
+                                        await until(()=>!video.paused || Number.isFinite(video.duration)&&video.duration>0,limits.videoLoadMs,'播放入口已点击，但视频尚未加载');
+                                    }
+                                    if(video.paused)await race(Promise.race([Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();}),sleep(limits.videoLoadMs).then(()=>{throw courseTimeoutError('视频启动超时');})]));
+                                    guard();
+                                    if(recovery){task.resumes++;task.unstableResumes++;}
+                                    // 恢复保留真实进度检查点；短段播放的累计进展也能证明恢复有效。
+                                    if(!recovery)playbackCheckpoint=Number(video.currentTime);
+                                } catch(error) {
+                                    if(context.skipped || run.cancelled)throw error;
+                                    throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
+                                }
+                            };
+                            if(video.paused)await startPlayback();
+                            emit('已启动视频，正在读取时长…','course-video');
+                            await until(()=>Number.isFinite(video.duration)&&video.duration>0,limits.videoLoadMs,'视频时长无法读取或仍在加载');
+                            task.durationSeconds=Number(video.duration);lastProgress=now();
+                            while(!video.ended) {
+                                guard();
+                                if (!video.isConnected) throw new Error('视频节点已替换，已停止');
+                                if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
+                                video.muted=run.muteVideo;
+                                if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
+                                if (video.seeking) throw new Error('检测到视频进度跳转，无法确认完整播放');
+                                const observedTime=Number(video.currentTime);
+                                if(observedTime>lastTime+0.05){lastProgress=now();lastTime=observedTime;}
+                                // 首次启动不算恢复；累计真实进度增加 10 秒后重置连续恢复预算。
+                                // play() resolve 或后台经过了足够墙钟时间，都不能证明恢复有效。
+                                if(observedTime-playbackCheckpoint>=limits.resumeProgressSeconds){task.unstableResumes=0;playbackCheckpoint=observedTime;}
+                                if(video.paused && now()-lastPlay>=limits.resumeMs)await startPlayback(true);
+                                if (now()-lastProgress>=limits.stallMs) throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
+                                const remaining=Math.max(0,video.duration-video.currentTime);
+                                emit(`第 ${run.chapterIndex+1}/${queue.length} 章：视频 ${Math.floor(video.currentTime)}/${Math.floor(video.duration)} 秒，剩余约 ${Math.ceil(remaining)} 秒`,'course-video');
+                                await waitForMedia();
+                            }
+                            await taskDone(video);task.status='done';task.endedAt=now();report.videos++;
+                        } finally {
+                            task.playbackState=snapshot('snapshot');
+                            for(const type of eventTypes)video.removeEventListener(type,onMediaEvent);
                         }
-                        await taskDone(video);task.status='done';task.endedAt=now();report.videos++;
                     };
                     const readDocument = async (reader, task) => {
                         if(run.skipLearned && courseTaskComplete(reader.node)===true){task.status='already';return;}
@@ -2031,7 +2092,6 @@
             muteVideo.disabled=running||ctl.state.busy;
             s.getElementById('course-run-note').textContent=owner?'自动播放视频、阅读资料、完成章节测验；遇到人脸识别或无法可靠作答时停止。':'仅课程学习页面支持；独立作业页无法刷课。';
             s.getElementById('course-report').textContent=courseReportText(report);
-            if(report?.status==='done'||report?.status==='stopped') s.getElementById('course-report').parentElement.open=true;
         };
         panelView.renderCourseRunControls=render;
         if(owner===doc) {
@@ -2461,6 +2521,18 @@
         if (view === 'catalog') refreshCourseSidebar();
         if (focus) shadow.getElementById(`chapter-tab-${view}`).focus();
     }
+    function switchSettingsView(view, { focus = false } = {}) {
+        if (!panelView || !['model','developer'].includes(view)) return;
+        const { shadow } = panelView;
+        for (const button of shadow.querySelectorAll('[data-settings-view]')) {
+            const selected = button.dataset.settingsView === view;
+            button.setAttribute('aria-selected',String(selected));
+            button.tabIndex = selected ? 0 : -1;
+            shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
+        }
+        shadow.getElementById('view-model').dataset.activeSettingsView = view;
+        if (focus) shadow.getElementById(`settings-tab-${view}`).focus();
+    }
     function initPanelNavigation() {
         const buttons = [...panelView.shadow.querySelectorAll('[data-panel-view]')];
         buttons.forEach((button, index) => {
@@ -2490,6 +2562,21 @@
                 switchChapterView(chapterButtons[next].dataset.chapterView,{focus:true});
             });
         });
+        const settingsButtons = [...panelView.shadow.querySelectorAll('[data-settings-view]')];
+        settingsButtons.forEach((button,index) => {
+            button.onclick = () => switchSettingsView(button.dataset.settingsView);
+            button.addEventListener('keydown',event => {
+                let next;
+                if(event.key==='ArrowRight') next=(index+1)%settingsButtons.length;
+                else if(event.key==='ArrowLeft') next=(index+settingsButtons.length-1)%settingsButtons.length;
+                else if(event.key==='Home') next=0;
+                else if(event.key==='End') next=settingsButtons.length-1;
+                else return;
+                event.preventDefault();event.stopPropagation();
+                switchSettingsView(settingsButtons[next].dataset.settingsView,{focus:true});
+            });
+        });
+        switchSettingsView('model');
         switchChapterView('run');
         switchPanelView('questions');
     }
@@ -2516,8 +2603,8 @@
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
           #view-chapters{overflow:hidden}#course-nav{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}.catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}.catalog-heading h2{font-size:17px;margin:0;line-height:1.4}#catalog-refresh{font-size:12px;padding:5px 9px}#catalog-search{flex:none;width:100%;min-width:0;font-size:13px;padding:8px 10px}#catalog-status{flex:none;font-size:12px;color:var(--muted);margin:10px 0}#catalog-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}#catalog-list,.catalog-children{list-style:none;margin:0;padding:0}.catalog-children{margin-left:10px;padding-left:9px;border-left:1px solid #e0e7f0}.catalog-row{display:flex;align-items:flex-start;gap:4px;border-radius:6px}.catalog-row.is-active{background:#edf3fc}.catalog-row.is-group{margin-top:8px}.catalog-link{min-width:0;flex:1;text-align:left;background:transparent;color:#263951;border-radius:6px;padding:8px 5px;font-size:13px;line-height:1.6}.catalog-link:hover{background:#f3f6fb}.catalog-link[aria-current=page] .catalog-title{color:var(--accent);font-weight:700}.is-group .catalog-title{font-weight:700}.catalog-title{display:block;overflow-wrap:anywhere}.catalog-meta{display:flex;gap:4px 9px;flex-wrap:wrap;margin-top:3px;font-size:11px;color:#758197}.catalog-state.is-complete{color:#268459}.catalog-score{color:#aa5725}.catalog-fold{flex:none;width:18px;height:25px;padding:0;margin-top:6px;background:transparent;color:#71809a}.catalog-fold-space{width:18px;flex:none}.catalog-empty{padding:14px 2px;font-size:13px;color:var(--muted)}
-          .chapter-switch{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:8px;background:#f5f7fb;min-width:0}.chapter-switch button{background:transparent;color:var(--muted);font-size:13px;padding:5px 12px;white-space:nowrap}.chapter-switch button[aria-selected=true]{background:#fff;color:var(--accent);box-shadow:0 1px 3px #24395714;font-weight:600}.chapter-page{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain}#chapter-catalog-page{display:flex;flex-direction:column;overflow:hidden}#chapter-run-page{display:flex;flex-direction:column}#chapter-run-page .course-run-controls{flex:1;min-height:0;display:flex;flex-direction:column;margin:0}#chapter-run-page .course-run-actions,#chapter-run-page .check-label,#chapter-run-page .note{flex:none}#chapter-run-page details{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}#chapter-run-page #course-report{max-height:none;overflow:visible}.chapter-switch button:focus-visible{outline-offset:-2px}
-          .course-run-controls{flex:none;border:1px solid var(--line);background:#f7f9fc;border-radius:7px;padding:9px 10px;margin-top:10px;font-size:12px}.course-run-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px}.course-run-actions button{font-size:12px;padding:5px 9px}.course-run-options{display:flex;flex-wrap:wrap;gap:6px 14px;flex:none}.course-run-controls p{margin:5px 0}.course-run-controls summary{cursor:pointer;color:var(--accent)}#course-report{max-height:110px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px}
+          .chapter-switch{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:8px;background:#f5f7fb;min-width:0}.chapter-switch button{background:transparent;color:var(--muted);font-size:13px;padding:5px 12px;white-space:nowrap}.chapter-switch button[aria-selected=true]{background:#fff;color:var(--accent);box-shadow:0 1px 3px #24395714;font-weight:600}.chapter-page{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain}#chapter-catalog-page{display:flex;flex-direction:column;overflow:hidden}#chapter-run-page{display:flex;flex-direction:column}#chapter-run-page .course-run-controls{flex:none;min-height:0;display:flex;flex-direction:column;margin:0}#chapter-run-page .course-run-actions,#chapter-run-page .check-label,#chapter-run-page .note{flex:none}.chapter-switch button:focus-visible{outline-offset:-2px}
+          .course-run-controls{flex:none;border:1px solid var(--line);background:#f7f9fc;border-radius:7px;padding:9px 10px;margin-top:10px;font-size:12px}.course-run-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px}.course-run-actions button{font-size:12px;padding:5px 9px}.course-run-options{display:flex;flex-wrap:wrap;gap:6px 14px;flex:none}.course-run-controls p{margin:5px 0}#view-model{display:flex;flex-direction:column;overflow:hidden}.settings-switch{flex:none;align-self:flex-start;margin-bottom:16px}.settings-page{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}#settings-developer-page{display:flex;flex-direction:column}#course-report{flex:1;min-height:0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;border:1px solid var(--line);border-radius:7px;padding:12px}#course-report:focus-visible{outline:2px solid #729adc;outline-offset:-2px}
           .panel-status{flex:none;display:flex;align-items:flex-start;gap:8px;min-height:34px;max-height:88px;overflow:auto;padding:8px 14px 8px 68px;border-top:1px solid var(--line);background:#fbfcfe;font-size:12px;color:#617187}#status{flex:1;min-width:0;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}#status-spinner{flex:none;width:12px;height:12px;margin-top:3px;border:2px solid #d9e4f6;border-top-color:var(--accent);border-radius:50%;animation:panel-spin .8s linear infinite}@keyframes panel-spin{to{transform:rotate(360deg)}}#panel[data-phase=error] #status{color:#a44932}
           #about{position:absolute;inset:48px 0 34px 54px;z-index:2;background:#fff;padding:18px;overflow:auto;overscroll-behavior:contain;font-size:13px;overflow-wrap:anywhere}#about>strong{font-size:15px}#about p{margin:12px 0}.free{color:#23734a}
           @media(max-width:480px){.head{padding-left:12px}.head strong{font-size:12px}.head-actions button{padding:5px 7px}.panel-body{grid-template-columns:46px minmax(0,1fr)}.nav-button{width:32px;height:34px}.nav-button[aria-selected=true]::before{left:-7px}.view-page{padding:12px}.view-heading{margin-bottom:14px}.view-heading h2,.catalog-heading h2{font-size:15px}.view-tag{display:none}.panel-status{padding-left:58px}#about{left:46px}.actions{gap:6px}.actions button{font-size:12px;padding:7px 8px}.question-heading{font-size:11px}#output{padding:10px}.row>label{min-width:55px}}
@@ -2527,7 +2614,7 @@
           @media(prefers-reduced-motion:reduce){#status-spinner{animation:none}}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.05</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.06</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -2536,17 +2623,28 @@
             <nav class="nav-rail" role="tablist" aria-label="助手导航" aria-orientation="vertical">
               <button type="button" class="nav-button" id="nav-questions" data-panel-view="questions" role="tab" aria-label="题目" title="题目" aria-controls="view-questions" aria-selected="true" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6m-6 4h6m-6 4h4"/></svg></button>
               <button type="button" class="nav-button" id="nav-chapters" data-panel-view="chapters" role="tab" aria-label="章节" title="章节" aria-controls="view-chapters" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Zm0 0v15M6 8h3m-3 4h3m6-4h3m-3 4h3"/></svg></button>
-              <button type="button" class="nav-button nav-model-bottom" id="nav-model" data-panel-view="model" role="tab" aria-label="模型" title="模型" aria-controls="view-model" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></svg></button>
+              <button type="button" class="nav-button nav-model-bottom" id="nav-model" data-panel-view="model" role="tab" aria-label="设置" title="设置" aria-controls="view-model" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m9.5 3-.5 2a8 8 0 0 0-2 1.2L5 5.7 3 9.2l1.5 1.4a8 8 0 0 0 0 2.8L3 14.8l2 3.5 2-.5a8 8 0 0 0 2 1.2l.5 2h5l.5-2a8 8 0 0 0 2-1.2l2 .5 2-3.5-1.5-1.4a8 8 0 0 0 0-2.8L21 9.2l-2-3.5-2 .5A8 8 0 0 0 15 5l-.5-2Z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </nav>
             <main class="assistant-main">
               <section id="view-model" class="view-page" role="tabpanel" aria-labelledby="nav-model" hidden>
-                <div class="view-heading"><h2>模型设置</h2><span class="view-tag">DeepSeek</span></div>
+                <div class="view-heading"><h2>设置</h2></div>
+                <div class="chapter-switch settings-switch" role="tablist" aria-label="设置页面" aria-orientation="horizontal">
+                  <button type="button" id="settings-tab-model" data-settings-view="model" role="tab" aria-selected="true" aria-controls="settings-model-page" tabindex="0">模型设置</button>
+                  <button type="button" id="settings-tab-developer" data-settings-view="developer" role="tab" aria-selected="false" aria-controls="settings-developer-page" tabindex="-1">开发者模式</button>
+                </div>
+                <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model">
                 <div class="settings-block"><label class="field-caption" for="ds-key">API Key</label>
                   <div class="row"><input id="ds-key" type="password" placeholder="DeepSeek API Key" autocomplete="off" /><button type="button" id="save-ds">保存</button><button type="button" id="clear-ds" class="secondary">清除</button></div>
                 </div>
                 <div class="settings-block"><div class="row"><label for="model">模型</label><select id="model"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select><button type="button" id="models" class="secondary">获取模型列表</button></div></div>
                 <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="thinking" /> 深度思考</label><label for="effort" class="setting-label">强度</label><select id="effort"><option value="low">Low</option><option value="high">High</option><option value="max">Max</option></select></div></div>
                 <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="search" /> 网络检索</label></div></div>
+                </section>
+                <section id="settings-developer-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-developer" hidden>
+                  <div class="course-run-actions"><button type="button" id="course-copy-report" class="secondary">复制报告</button></div>
+                  <p class="note">运行报告用于排查自动刷课问题。</p>
+                  <div id="course-report" role="region" aria-label="详细运行报告" tabindex="0"></div>
+                </section>
               </section>
               <section id="view-questions" class="view-page" role="tabpanel" aria-labelledby="nav-questions">
                 <div class="view-heading"><h2>题目与答案</h2></div>
@@ -2558,13 +2656,13 @@
                 <aside id="course-nav" aria-label="课程章节" hidden>
                   <div class="catalog-heading">
                     <div class="chapter-switch" role="tablist" aria-label="章节页面" aria-orientation="horizontal">
-                      <button type="button" id="chapter-tab-run" data-chapter-view="run" role="tab" aria-selected="true" aria-controls="chapter-run-page" tabindex="0">学习控制</button>
+                      <button type="button" id="chapter-tab-run" data-chapter-view="run" role="tab" aria-selected="true" aria-controls="chapter-run-page" tabindex="0">自动刷课</button>
                       <button type="button" id="chapter-tab-catalog" data-chapter-view="catalog" role="tab" aria-selected="false" aria-controls="chapter-catalog-page" tabindex="-1">章节目录</button>
                     </div>
                     <button type="button" id="catalog-refresh" class="secondary" hidden>刷新</button>
                   </div>
                   <section id="chapter-run-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-run">
-                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button><button type="button" id="course-copy-report" class="secondary">复制报告</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label></div><p id="course-run-note" class="note"></p><details open><summary>运行报告</summary><div id="course-report" role="status" aria-live="polite"></div></details></div>
+                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label></div><p id="course-run-note" class="note"></p></div>
                   </section>
                   <section id="chapter-catalog-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-catalog" hidden>
                     <input id="catalog-search" type="search" placeholder="搜索章节" aria-label="搜索课程目录" />
@@ -2605,6 +2703,7 @@
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
         el('model-setup-open').onclick = () => {
+            switchSettingsView('model');
             switchPanelView('model');
             el(readModelConfiguration().key ? 'model' : 'ds-key').focus();
         };
@@ -2933,7 +3032,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.05',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.06',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -3096,6 +3195,7 @@
                 movePanelToStudyPage();
                 refreshCourseSidebar();
                 panelView.shadow.getElementById('panel').hidden = false;
+                if (view === 'model') switchSettingsView('model');
                 if (typeof view === 'string') switchPanelView(view);
                 positionAssistantPanel();
                 settingsButton()?.setAttribute('aria-expanded', 'true');

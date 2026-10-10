@@ -11,7 +11,7 @@ const logs=[],failures=[];
    dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=no-task',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
    const w=dom.window;for(let i=0;i<100&&!w.courseDemo;i++)await delay(10);
    const f=w.courseDemo,s=w.document.getElementById('cx-ai-study-root').shadowRoot,run=s.getElementById('chapter-run-page'),catalog=s.getElementById('chapter-catalog-page');
-   assert(!run.hidden&&catalog.hidden);assert(run.contains(s.getElementById('course-start')));assert(run.contains(s.getElementById('course-report')));
+   assert(!run.hidden&&catalog.hidden);assert(run.contains(s.getElementById('course-start')));assert(!run.contains(s.getElementById('course-report')));assert(s.getElementById('settings-developer-page').contains(s.getElementById('course-report')));
    for(const id of ['catalog-search','catalog-status','catalog-list'])assert(catalog.contains(s.getElementById(id)));
    assert(s.getElementById('catalog-refresh').hidden);
    if(mode==='running'){
@@ -29,6 +29,25 @@ const logs=[],failures=[];
    s.getElementById('chapter-tab-run').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert(!catalog.hidden);assert.equal(search.value,'后续');
    s.getElementById('nav-questions').click();s.getElementById('nav-chapters').click();assert(!catalog.hidden);assert.equal(s.getElementById('course-nav').dataset.activeView,'catalog');
    assert.deepEqual(errors,[]);logs.push(`PASS ${label}`);
+  }catch(error){failures.push(`${label}: ${error.stack}`);}finally{if(dom?.window.courseDemo?.runner.report?.status==='running'){dom.window.courseDemo.runner.stop();await delay(200);}dom?.window.courseDemo?.close();dom?.window.close();}
+ }
+ for(const mode of ['idle','running']){
+  let dom;const label=mode==='idle'?'设置双页：齿轮入口、键盘切换、配置入口与报告复制':'运行中浏览设置与开发者报告：保留视频进度且不重复启动';
+  try{
+   const errors=[],console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
+   dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=normal',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
+   const w=dom.window;for(let i=0;i<100&&!w.courseDemo;i++)await delay(10);
+   const f=w.courseDemo,s=w.document.getElementById('cx-ai-study-root').shadowRoot,model=s.getElementById('settings-model-page'),developer=s.getElementById('settings-developer-page'),nav=s.getElementById('nav-model');
+   assert.equal(nav.getAttribute('aria-label'),'设置');assert(nav.querySelector('svg circle'));assert.equal(s.getElementById('chapter-tab-run').textContent,'自动刷课');assert(model.contains(s.getElementById('ds-key')));assert(developer.contains(s.getElementById('course-copy-report')));assert(!s.getElementById('chapter-run-page').contains(s.getElementById('course-copy-report')));assert(developer.hidden&&!model.hidden);
+   if(mode==='running'){s.getElementById('course-start').click();for(let i=0;i<80&&s.getElementById('video-progress-wrap').hidden;i++)await delay(10);assert(f.runner.busy);}
+   nav.click();assert(!s.getElementById('view-model').hidden);assert(!model.hidden&&developer.hidden);const input=s.getElementById('ds-key'),value=input.value;
+   s.getElementById('settings-tab-model').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert(model.hidden&&!developer.hidden);assert.equal(s.activeElement.id,'settings-tab-developer');assert.equal(s.getElementById('settings-tab-developer').getAttribute('aria-selected'),'true');
+   let copied;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{copied=text}},configurable:true});s.getElementById('course-copy-report').click();await delay(5);assert.equal(copied,f.api.courseReportText(f.runner.report));assert(!copied.includes('mock-preview-key'));
+   s.getElementById('nav-questions').click();nav.click();assert(!developer.hidden);s.getElementById('close').click();f.api.controller.openPanel();assert(!developer.hidden);
+   s.getElementById('settings-tab-developer').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(!model.hidden&&developer.hidden);assert.equal(input.value,value);assert.equal(s.activeElement.id,'settings-tab-model');
+   s.getElementById('settings-tab-developer').click();f.api.controller.openPanel('model');assert(!model.hidden&&developer.hidden);
+   if(mode==='running'){assert(input.disabled);assert(f.runner.busy);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert(!s.getElementById('video-progress-wrap').hidden);s.getElementById('nav-chapters').click();s.getElementById('course-stop').click();for(let i=0;i<50&&f.runner.report?.status==='running';i++)await delay(10);assert(!f.runner.busy);assert.equal(f.runner.report.status,'stopped');assert(s.getElementById('video-progress-wrap').hidden);assert(!input.disabled);}
+   assert.equal(f.requests.length,0);assert.deepEqual(errors,[]);logs.push(`PASS ${label}`);
   }catch(error){failures.push(`${label}: ${error.stack}`);}finally{if(dom?.window.courseDemo?.runner.report?.status==='running'){dom.window.courseDemo.runner.stop();await delay(200);}dom?.window.courseDemo?.close();dom?.window.close();}
  }
  for(const mode of ['progress','resize']){
@@ -75,7 +94,7 @@ const logs=[],failures=[];
    if(scene==='survey'){await delay(100);assert(!s.getElementById('course-skip').disabled);s.getElementById('course-skip').click();}
    for(let i=0;i<200;i++){await delay(100);if(!f.runner.busy)break;}
    assert(!f.runner.busy,'预览流程超时');const report=f.runner.report;
-   assert.equal(report.status,['normal','survey','no-task'].includes(scene)?'done':'stopped');assert(s.getElementById('course-report').parentElement.open,'结束后报告未展开');
+   assert.equal(report.status,['normal','survey','no-task'].includes(scene)?'done':'stopped');assert(s.getElementById('settings-developer-page').hidden,'结束后不应自动切换开发者模式');assert(s.getElementById('view-model').hidden);
    if(scene==='normal'){assert.equal(report.videos,3);assert.equal(report.quizzes,1);assert.equal(report.documents,1);assert.equal(report.chapters.length,3);assert(s.getElementById('course-report').textContent.includes('全部流程完成'));}
    if(scene==='face'){assert.match(report.reason,/人脸识别/);assert(f.doc.querySelector('.chapterVideoFaceMaskDiv'));}
    if(scene==='unanswered'){assert(s.getElementById('course-report').textContent.includes('第 1 题'));assert.equal(f.submits,0);}

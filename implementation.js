@@ -390,6 +390,18 @@
         if (view === 'catalog') refreshCourseSidebar();
         if (focus) shadow.getElementById(`chapter-tab-${view}`).focus();
     }
+    function switchSettingsView(view, { focus = false } = {}) {
+        if (!panelView || !['model','developer'].includes(view)) return;
+        const { shadow } = panelView;
+        for (const button of shadow.querySelectorAll('[data-settings-view]')) {
+            const selected = button.dataset.settingsView === view;
+            button.setAttribute('aria-selected',String(selected));
+            button.tabIndex = selected ? 0 : -1;
+            shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
+        }
+        shadow.getElementById('view-model').dataset.activeSettingsView = view;
+        if (focus) shadow.getElementById(`settings-tab-${view}`).focus();
+    }
     function initPanelNavigation() {
         const buttons = [...panelView.shadow.querySelectorAll('[data-panel-view]')];
         buttons.forEach((button, index) => {
@@ -419,6 +431,21 @@
                 switchChapterView(chapterButtons[next].dataset.chapterView,{focus:true});
             });
         });
+        const settingsButtons = [...panelView.shadow.querySelectorAll('[data-settings-view]')];
+        settingsButtons.forEach((button,index) => {
+            button.onclick = () => switchSettingsView(button.dataset.settingsView);
+            button.addEventListener('keydown',event => {
+                let next;
+                if(event.key==='ArrowRight') next=(index+1)%settingsButtons.length;
+                else if(event.key==='ArrowLeft') next=(index+settingsButtons.length-1)%settingsButtons.length;
+                else if(event.key==='Home') next=0;
+                else if(event.key==='End') next=settingsButtons.length-1;
+                else return;
+                event.preventDefault();event.stopPropagation();
+                switchSettingsView(settingsButtons[next].dataset.settingsView,{focus:true});
+            });
+        });
+        switchSettingsView('model');
         switchChapterView('run');
         switchPanelView('questions');
     }
@@ -448,6 +475,7 @@
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
         el('model-setup-open').onclick = () => {
+            switchSettingsView('model');
             switchPanelView('model');
             el(readModelConfiguration().key ? 'model' : 'ds-key').focus();
         };
@@ -776,7 +804,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.05',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.06',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -939,6 +967,7 @@
                 movePanelToStudyPage();
                 refreshCourseSidebar();
                 panelView.shadow.getElementById('panel').hidden = false;
+                if (view === 'model') switchSettingsView('model');
                 if (typeof view === 'string') switchPanelView(view);
                 positionAssistantPanel();
                 settingsButton()?.setAttribute('aria-expanded', 'true');

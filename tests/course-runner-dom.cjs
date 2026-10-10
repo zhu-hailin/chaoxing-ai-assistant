@@ -7,7 +7,7 @@ const code=source.replace(entry,'globalThis.courseAPI={initCourseDocumentBridge,
 const logs=[],failures=[];
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function test(name,run){try{await run();logs.push(`PASS ${name}`);}catch(error){failures.push(`${name}: ${error.stack}`);}}
-const LIMITS={pollMs:3,settleMs:1,loadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,slideMs:1,submitMs:80};
+const LIMITS={pollMs:3,settleMs:1,loadMs:150,videoLoadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,slideMs:1,submitMs:80};
 function fixture(chapters,opts={}){
  const runtimeErrors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',error=>runtimeErrors.push(error.message));
  const dom=new JSDOM('<div id="mainid"><input id="curChapterId"><div id="prev_tab"></div><iframe id="iframe"></iframe></div><div id="content1"><div id="coursetree"><ul></ul></div></div>',{url:opts.url||'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
@@ -60,11 +60,13 @@ function fixture(chapters,opts={}){
      loaded=true;
      if(task.blocked)return Promise.reject(Object.assign(Error('blocked'),{name:'NotAllowedError'}));
      if(task.faceOnPlay){const face=doc.createElement('div');face.className='chapterVideoFaceMaskDiv';doc.body.append(face);}
-     paused=false;if(playing)clearInterval(playing);
+     paused=false;video.dispatchEvent(new doc.defaultView.Event('playing'));if(playing)clearInterval(playing);
+     if(task.pauseOnEveryPlay){paused=true;video.dispatchEvent(new doc.defaultView.Event('pause'));return Promise.resolve();}
      playing=setInterval(()=>{
       if(paused||task.stall)return;
       time+=1;video.dispatchEvent(new doc.defaultView.Event('timeupdate'));
-      if(task.pauseAt===time&&!video.didPause){paused=true;video.didPause=true;video.dispatchEvent(new doc.defaultView.Event('pause'));}
+      if((task.pauseAt===time&&!video.didPause)||(task.pauseTimes||[]).includes(time)){paused=true;video.didPause=true;video.dispatchEvent(new doc.defaultView.Event('pause'));}
+      if(task.faceAtPause===time){const face=doc.createElement('div');face.className='chapterVideoFaceMaskDiv';doc.body.append(face);}
       if(time>=video.duration){ended=true;paused=true;clearInterval(playing);finish(ci,ti,i,container);video.dispatchEvent(new doc.defaultView.Event('ended'));}
      },10);timers.add(playing);return Promise.resolve();
     };
@@ -137,7 +139,7 @@ function fixture(chapters,opts={}){
   };d.querySelector('#coursetree ul').append(li);
  });
  renderChapter(0);w.eval(opts.noAutoResume?code.replace('if(owner===doc) courseRunner?.resumeIfNeeded();',''):code);w.courseAPI.initStudyAssistant();
- const runner=w.courseAPI.createCourseRunner(d,w.courseAPI.controller,{limits:{...LIMITS,...opts.limits}});w.courseAPI.replaceRunner(runner);
+ const runner=w.courseAPI.createCourseRunner(d,w.courseAPI.controller,{limits:{...LIMITS,...opts.limits},sleep:opts.sleep});w.courseAPI.replaceRunner(runner);
  const startWithDefaults=runner.start;runner.start=(options={})=>startWithDefaults({continueOnTimeout:false,...options});
  return {w,d,storage,runner,startWithDefaults,requests,events,videos,api:w.courseAPI,get doc(){return lastDoc},get submits(){return submitClicks},close(){runner.stop();timers.forEach(clearTimeout);dom.window.close();assert.deepEqual(runtimeErrors,[],'页面或已销毁 iframe 存在未处理异常');}};
 }
@@ -214,6 +216,56 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
  await test('Swiper 幻灯片通过原分页按钮到末页，收到任务完成才继续',()=>runWith([{tabs:[ppt({swiper:true}),video()]}],{},(f,r)=>{assert.equal(r.status,'done');assert.equal(r.documents,1);assert.equal(r.videos,1);assert(f.events.includes('slide:3'));assert(f.events.indexOf('slide:3')<f.events.indexOf('tab:0:1'));}));
  await test('末页未获平台确认则停止，不假报完成',()=>runWith([{tabs:[ppt()]}],{noAck:true},(f,r)=>{assert.equal(r.status,'stopped');assert.match(r.reason,/未确认任务完成/);assert.equal(r.documents,0);}));
  await test('视频播放起点与暂停恢复，不改 currentTime 或倍速',()=>runWith([{tabs:[video({start:1,duration:4,pauseAt:2})]}],{},(f,r)=>{assert.equal(r.status,'done');assert(f.events.filter(x=>x.startsWith('play:')).length===2);assert.equal(r.chapters[0].tasks[0].startSeconds,1);assert.equal(f.videos[0].playbackRate,1);}));
+ await test('零散暂停超过总恢复上限：有实际播放进展时重置连续计数，首次启动不计恢复',()=>runWith([{tabs:[video({duration:84,pauseTimes:[12,24,36,48,60,72]})]}],{},(f,r)=>{
+  assert.equal(r.status,'done');assert.equal(r.videos,1);const task=r.chapters[0].tasks[0];assert.equal(task.resumes,6);assert.equal(task.pauseCount,6);assert.equal(task.unstableResumes,0);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,7);assert.equal(f.videos.at(-1).playbackRate,1);
+ }));
+ await test('后台短段播放已有累计进度：多次恢复均少于10秒仍能完整播放',async()=>{
+  const f=fixture([{tabs:[video({duration:64,pauseTimes:[8,16,24,28,36,42,50,58]})]}]);
+  try{Object.defineProperty(f.d,'visibilityState',{get:()=> 'hidden',configurable:true});Object.defineProperty(f.d,'hasFocus',{value:()=>false,configurable:true});for(const v of f.videos){Object.defineProperty(v,'readyState',{get:()=>4,configurable:true});Object.defineProperty(v,'networkState',{get:()=>1,configurable:true});}
+   const r=await f.runner.start(),task=r.chapters[0].tasks[0];assert.equal(r.status,'done');assert.equal(r.videos,1);assert.equal(task.resumes,8);assert.equal(task.pauseCount,8);assert.equal(task.unstableResumes,0);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,9);assert(task.playbackEvents.filter(e=>e.event==='pause').every(e=>e.visibility==='hidden'&&e.focused===false&&e.readyState===4&&e.networkState===1));assert.equal(f.videos.at(-1).currentTime,64);assert.equal(f.videos.at(-1).playbackRate,1);
+  }finally{f.close();}
+ });
+ await test('累计进度清零之后再次没有进度：恢复上限重新生效并停止在当前章节',async()=>{
+  const page=video({duration:40,pauseTimes:[6,12,14]}),f=fixture([{tabs:[page]},{tabs:[video()]}]);
+  try{for(const v of f.videos){const original=v.play;v.play=()=>{if(v.currentTime>=14)page.tasks[0].pauseOnEveryPlay=true;return original();};}
+   const r=await f.runner.start({continueOnTimeout:true}),task=r.chapters[0].tasks[0];assert.equal(r.status,'stopped');assert.match(r.reason,/连续.*暂停/);assert.equal(task.unstableResumes,4);assert.equal(task.resumes,5);assert.equal(f.videos.at(-1).currentTime,14);assert.equal(r.videos,0);assert(!f.events.includes('chapter:1'));assert.equal(f.events.filter(e=>e.startsWith('play:')).length,6);
+  }finally{f.close();}
+ });
+ await test('仅短暂推进不能清空恢复预算：连续暂停仍有界停止',()=>runWith([{tabs:[video({duration:20,pauseTimes:[1,2,3,4,5,6]})]},{tabs:[video()]}],{},(f,r)=>{
+  assert.equal(r.status,'stopped');assert.match(r.reason,/连续.*暂停/);const task=r.chapters[0].tasks[0];assert.equal(task.resumes,4);assert.equal(task.unstableResumes,4);assert.equal(task.pauseCount,5);assert.equal(r.videos,0);assert(!f.events.includes('chapter:1'));assert.equal(f.events.filter(e=>e.startsWith('play:')).length,5);
+ }));
+ await test('play成功但没有进度仍立即暂停：保留恢复上限，不被超时继续开关绕过',async()=>{
+  const f=fixture([{tabs:[video({pauseOnEveryPlay:true})]},{tabs:[video()]}]);try{const r=await f.runner.start({continueOnTimeout:true});assert.equal(r.status,'stopped');assert.match(r.reason,/连续.*暂停/);assert.equal(r.chapters[0].tasks[0].resumes,4);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,5);assert(!f.events.includes('chapter:1'));}finally{f.close();}
+ });
+ await test('暂停时的前后台与缓冲状态记录可复制，停止后监听已移除且不记录网址或令牌',async()=>{
+  for(const [visibility,focused] of [['visible',true],['visible',false],['hidden',false]]){const f=fixture([{tabs:[video({pauseOnEveryPlay:true})]}]);try{
+   Object.defineProperty(f.d,'visibilityState',{get:()=>visibility,configurable:true});Object.defineProperty(f.d,'hasFocus',{value:()=>focused,configurable:true});for(const v of f.videos){Object.defineProperty(v,'readyState',{get:()=>2,configurable:true});Object.defineProperty(v,'networkState',{get:()=>2,configurable:true});}
+   const r=await f.runner.start(),task=r.chapters[0].tasks[0];assert.equal(task.lastPause.visibility,visibility);assert.equal(task.lastPause.focused,focused);assert.equal(task.lastPause.readyState,2);assert.equal(task.lastPause.networkState,2);assert.equal(task.lastPause.errorCode,null);assert(task.playbackEvents.length<=12);assert.equal(task.lastPause.seconds,0);
+   const text=f.api.courseReportText(r);assert.match(text,/视频状态记录/);assert(text.includes(visibility==='hidden'?'后台':'可见'));assert(text.includes(focused?'有焦点':'失焦'));assert.match(text,/来源尚未确认/);assert.match(text,/最近播放事件（相对启动时间）/);assert.match(text,/\+\d+\.\d 秒 开始播放/);assert.match(text,/\+\d+\.\d 秒 暂停/);assert.match(text,/readyState=2/);assert(!JSON.stringify(task.playbackEvents).includes('https:'));assert(!JSON.stringify(task.playbackEvents).includes('mock-only-key'));
+   const count=task.pauseCount;const v=f.videos.at(-1);v.dispatchEvent(new v.ownerDocument.defaultView.Event('pause'));assert.equal(task.pauseCount,count);
+  }finally{f.close();}}
+ });
+ await test('旧运行报告的事件可复制：限制条数、保留状态变化且不输出额外网址或密钥',async()=>{
+  const f=fixture([{tabs:[video()]}]);try{
+   const task={type:'video',status:'stopped',playbackState:{seconds:313,visibility:'visible',focused:true,errorCode:null},startedAt:1000};
+   const report={status:'stopped',chapters:[{number:'1.1',title:'模拟视频',status:'stopped',issues:[],tasks:[task]}],videos:0,documents:0,quizzes:0};
+   assert.doesNotThrow(()=>f.api.courseReportText(report));assert(!f.api.courseReportText(report).includes('最近播放事件'));
+   task.playbackEvents=Array.from({length:16},(_,index)=>({event:index%2?'pause':'playing',at:1000+index*1000,seconds:300+index,visibility:index<10?'visible':'hidden',focused:index<10,readyState:4,networkState:1,errorCode:null,url:'https://mock.invalid/?secret=mock-only-key'}));
+   task.playbackEvents.push(null,{event:'https://mock.invalid/secret',at:17000},{event:'pause',at:NaN});
+   const text=f.api.courseReportText(report),trace=text.split('最近播放事件')[1];
+   assert.equal(trace.split('\n').filter(line=>line.startsWith('+')).length,12);assert(!trace.includes('+0.0 秒'));assert.match(trace,/\+4\.0 秒 开始播放：视频 304 秒，可见、窗口有焦点/);assert.match(trace,/\+15\.0 秒 暂停：视频 315 秒，后台、窗口失焦/);assert(!text.includes('mock.invalid'));assert(!text.includes('mock-only-key'));assert(!text.includes('NaN'));
+   delete task.startedAt;assert.match(f.api.courseReportText(report),/相对首条保留记录/);assert.match(f.api.courseReportText(report),/\+0\.0 秒 开始播放：视频 304 秒/);
+  }finally{f.close();}
+ });
+ await test('恢复前出现人脸验证立即停止：诊断不能被用于绕过验证',()=>runWith([{tabs:[video({duration:8,pauseTimes:[2],faceAtPause:2})]},{tabs:[video()]}],{},(f,r)=>{
+  assert.equal(r.status,'stopped');assert.match(r.reason,/人脸/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert.equal(r.chapters[0].tasks[0].resumes,0);assert(!f.events.includes('chapter:1'));
+ }));
+ await test('暂停之后发生媒体错误：报告使用最新错误状态，不被旧暂停快照覆盖',async()=>{
+  const f=fixture([{tabs:[video({pauseOnEveryPlay:true})]}]);let mediaError=null;
+  try{for(const v of f.videos){Object.defineProperty(v,'error',{get:()=>mediaError,configurable:true});const play=v.play;v.play=()=>{const pending=play();queueMicrotask(()=>{mediaError={code:3};v.dispatchEvent(new v.ownerDocument.defaultView.Event('error'));});return pending;};}
+   const r=await f.runner.start(),task=r.chapters[0].tasks[0];assert.equal(r.status,'stopped');assert.match(r.reason,/错误 3/);assert.equal(task.lastPause.errorCode,null);assert.equal(task.playbackState.errorCode,3);const text=f.api.courseReportText(r),latest=text.split('最近播放事件')[0];assert.match(latest,/错误码=3/);assert(!latest.includes('错误码=无'));assert.match(text,/媒体错误：.*错误码=3/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);
+  }finally{f.close();}
+ });
  await test('浏览器拒绝自动播放有明确停止报告',()=>runWith([{tabs:[video({blocked:true})]}],{},(f,r)=>{assert.equal(r.status,'stopped');assert.match(r.reason,/浏览器阻止/);}));
  await test('缓冲进度停滞超时，不按预计时长假结束',()=>runWith([{tabs:[video({stall:true})]}],{limits:{stallMs:65}},(f,r)=>{assert.equal(r.status,'stopped');assert.match(r.reason,/长时间没有变化/);assert.equal(r.videos,0);}));
  await test('人脸识别停止，没有移除验证或继续播放下一视频',()=>runWith([{tabs:[video({faceOnPlay:true}),video()]}],{},(f,r)=>{assert.equal(r.status,'stopped');assert.match(r.reason,/人脸识别/);assert(f.doc.querySelector('.chapterVideoFaceMaskDiv'));assert(!f.events.includes('tab:0:1'));}));
@@ -392,6 +444,23 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
   }
  });
 
+ await test('后台延迟唤醒：原入口已加载的视频不能被过期计时器误跳过',async()=>{
+  let slowPoll=false,delayed=false;const f=fixture([{tabs:[video({lazy:true,nativeOnly:true,duration:12})]},{tabs:[video()]}],{limits:{videoLoadMs:30},sleep:ms=>{if(ms===3&&slowPoll&&!delayed){delayed=true;return delay(80);}return delay(ms);}});
+  try{Object.defineProperty(f.d,'visibilityState',{get:()=> 'hidden',configurable:true});const button=f.doc.querySelector('.vjs-big-play-button'),load=button.onclick;button.onclick=()=>{slowPoll=true;setTimeout(()=>load(),15);};
+   const r=await f.runner.start({continueOnTimeout:true});assert(delayed);assert.equal(r.status,'done');assert.equal(r.videos,2);assert.equal(r.chapters[0].status,'done');assert.equal(r.chapters[0].tasks[0].durationSeconds,12);assert(!r.chapters.some(c=>c.status==='timed-out'));assert(f.events.indexOf('chapter:1')>f.events.indexOf('play:0:0:0'));assert.equal(f.videos.at(-1).playbackRate,1);
+  }finally{f.close();}
+ });
+ await test('后台延迟唤醒：真实未加载仍超时，不假报视频完成',async()=>{
+  let slowPoll=false;const f=fixture([{tabs:[video({lazy:true,nativeOnly:true})]},{tabs:[video()]}],{limits:{videoLoadMs:30},sleep:ms=>ms===3&&slowPoll?delay(80):delay(ms)});
+  try{f.doc.querySelector('.vjs-big-play-button').onclick=()=>{slowPoll=true;};const r=await f.runner.start();assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.match(r.reason,/尚未加载/);assert(!f.events.includes('chapter:1'));assert(!f.events.some(e=>e.startsWith('play:')));
+  }finally{f.close();}
+ });
+ await test('暂停事件唤醒：后台轮询挂起时及时恢复，取消后不继续操作',async()=>{
+  let f,pending;const held=[];f=fixture([{tabs:[video({duration:100,pauseAt:2})]},{tabs:[video()]}],{sleep:ms=>ms===3&&f?.events.includes('play:0:0:0')?new Promise(resolve=>held.push(resolve)):delay(ms)});
+  try{Object.defineProperty(f.d,'visibilityState',{get:()=> 'hidden',configurable:true});pending=f.runner.start();for(let i=0;i<50&&!f.events.filter(e=>e.startsWith('play:')).slice(1).length;i++)await delay(5);
+   assert(held.length>0);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,2);assert.equal(f.runner.report.chapters[0].tasks[0].resumes,1);assert.equal(f.videos[0].playbackRate,1);f.runner.stop();const r=await pending;assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert(!f.events.includes('chapter:1'));held.forEach(resolve=>resolve());await delay(5);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,2);
+  }finally{f.runner.stop();held.forEach(resolve=>resolve());if(pending)await pending;f.close();}
+ });
  await test('懒加载视频先播放再读取时长，不等待永远未初始化的 metadata',()=>runWith([{tabs:[video({lazy:true})]}],{},(f,r)=>{assert.equal(r.status,'done');assert.equal(r.videos,1);assert(f.events.includes('play:0:0:0'));assert.equal(r.chapters[0].tasks[0].durationSeconds,3);}));
  await test('播放器必须点击原播放入口才能加载时长，正常调用原入口',()=>runWith([{tabs:[video({lazy:true,nativeOnly:true})]}],{},(f,r)=>{assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert(f.events.includes('native-play:0:0:0'));assert(f.events.indexOf('native-play:0:0:0')<f.events.indexOf('play:0:0:0'));}));
  await test('同页视频、PPT、视频和第二份PPT逐任务依DOM顺序处理',()=>runWith([{tabs:[{title:'混合任务',tasks:[{kind:'video',lazy:true},{kind:'ppt'},{kind:'video'},{kind:'ppt',nextOnly:true}]}]}],{},(f,r)=>{

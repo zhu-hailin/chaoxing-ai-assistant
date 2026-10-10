@@ -368,7 +368,7 @@
     await test('三个图标按序切换独立页面，窗口位置稳定且关闭重开保留页面', async () => {
         const f=await fixture({catalog:true});f.api.controller.openPanel();
         const host=f.d.getElementById('cx-ai-study-root'),s=host.shadowRoot;
-        const tabs=[...s.querySelectorAll('.nav-rail [role=tab]')];assert(tabs.length===3 && tabs.map(tab=>tab.getAttribute('aria-label')).join(',')==='题目,章节,模型','图标数量或顺序错误');
+        const tabs=[...s.querySelectorAll('.nav-rail [role=tab]')];assert(tabs.length===3 && tabs.map(tab=>tab.getAttribute('aria-label')).join(',')==='题目,章节,设置','图标数量或顺序错误');
         assert(s.getElementById('nav-model').matches('.nav-model-bottom') && s.getElementById('nav-model')===tabs[2] && /\.nav-model-bottom\{[^}]*margin-top:auto/.test(s.querySelector('style').textContent),'模型入口未固定在底部');
         assert(tabs.every(tab=>tab.querySelector('svg') && tab.textContent.trim()==='' && tab.title),'导航出现文字或缺少提示');
         assert(s.getElementById('view-model').hidden && !s.getElementById('view-questions').hidden && s.getElementById('view-chapters').hidden,'默认页错误');

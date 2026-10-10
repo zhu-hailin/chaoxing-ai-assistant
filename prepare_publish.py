@@ -1,6 +1,11 @@
 from pathlib import Path
 import shutil
 import hashlib
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--skip-readme", action="store_true")
+args = parser.parse_args()
 
 root = Path(__file__).resolve().parent
 publish = root / '.publish'
@@ -17,6 +22,8 @@ paths += [str(p.relative_to(root)) for p in (root / 'docs').glob('*.md')]
 paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*.png')]
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]
+if args.skip_readme:
+    paths.remove("README.md")
 for relative in paths:
     original, target = root / relative, publish / relative
     target.parent.mkdir(parents=True, exist_ok=True)
