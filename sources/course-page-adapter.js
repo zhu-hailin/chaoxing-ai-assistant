@@ -109,13 +109,34 @@
         const tree=courseFrameTree(owner);
         return !tree.inaccessible.length && tree.documents.length>1 && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
     }
+    function courseDocumentScrollTo(target, top) {
+        const value=target.style.getPropertyValue('scroll-behavior'),priority=target.style.getPropertyPriority('scroll-behavior');
+        try {
+            target.style.setProperty('scroll-behavior','auto','important');
+            target.scrollTop=top;
+        } finally {
+            if(value)target.style.setProperty('scroll-behavior',value,priority);
+            else target.style.removeProperty('scroll-behavior');
+        }
+        return {top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight};
+    }
+    function courseScrollToBottom(target) {
+        // 使用浏览器钳制后的实际位置；接近底部仍写一次，消除小数残余。
+        return courseDocumentScrollTo(target,target.scrollHeight);
+    }
+    function courseDocumentScrollState(target, contentRoot) {
+        const images=(contentRoot.matches('img')?[contentRoot]:[...contentRoot.querySelectorAll('img')]).filter(courseElementVisible);
+        return {top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight,
+            loaded:target.clientHeight>0 && (!images.length || images.some(image=>image.complete&&image.naturalWidth>0)),
+            imageCount:images.length,pendingImages:images.filter(image=>!image.complete||image.naturalWidth<=0).length};
+    }
     function courseDocumentScrollTargets(node) {
         // 只沿资料节点的祖先及所属 iframe 向外查找，不能滚动目录或助手面板。
         const targets=[],seen=new Set();
         const add=(element,root=false)=>{
             if(!element || seen.has(element) || !courseElementVisible(element)) return;
             seen.add(element);
-            if(element.clientHeight>0 && (element.scrollHeight>element.clientHeight+2 || root&&element.scrollHeight>=element.clientHeight)) targets.push(element);
+            if(element.clientHeight>0 && (element.scrollHeight>element.clientHeight || root&&element.scrollHeight>=element.clientHeight)) targets.push(element);
         };
         let anchor=node;
         for(let depth=0;anchor && depth<12;depth++) {
@@ -154,10 +175,10 @@
         // 现场确认：新版 #img 是 div，内部 #panView 跳转到 pan-yz 的连续图片文档。
         const remote=scope.querySelector('[id="img"].imglook iframe[id="panView"]');
         if(remote && courseRemoteReaderFrame(remote) && courseElementVisible(remote))return {doc,node:remote,kind:'remote-scroll',request:(op,signal,timeout)=>courseDocumentBridgeRequest(remote,op,signal,timeout)};
-        const image=scope.querySelector('#img.imglook[src],#img.imglook[data-original],#img.imglook[data-src]');
+        const image=scope.querySelector('[id="img"].imglook[src],[id="img"].imglook[data-original],[id="img"].imglook[data-src]');
         const continuous=scope.querySelector('.pdfViewer .page,[data-document-reader] img[src]');
         const node=image||continuous;
-        if(node && courseElementVisible(node)) return {doc,node,kind:'scroll',targets:()=>courseDocumentScrollTargets(node)};
+        if(node && courseElementVisible(node)) return {doc,node,kind:'scroll',contentRoot:node.closest('.pdfViewer,[data-document-reader],.continuous-reader')||node,targets:()=>courseDocumentScrollTargets(node)};
         return null;
     }
     function courseDocumentReaders(doc) {

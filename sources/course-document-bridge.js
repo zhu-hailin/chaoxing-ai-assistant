@@ -14,7 +14,7 @@
         } catch { return false; }
     }
     function courseDocumentBridgeRequest(frame, op, signal, timeout = 30000) {
-        if(!['read','step'].includes(op))return Promise.reject(new Error('未知的资料阅读操作'));
+        if(!['read','step','bottom','top','scan'].includes(op))return Promise.reject(new Error('未知的资料阅读操作'));
         if(!courseRemoteReaderFrame(frame))return Promise.reject(new Error('未知的跨域资料阅读器'));
         // postMessage 的发送者是执行脚本的 window，并非目标 iframe 所属文档。
         const view=window,child=frame.contentWindow,id=crypto.randomUUID();
@@ -35,6 +35,7 @@
                 if(data.error){finish(new Error(data.error));return;}
                 const state=data.state;
                 if(!state || typeof state.loaded!=='boolean' || !['top','height','total'].every(k=>Number.isFinite(state[k])&&state[k]>=0))return;
+                if(state.canBottom!==undefined && (state.canBottom!==true || !['imageCount','pendingImages'].every(k=>Number.isInteger(state[k])&&state[k]>=0) || state.pendingImages>state.imageCount))return;
                 finish(null,state);
             };
             const receive=event=>{
@@ -77,10 +78,10 @@
         const view=doc.defaultView;
         let url;try{url=new URL(doc.URL);}catch{return;}
         if(view===view.parent || !COURSE_DOCUMENT_ORIGINS.includes(url.origin) || !/^\/(?:screen\/v2\/file_|mooc-ans\/screen\/file)/.test(url.pathname))return;
-        const responses=new Map(),mailboxes=new Map();
+        const responses=new Map(),mailboxes=new Map(),targetIds=new WeakMap();let targetSequence=0;
         const valid=data=>data?.channel===COURSE_DOCUMENT_CHANNEL && typeof data.id==='string' && /^[\w-]{1,100}$/.test(data.id);
         const operate=(data,respond)=>{
-            if(!valid(data)||data.kind!=='request'||!['read','step'].includes(data.op))return;
+            if(!valid(data)||data.kind!=='request'||!['read','step','bottom','top','scan'].includes(data.op))return;
             const cached=responses.get(data.id);
             if(cached){if(cached.op===data.op)respond(cached.response);return;}
             const reply=result=>{
@@ -91,12 +92,17 @@
             };
             const blocker=courseBlocker([doc]);if(blocker){reply({error:blocker});return;}
             const content=doc.querySelector('.fileBox ul li img'),root=doc.scrollingElement||doc.documentElement;
-            if(!content || !courseElementVisible(content)){reply({state:{loaded:false,top:0,height:0,total:0}});return;}
-            const target=courseDocumentScrollTargets(content).filter(n=>n.ownerDocument===doc)[0]||root;
-            // 优先实际 overflow 滚动祖先，其次 HTML 滚动区域；不动课程目录或助手。
-            if(data.op==='step' && target.clientHeight>0 && content.complete && content.naturalWidth>0)
-                target.scrollTop=Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*0.8)));
-            reply({state:{loaded:target.clientHeight>0&&content.complete&&content.naturalWidth>0,top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight}});
+            if(!content || !courseElementVisible(content)){reply({state:{loaded:false,top:0,height:0,total:0,canBottom:true,imageCount:0,pendingImages:0}});return;}
+            const contentRoot=content.closest('ul'),target=courseDocumentScrollTargets(content).filter(n=>n.ownerDocument===doc)[0]||root;
+            if(!targetIds.has(target))targetIds.set(target,String(++targetSequence));
+            // step 保留旧步长；top/scan 仅用于到底后发现懒加载时的快速遍历。
+            if(target.clientHeight>0 && courseDocumentScrollState(target,contentRoot).loaded) {
+                if(data.op==='bottom')courseScrollToBottom(target);
+                else if(data.op==='top')courseDocumentScrollTo(target,0);
+                else if(data.op==='step'||data.op==='scan')courseDocumentScrollTo(target,
+                    Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*(data.op==='scan'?0.9:0.8)))));
+            }
+            reply({state:{...courseDocumentScrollState(target,contentRoot),canBottom:true,targetId:targetIds.get(target)}});
         };
         const removeMailbox=id=>{
             const item=mailboxes.get(id);if(!item)return;
@@ -130,7 +136,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.05');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.07');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{

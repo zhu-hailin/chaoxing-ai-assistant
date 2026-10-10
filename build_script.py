@@ -3,7 +3,7 @@ import re
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.06'
+VERSION = '1.07'
 core = (ROOT / 'sources/assistant-core.js').read_text(encoding='utf-8')
 template = (ROOT / 'sources/panel-template.html').read_text(encoding='utf-8')
 intro = (ROOT / 'sources/project-intro.html').read_text(encoding='utf-8')

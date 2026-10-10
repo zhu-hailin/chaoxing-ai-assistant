@@ -3,11 +3,11 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
-const code=source.replace(entry,'globalThis.courseAPI={initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseDocumentReader,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
+const code=source.replace(entry,'globalThis.courseAPI={initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
 const logs=[],failures=[];
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function test(name,run){try{await run();logs.push(`PASS ${name}`);}catch(error){failures.push(`${name}: ${error.stack}`);}}
-const LIMITS={pollMs:3,settleMs:1,loadMs:150,videoLoadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,slideMs:1,submitMs:80};
+const LIMITS={pollMs:3,settleMs:1,loadMs:150,videoLoadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,slideMs:1,documentCheckMs:5,documentStableMs:15,documentBottomSamples:3,documentFallbackStepMs:2,documentFallbackPasses:2,submitMs:80};
 function fixture(chapters,opts={}){
  const runtimeErrors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',error=>runtimeErrors.push(error.message));
  const dom=new JSDOM('<div id="mainid"><input id="curChapterId"><div id="prev_tab"></div><iframe id="iframe"></iframe></div><div id="content1"><div id="coursetree"><ul></ul></div></div>',{url:opts.url||'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
@@ -109,6 +109,7 @@ function fixture(chapters,opts={}){
     if(task.ambiguous){const other=submit.cloneNode(true);quiz.append(other);}
    }else if(task.kind==='scroll'){
     container.innerHTML='<div class="continuous-reader" style="overflow-y:auto"><img id="img" class="imglook" src="data:image/png;base64,mock"></div>';
+    Object.defineProperties(container.querySelector('img'),{complete:{get:()=>true},naturalWidth:{get:()=>800}});
     const node=task.outer?d.documentElement:task.root?doc.documentElement:container.firstChild;
     let top=0,height=task.height||1000;const viewport=200;
     Object.defineProperties(node,{clientHeight:{get:()=>viewport},scrollHeight:{get:()=>height},scrollTop:{get:()=>top,set:value=>{
@@ -293,7 +294,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
  await test('未授权自动提交选项关闭时预填后停留，不跳目录',async()=>{
   const f=fixture([{tabs:[quiz()]},{tabs:[video()]}]);try{const r=await f.runner.start({submit:false});assert.equal(r.status,'stopped');assert.match(r.reason,/人工提交/);assert.equal(f.submits,0);assert(!f.events.includes('chapter:1'));assert(f.doc.querySelector('input[value=A]').checked);}finally{f.close();}
  });
- await test('视频已结束但任务未确认仍停止，不跳下一目录',()=>runWith([{tabs:[video()]},{tabs:[video()]}],{noAck:true},(f,r)=>{assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.match(r.reason,/平台未确认/);assert(!f.events.includes('chapter:1'));}));
+ await test('视频已结束但任务未确认仍停止，不跳下一目录',()=>runWith([{tabs:[video()]},{tabs:[video()]}],{noAck:true},(f,r)=>{assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.match(r.reason,/平台.*未确认/);assert(!f.events.includes('chapter:1'));}));
  await test('自动提交多个测验 iframe，各题目文档独立处理',async()=>{
   const f=fixture([{tabs:[quiz()]}]);try{
    const parent=f.doc;parent.body.replaceChildren();
@@ -425,9 +426,9 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
    const r=await next.runner.resumeIfNeeded();assert.equal(r.status,'done');assert.equal(r.chapters[0].status,'skipped');assert.equal(r.videos,1);
   }finally{next.close();}
  });
- await test('连续图片 PPT 逐步滚动到底，收到平台完成后才继续',()=>runWith([
+ await test('连续图片 PPT 直接到底并稳定复查，收到平台完成后才继续',()=>runWith([
   {tabs:[{title:'PPT',tasks:[{kind:'scroll'}]}]},{tabs:[video()]}
- ],{},(f,r)=>{assert.equal(r.status,'done');assert.equal(r.documents,1);assert.equal(r.videos,1);assert(f.events.filter(e=>e.startsWith('scroll:')).length>=5);assert(f.events.includes('scroll:0:800'));assert.equal(r.chapters[0].tasks[0].reader,'scroll');}));
+ ],{},(f,r)=>{assert.equal(r.status,'done');assert.equal(r.documents,1);assert.equal(r.videos,1);assert(f.events.filter(e=>e.startsWith('scroll:')).length<=6);assert(f.events.includes('scroll:0:800'));assert.equal(r.chapters[0].tasks[0].reader,'scroll');}));
  await test('资料滚动到底但无任务确认则停止，不伪造完成',()=>runWith([{tabs:[{title:'PPT',tasks:[{kind:'scroll'}]}]}],{noAck:true},(f,r)=>{assert.equal(r.status,'stopped');assert.equal(r.documents,0);assert.match(r.reason,/最底部.*未确认/);}));
  await test('延迟加载增加高度后继续滚动到新的底部',()=>runWith([{tabs:[{title:'PPT',tasks:[{kind:'scroll',grow:true}]}]}],{},(f,r)=>{assert.equal(r.status,'done');assert.equal(r.documents,1);assert(f.events.includes('scroll:0:1200'));}));
  await test('支持资料 iframe 的文档滚动根与自动高度 iframe 外层滚动',async()=>{
@@ -538,7 +539,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
    const container=f.doc.querySelector('[data-course-task]');container.innerHTML='<div id="img" class="imglook"><iframe id="panView" src="https://mooc1.chaoxing.com/mooc-ans/screen/file/mock"></iframe></div>';
    const frame=container.querySelector('iframe'),child=frame.contentWindow;Object.defineProperty(frame,'contentDocument',{get:()=>null});
    let top=0;const messages=[];
-   child.postMessage=(data,origin)=>{messages.push({data,origin});if(origin!=='https://pan-yz.chaoxing.com')return;if(data.op==='step'){top=Math.min(800,top+160);if(top===800){container.setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';}}setTimeout(()=>f.w.dispatchEvent(new f.w.MessageEvent('message',{source:child,origin:'https://pan-yz.chaoxing.com',data:{channel:data.channel,kind:'result',id:data.id,state:{loaded:true,top,height:200,total:1000}}})),1);};
+   child.postMessage=(data,origin)=>{messages.push({data,origin});if(origin!=='https://pan-yz.chaoxing.com')return;if(data.op==='step'||data.op==='bottom'){top=data.op==='bottom'?800:Math.min(800,top+160);if(top===800){container.setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';}}setTimeout(()=>f.w.dispatchEvent(new f.w.MessageEvent('message',{source:child,origin:'https://pan-yz.chaoxing.com',data:{channel:data.channel,kind:'result',id:data.id,state:{loaded:true,top,height:200,total:1000,canBottom:true,imageCount:1,pendingImages:0}}})),1);};
    const r=await f.runner.start();assert.equal(r.status,'done');assert.equal(r.documents,1);assert.equal(r.chapters[0].tasks[0].reader,'remote-scroll');assert.equal(top,800);assert(messages.every(m=>m.origin!=='*'&&!JSON.stringify(m.data).includes('mock-only-key')));
   }finally{f.close();}
  });
@@ -588,7 +589,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.05');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.07');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{
@@ -623,7 +624,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
    Object.defineProperties(doc.querySelector('img'),{complete:{get:()=>true},naturalWidth:{get:()=>800}});
    let top=0;
    Object.defineProperties(doc.documentElement,{clientHeight:{get:()=>200},scrollHeight:{get:()=>1000},scrollTop:{get:()=>top,set:value=>{
-    top=value;f.events.push(`ppt-scroll:${index}:${top}`);
+    top=Math.max(0,Math.min(800,value));f.events.push(`ppt-scroll:${index}:${top}`);
     if(top===800&&ack){container.setAttribute('data-completed','true');if([...f.doc.querySelectorAll('[data-course-task]')].every(n=>n.getAttribute('data-completed')==='true'))f.d.querySelector('.orangeNew').textContent='0';}
    }}});
    f.api.initCourseDocumentBridge(doc);Object.defineProperty(frame,'contentDocument',{get:()=>null});
@@ -651,7 +652,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
    readers.forEach(reader=>assert.equal(f.api.courseDocumentReader(f.doc,reader.frame.closest('[data-course-task]'))?.node,reader.frame,'未找到所属资料阅读器'));
    const r=await f.runner.start();assert.equal(r.status,'done',JSON.stringify({r,events:f.events}));assert.equal(r.documents,2);
    assert.deepEqual(Array.from(r.chapters[0].tasks,t=>t.number),[1,2]);assert(readers.every(reader=>reader.top===800));
-   assert(f.events.indexOf('ppt-scroll:1:160')>f.events.indexOf('ppt-scroll:0:800'));
+   assert(f.events.indexOf('ppt-scroll:1:800')>f.events.indexOf('ppt-scroll:0:800'));
    assert(f.events.indexOf('chapter:1')>f.events.indexOf('ppt-scroll:1:800'));
    const ids=new Set(bus.writes.filter(w=>w.value.kind==='request').map(w=>w.key));assert(ids.size>=10);
    await delay(2);assert.equal(bus.listeners.size,0);
@@ -660,7 +661,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
  await test('第二份PPT到底但平台未确认时停止，不能跳章或算完成',async()=>{
   const f=fixture([{tabs:[{title:'多个PPT',tasks:[{kind:'ppt'},{kind:'ppt'}]}]},{tabs:[video()]}]),bus=pptMailboxFixture(f);try{
    [...f.doc.querySelectorAll('[data-course-task]')].forEach((n,i)=>bus.attach(n,i,i===0));
-   const r=await f.runner.start();assert.equal(r.status,'stopped');assert.equal(r.documents,1);assert.match(r.reason,/平台未确认/);assert(!f.events.includes('chapter:1'));
+   const r=await f.runner.start();assert.equal(r.status,'stopped');assert.equal(r.documents,1);assert.match(r.reason,/平台.*未确认/);assert(!f.events.includes('chapter:1'));
   }finally{bus.cleanup();f.close();}
  });
  await test('PPT 信箱拒绝错误referrer，取消及换页清理等待和监听',async()=>{
@@ -772,7 +773,7 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
   const f=fixture([{tabs:[{title:'混合任务',tasks:[{kind:'video',duration:5},{kind:'ppt'}]}]}]);try{const late=f.doc.querySelectorAll('[data-course-task]')[1];late.remove();const p=f.runner.start();await delay(15);f.doc.body.append(late);const r=await p;assert.equal(r.status,'done');assert.equal(r.videos,1);assert.equal(r.documents,1);}finally{f.close();}
  });
  await test('单页PPT没有滚动距离时仍能等待平台完成，不报加载失败',async()=>{
-  const f=fixture([{tabs:[{title:'PPT',tasks:[{kind:'scroll'}]}]}]);try{const c=f.doc.querySelector('[data-course-task]');Object.defineProperties(f.doc.documentElement,{clientHeight:{get:()=>200},scrollHeight:{get:()=>200}});c.firstChild.style.overflowY='visible';const p=f.runner.start();await delay(12);c.setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';const r=await p;assert.equal(r.status,'done');assert.equal(r.documents,1);}finally{f.close();}
+  const f=fixture([{tabs:[{title:'PPT',tasks:[{kind:'scroll'}]}]}]);try{const c=f.doc.querySelector('[data-course-task]');Object.defineProperties(f.doc.documentElement,{clientHeight:{get:()=>200},scrollHeight:{get:()=>200},scrollTop:{get:()=>0,set(){}}});c.firstChild.style.overflowY='visible';const p=f.runner.start();await delay(12);c.setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';const r=await p;assert.equal(r.status,'done');assert.equal(r.documents,1);}finally{f.close();}
  });
  await test('隐藏的分页资料控件不进入任务队列',async()=>{
   const f=fixture([{tabs:[ppt()]}]);try{f.doc.querySelector('[data-course-task]').hidden=true;const reader=f.api.courseDocumentReader(f.doc);assert.equal(reader,null);}finally{f.close();}
@@ -994,6 +995,126 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
  await test('界面静音选项传入运行且运行时禁用',async()=>{
   const f=fixture([{tabs:[video()]}],{storage:[['cx_course_mute_video',false]]});
   try{const s=f.d.getElementById('cx-ai-study-root').shadowRoot,t=s.getElementById('course-mute-video');assert(!t.checked);s.getElementById('course-start').click();for(let i=0;i<50&&!f.runner.busy;i++)await delay(2);assert(t.disabled);assert.equal(f.storage.get(f.runner.key).muteVideo,false);for(let i=0;i<200&&f.runner.report.status==='running';i++)await delay(5);assert.equal(f.runner.report.status,'done');assert(!t.disabled);assert(f.videos.every(v=>!v.muted));}finally{f.close();}
+ });
+
+ // Controlled reader geometry and acknowledgements: no production completion writes.
+ const scrollHarness=(configs=[{}],options={})=>{
+  const f=fixture([{tabs:[{title:'多个PPT',tasks:configs.map(()=>({kind:'ppt'}))}]},{tabs:[{title:'文字资料',tasks:[]}]}],options);
+  const readers=[...f.doc.querySelectorAll('[data-course-task]')].map((container,index)=>{
+   container.innerHTML='<div class="continuous-reader" style="overflow-y:auto;scroll-behavior:smooth!important"><img id="img" class="imglook" src="data:image/png;base64,AA=="><img src="data:image/png;base64,AA=="></div>';
+   const node=container.firstChild,state={top:0,height:200,total:1000,pending:0,writes:[],ack:true,...configs[index]};
+   const acknowledge=()=>{container.setAttribute('data-completed','true');if([...f.doc.querySelectorAll('[data-course-task]')].every(n=>n.getAttribute('data-completed')==='true'))f.d.querySelector('.orangeNew').textContent='0';};
+   [...node.querySelectorAll('img')].forEach((img,i)=>Object.defineProperties(img,{complete:{get:()=>i===0||!state.pending},naturalWidth:{get:()=>i===0||!state.pending?800:0}}));
+   Object.defineProperties(node,{clientHeight:{get:()=>state.height},scrollHeight:{get:()=>state.total},scrollTop:{get:()=>state.top,set:value=>{
+    state.writes.push({requested:value,behavior:node.style.getPropertyValue('scroll-behavior'),priority:node.style.getPropertyPriority('scroll-behavior')});
+    if(!state.blocked)state.top=Math.max(0,Math.min(state.total-state.height,value,state.cap??Infinity));
+    f.events.push(`ppt-position:${index}:${state.top}`);state.onWrite?.(value,state,acknowledge);
+    if(state.ack&&!state.pending&&state.top===state.total-state.height)acknowledge();
+   }}});
+   return {node,state,container,acknowledge};
+  });return {f,readers};
+ };
+ await test('长PPT直接到真正底部，滚动次数与页数无关且恢复平滑样式',async()=>{
+  for(const total of [1000,44000]){const {f,readers:[{node,state}]}=scrollHarness([{total}]);try{
+   const r=await f.runner.start();assert.equal(r.status,'done');assert.equal(r.documents,1);assert.equal(state.writes[0].requested,total);assert.equal(state.top,total-200);assert(state.writes.length<=6);
+   assert(state.writes.every(w=>w.behavior==='auto'&&w.priority==='important'));assert.equal(node.style.getPropertyValue('scroll-behavior'),'smooth');assert.equal(node.style.getPropertyPriority('scroll-behavior'),'important');
+   assert.equal(r.chapters[0].tasks[0].documentState.distance,0);assert(f.api.courseReportText(r).includes('资料状态记录'));assert(!f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('status').textContent.includes('距底部'));
+  }finally{f.close();}}
+ });
+ await test('1.5px末尾残余也精确校正到底，异常时恢复原样式',async()=>{
+  const {f,readers:[{node,state}]}=scrollHarness([{top:798.5}]);try{
+   const r=await f.runner.start();assert.equal(r.status,'done');assert.equal(state.writes[0].requested,1000);assert.equal(state.top,800);
+   const bad=f.doc.createElement('div');bad.style.setProperty('scroll-behavior','smooth','important');Object.defineProperties(bad,{scrollHeight:{get:()=>100},scrollTop:{set(){throw Error('拒绝滚动')}}});
+   assert.throws(()=>f.api.courseScrollToBottom(bad),/拒绝滚动/);assert.equal(bad.style.getPropertyValue('scroll-behavior'),'smooth');assert.equal(bad.style.getPropertyPriority('scroll-behavior'),'important');
+  }finally{f.close();}
+ });
+ await test('等待平台确认期间延迟增长高度仍补滚，确认等待从新底部重计',async()=>{
+  const {f,readers:[{state,acknowledge}]}=scrollHarness([{ack:false}],{limits:{completionMs:400}});let timer;
+  try{const p=f.runner.start();for(let i=0;i<100&&(f.runner.report?.chapters[0].tasks[0]?.bottomCorrections||0)<4;i++)await delay(1);
+   await delay(180);state.total=1600;state.onWrite=(value,s)=>{if(s.top===1400&&!timer)timer=setTimeout(acknowledge,300);};
+   const r=await p;assert.equal(r.status,'done',r.reason);assert.equal(state.top,1400);assert.equal(r.documents,1);assert(f.events.includes('ppt-position:0:1400'));
+  }finally{clearTimeout(timer);f.close();}
+ });
+ await test('首图已加载但中间图片懒加载时快速回退遍历，再确认底部',async()=>{
+  const {f,readers:[{state}]}=scrollHarness([{pending:1,onWrite:(value,s)=>{if(s.top>=360&&s.top<800)s.pending=0;}}]);try{
+   const r=await f.runner.start();assert.equal(r.status,'done',r.reason);assert.equal(r.documents,1);assert.equal(r.chapters[0].tasks[0].fallbackPasses,1);
+   assert.equal(state.writes[0].requested,1000);assert(state.writes.some(w=>w.requested===0));assert(state.writes.some(w=>w.requested===180));assert.equal(state.top,800);
+  }finally{f.close();}
+ });
+ await test('懒加载失败最多回退两轮，平台标记不能掩盖未加载图片',async()=>{
+  const {f,readers:[{state,acknowledge}]}=scrollHarness([{pending:1}]);try{
+   const p=f.runner.start();for(let i=0;i<100&&!state.writes.length;i++)await delay(1);acknowledge();const r=await p;
+   assert.equal(r.status,'stopped');assert.equal(r.documents,0);assert.equal(r.chapters[0].tasks[0].fallbackPasses,2);assert.match(r.reason,/图片未加载/);
+  }finally{f.close();}
+ });
+ await test('被钳制或无响应的滚动不能算到底，即使平台显示完成',async()=>{
+  for(const config of [{cap:300},{blocked:true}]){const {f,readers:[{acknowledge}]}=scrollHarness([config],{limits:{loadMs:35}});try{
+   const p=f.runner.start();await delay(8);acknowledge();const r=await p;assert.equal(r.status,'stopped');assert.equal(r.documents,0);assert.match(r.reason,/滚动没有响应/);assert(!f.events.includes('chapter:1'));
+  }finally{f.close();}}
+ });
+ await test('图片加载统计只含当前阅读器，不混入目录工具栏和另一份PPT',async()=>{
+  const {f,readers:[a,b]}=scrollHarness([{}, {pending:1}]);try{
+   f.doc.body.insertAdjacentHTML('beforeend','<img src="broken-toolbar">');const state=f.api.courseDocumentScrollState(a.node,a.node);assert.equal(state.imageCount,2);assert.equal(state.pendingImages,0);
+   assert.equal(f.api.courseDocumentScrollState(b.node,b.node).pendingImages,1);
+  }finally{f.close();}
+ });
+ await test('同页两份PPT分别校正到底，第二份未确认则不进入下一章',async()=>{
+  const {f,readers:[a,b]}=scrollHarness([{}, {total:2400,ack:false}]);try{
+   const r=await f.runner.start();assert.equal(r.status,'stopped');assert.equal(r.documents,1);assert.equal(a.state.top,800);assert.equal(b.state.top,2200);assert(!f.events.includes('chapter:1'));
+   assert(r.chapters[0].tasks.every(t=>t.bottomCorrections>=3));assert.match(r.reason,/平台尚未确认/);
+  }finally{f.close();}
+ });
+ await test('跨域bottom指令支持重试去重、拒绝错误来源并回读实际位置',async()=>{
+  const f=fixture([{tabs:[ppt()]}]),bus=pptMailboxFixture(f);try{
+   const reader=bus.attach(f.doc.querySelector('[data-course-task]'));
+   const set=f.w.GM_setValue;let lost=true;f.w.GM_setValue=(key,value)=>{if(value.kind==='result'&&lost){lost=false;return;}set(key,value);};
+   const state=await f.api.courseDocumentBridgeRequest(reader.frame,'bottom',null,1000);assert.equal(state.top,800);assert.equal(state.canBottom,true);assert.equal(state.imageCount,1);assert.equal(state.pendingImages,0);assert.equal(f.events.filter(e=>e.startsWith('ppt-scroll:')).length,1);
+   const command=bus.writes.find(w=>w.value.kind==='request').value;assert.equal(new Set(bus.writes.filter(w=>w.value.kind==='request').map(w=>w.value.id)).size,1);
+   reader.view.dispatchEvent(new reader.view.MessageEvent('message',{source:f.w,origin:'https://example.invalid',data:{...command,id:'spoof-bottom'}}));assert.equal(reader.top,800);
+   await delay(2);assert.equal(bus.listeners.size,0);assert(![...f.storage.keys()].some(k=>k.startsWith('cx-ai-ppt-request:')));
+  }finally{bus.cleanup();f.close();}
+ });
+ await test('跨域bottom取消及页面替换停止等待和重试',async()=>{
+  for(const action of ['abort','replace']){const f=fixture([{tabs:[ppt()]}]),bus=pptMailboxFixture(f);try{
+   const reader=bus.attach(f.doc.querySelector('[data-course-task]'));reader.view.postMessage=()=>{};const signal=new f.w.AbortController();
+   const p=f.api.courseDocumentBridgeRequest(reader.frame,'bottom',signal.signal,600);await delay(2);if(action==='abort')signal.abort();else reader.frame.remove();
+   await assert.rejects(p,action==='abort'?/取消/:/已切换/);const writes=bus.writes.length;await delay(270);assert.equal(bus.writes.length,writes);assert.equal(bus.listeners.size,0);assert.equal(reader.top,0);
+  }finally{bus.cleanup();f.close();}}
+ });
+ await test('旧跨域子脚本明确提示刷新，不能冒充PPT已完成',async()=>{
+  const f=fixture([{tabs:[ppt()]}]);try{
+   const c=f.doc.querySelector('[data-course-task]');c.innerHTML='<div id="img" class="imglook"><iframe id="panView" src="https://mooc1.chaoxing.com/mooc-ans/screen/file/mock"></iframe></div>';
+   const frame=c.querySelector('iframe'),child=frame.contentWindow;const ops=[];
+   child.postMessage=(data,origin)=>{if(origin!=='https://pan-yz.chaoxing.com')return;ops.push(data.op);f.w.dispatchEvent(new f.w.MessageEvent('message',{source:child,origin,data:{channel:data.channel,kind:'result',id:data.id,state:{loaded:true,top:0,height:200,total:1000}}}));};
+   const r=await f.runner.start();assert.equal(r.status,'stopped');assert.equal(r.documents,0);assert.match(r.reason,/阅读器版本未同步.*刷新整个课程页/);assert.deepEqual(ops,['read']);
+  }finally{f.close();}
+ });
+
+ await test('真实跨域子脚本的懒加载回退执行top/scan，并等待同一PPT确认',async()=>{
+  const f=fixture([{tabs:[ppt()]}]),bus=pptMailboxFixture(f);try{
+   const reader=bus.attach(f.doc.querySelector('[data-course-task]')),box=reader.doc.querySelector('.fileBox');box.style.overflowY='auto';
+   const last=reader.doc.createElement('img');reader.doc.querySelector('li').append(last);let top=0,pending=true;
+   Object.defineProperties(last,{complete:{get:()=>!pending},naturalWidth:{get:()=>pending?0:800}});
+   Object.defineProperties(box,{clientHeight:{get:()=>200},scrollHeight:{get:()=>1000},scrollTop:{get:()=>top,set:value=>{
+    top=Math.max(0,Math.min(800,value));f.events.push(`remote-scan:${top}`);if(top>=360&&top<800)pending=false;
+    if(top===800&&!pending){f.doc.querySelector('[data-course-task]').setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';}
+   }}});
+   const r=await f.runner.start();assert.equal(r.status,'done',r.reason);assert.equal(r.documents,1);assert.equal(top,800);assert.equal(reader.top,0);
+   const task=r.chapters[0].tasks[0];assert.equal(task.fallbackPasses,1);assert.equal(task.documentState.imageCount,2);assert.equal(task.documentState.pendingImages,0);
+   const ops=bus.writes.filter(w=>w.value.kind==='request').map(w=>w.value.op);assert(ops.indexOf('bottom')<ops.indexOf('top'));assert(ops.includes('scan'));assert(f.events.includes('remote-scan:180'));
+   await delay(2);assert.equal(bus.listeners.size,0);
+  }finally{bus.cleanup();f.close();}
+ });
+ await test('跨域等待完成时动态增加高度仍补滚，不采信旧底部',async()=>{
+  const f=fixture([{tabs:[ppt()]}]),bus=pptMailboxFixture(f);let timer;
+  try{
+   const reader=bus.attach(f.doc.querySelector('[data-course-task]')),box=reader.doc.querySelector('.fileBox');box.style.overflowY='auto';let top=0,total=1000,writes=0;
+   Object.defineProperties(box,{clientHeight:{get:()=>200},scrollHeight:{get:()=>total},scrollTop:{get:()=>top,set:value=>{
+    top=Math.max(0,Math.min(total-200,value));writes++;if(writes===3)timer=setTimeout(()=>{total=1600;},6);
+    if(top===1400){f.doc.querySelector('[data-course-task]').setAttribute('data-completed','true');f.d.querySelector('.orangeNew').textContent='0';}
+   }}});
+   const r=await f.runner.start();assert.equal(r.status,'done',r.reason);assert.equal(r.documents,1);assert.equal(top,1400);assert.equal(r.chapters[0].tasks[0].documentState.total,1600);
+  }finally{clearTimeout(timer);bus.cleanup();f.close();}
  });
  const result={total:logs.length+failures.length,failures,logs};console.log(JSON.stringify(result,null,2));fs.writeFileSync(path.join(__dirname,'course-runner-results.json'),JSON.stringify(result,null,2));process.exitCode=failures.length?1:0;
 })().catch(error=>{console.error(error);process.exitCode=1;});

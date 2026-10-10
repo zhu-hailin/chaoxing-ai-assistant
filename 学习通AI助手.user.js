@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.06
+// @version      1.07
 // @description  字体解密、后台播放优化、DeepSeek 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -79,7 +79,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.06', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.07', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -1072,7 +1072,7 @@
         } catch { return false; }
     }
     function courseDocumentBridgeRequest(frame, op, signal, timeout = 30000) {
-        if(!['read','step'].includes(op))return Promise.reject(new Error('未知的资料阅读操作'));
+        if(!['read','step','bottom','top','scan'].includes(op))return Promise.reject(new Error('未知的资料阅读操作'));
         if(!courseRemoteReaderFrame(frame))return Promise.reject(new Error('未知的跨域资料阅读器'));
         // postMessage 的发送者是执行脚本的 window，并非目标 iframe 所属文档。
         const view=window,child=frame.contentWindow,id=crypto.randomUUID();
@@ -1093,6 +1093,7 @@
                 if(data.error){finish(new Error(data.error));return;}
                 const state=data.state;
                 if(!state || typeof state.loaded!=='boolean' || !['top','height','total'].every(k=>Number.isFinite(state[k])&&state[k]>=0))return;
+                if(state.canBottom!==undefined && (state.canBottom!==true || !['imageCount','pendingImages'].every(k=>Number.isInteger(state[k])&&state[k]>=0) || state.pendingImages>state.imageCount))return;
                 finish(null,state);
             };
             const receive=event=>{
@@ -1135,10 +1136,10 @@
         const view=doc.defaultView;
         let url;try{url=new URL(doc.URL);}catch{return;}
         if(view===view.parent || !COURSE_DOCUMENT_ORIGINS.includes(url.origin) || !/^\/(?:screen\/v2\/file_|mooc-ans\/screen\/file)/.test(url.pathname))return;
-        const responses=new Map(),mailboxes=new Map();
+        const responses=new Map(),mailboxes=new Map(),targetIds=new WeakMap();let targetSequence=0;
         const valid=data=>data?.channel===COURSE_DOCUMENT_CHANNEL && typeof data.id==='string' && /^[\w-]{1,100}$/.test(data.id);
         const operate=(data,respond)=>{
-            if(!valid(data)||data.kind!=='request'||!['read','step'].includes(data.op))return;
+            if(!valid(data)||data.kind!=='request'||!['read','step','bottom','top','scan'].includes(data.op))return;
             const cached=responses.get(data.id);
             if(cached){if(cached.op===data.op)respond(cached.response);return;}
             const reply=result=>{
@@ -1149,12 +1150,17 @@
             };
             const blocker=courseBlocker([doc]);if(blocker){reply({error:blocker});return;}
             const content=doc.querySelector('.fileBox ul li img'),root=doc.scrollingElement||doc.documentElement;
-            if(!content || !courseElementVisible(content)){reply({state:{loaded:false,top:0,height:0,total:0}});return;}
-            const target=courseDocumentScrollTargets(content).filter(n=>n.ownerDocument===doc)[0]||root;
-            // 优先实际 overflow 滚动祖先，其次 HTML 滚动区域；不动课程目录或助手。
-            if(data.op==='step' && target.clientHeight>0 && content.complete && content.naturalWidth>0)
-                target.scrollTop=Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*0.8)));
-            reply({state:{loaded:target.clientHeight>0&&content.complete&&content.naturalWidth>0,top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight}});
+            if(!content || !courseElementVisible(content)){reply({state:{loaded:false,top:0,height:0,total:0,canBottom:true,imageCount:0,pendingImages:0}});return;}
+            const contentRoot=content.closest('ul'),target=courseDocumentScrollTargets(content).filter(n=>n.ownerDocument===doc)[0]||root;
+            if(!targetIds.has(target))targetIds.set(target,String(++targetSequence));
+            // step 保留旧步长；top/scan 仅用于到底后发现懒加载时的快速遍历。
+            if(target.clientHeight>0 && courseDocumentScrollState(target,contentRoot).loaded) {
+                if(data.op==='bottom')courseScrollToBottom(target);
+                else if(data.op==='top')courseDocumentScrollTo(target,0);
+                else if(data.op==='step'||data.op==='scan')courseDocumentScrollTo(target,
+                    Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*(data.op==='scan'?0.9:0.8)))));
+            }
+            reply({state:{...courseDocumentScrollState(target,contentRoot),canBottom:true,targetId:targetIds.get(target)}});
         };
         const removeMailbox=id=>{
             const item=mailboxes.get(id);if(!item)return;
@@ -1188,7 +1194,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.05');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.07');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -1308,13 +1314,34 @@
         const tree=courseFrameTree(owner);
         return !tree.inaccessible.length && tree.documents.length>1 && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
     }
+    function courseDocumentScrollTo(target, top) {
+        const value=target.style.getPropertyValue('scroll-behavior'),priority=target.style.getPropertyPriority('scroll-behavior');
+        try {
+            target.style.setProperty('scroll-behavior','auto','important');
+            target.scrollTop=top;
+        } finally {
+            if(value)target.style.setProperty('scroll-behavior',value,priority);
+            else target.style.removeProperty('scroll-behavior');
+        }
+        return {top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight};
+    }
+    function courseScrollToBottom(target) {
+        // 使用浏览器钳制后的实际位置；接近底部仍写一次，消除小数残余。
+        return courseDocumentScrollTo(target,target.scrollHeight);
+    }
+    function courseDocumentScrollState(target, contentRoot) {
+        const images=(contentRoot.matches('img')?[contentRoot]:[...contentRoot.querySelectorAll('img')]).filter(courseElementVisible);
+        return {top:target.scrollTop,height:target.clientHeight,total:target.scrollHeight,
+            loaded:target.clientHeight>0 && (!images.length || images.some(image=>image.complete&&image.naturalWidth>0)),
+            imageCount:images.length,pendingImages:images.filter(image=>!image.complete||image.naturalWidth<=0).length};
+    }
     function courseDocumentScrollTargets(node) {
         // 只沿资料节点的祖先及所属 iframe 向外查找，不能滚动目录或助手面板。
         const targets=[],seen=new Set();
         const add=(element,root=false)=>{
             if(!element || seen.has(element) || !courseElementVisible(element)) return;
             seen.add(element);
-            if(element.clientHeight>0 && (element.scrollHeight>element.clientHeight+2 || root&&element.scrollHeight>=element.clientHeight)) targets.push(element);
+            if(element.clientHeight>0 && (element.scrollHeight>element.clientHeight || root&&element.scrollHeight>=element.clientHeight)) targets.push(element);
         };
         let anchor=node;
         for(let depth=0;anchor && depth<12;depth++) {
@@ -1353,10 +1380,10 @@
         // 现场确认：新版 #img 是 div，内部 #panView 跳转到 pan-yz 的连续图片文档。
         const remote=scope.querySelector('[id="img"].imglook iframe[id="panView"]');
         if(remote && courseRemoteReaderFrame(remote) && courseElementVisible(remote))return {doc,node:remote,kind:'remote-scroll',request:(op,signal,timeout)=>courseDocumentBridgeRequest(remote,op,signal,timeout)};
-        const image=scope.querySelector('#img.imglook[src],#img.imglook[data-original],#img.imglook[data-src]');
+        const image=scope.querySelector('[id="img"].imglook[src],[id="img"].imglook[data-original],[id="img"].imglook[data-src]');
         const continuous=scope.querySelector('.pdfViewer .page,[data-document-reader] img[src]');
         const node=image||continuous;
-        if(node && courseElementVisible(node)) return {doc,node,kind:'scroll',targets:()=>courseDocumentScrollTargets(node)};
+        if(node && courseElementVisible(node)) return {doc,node,kind:'scroll',contentRoot:node.closest('.pdfViewer,[data-document-reader],.continuous-reader')||node,targets:()=>courseDocumentScrollTargets(node)};
         return null;
     }
     function courseDocumentReaders(doc) {
@@ -1449,7 +1476,7 @@
         return [...new Set(buttons)];
     }
     const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
-        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, submitMs:30000 });
+        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000 });
     let courseRunner;
     function courseTimeoutError(message) {
         return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
@@ -1490,13 +1517,18 @@
             const position=Number.isFinite(state.seconds)?Math.floor(state.seconds):'未知';
             return `${chapter.number} ${chapter.title} · 视频 ${task.number || 1}：暂停 ${task.pauseCount || 0} 次，恢复 ${task.resumes || 0} 次；${task.lastPause?'最后暂停时':'检测时'}课程页${visibility}${focus}；检测时位置 ${position} 秒，readyState=${state.readyState ?? '未知'}，networkState=${state.networkState ?? '未知'}，错误码=${state.errorCode ?? '无'}。暂停来源尚未确认。`+courseVideoEventTrace(task);
         }));
+        const documentStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='document'&&task.documentState).map(task=>{
+            const state=task.documentState;
+            return `${chapter.number} ${chapter.title} · 资料 ${task.number||1}：位置 ${Math.round(state.top)}/${Math.round(Math.max(0,state.total-state.height))}，距底部 ${Math.round(state.distance*100)/100}px；图片 ${state.imageCount} 张，未加载 ${state.pendingImages} 张；到底校正 ${task.bottomCorrections||0} 次，快速遍历 ${task.fallbackPasses||0} 轮。`;
+        }));
         return `${report.status === 'done' ? (skipped.length || taskFree.length || timedOut.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (completedQuizzes ? `\n${completedQuizzes} 个章节测验已完成，已跳过作答。` : '')
             + (taskFree.length ? `\n${taskFree.length} 个章节无任务点，已直接继续下一节。` : '')
             + (skipped.length ? `\n用户跳过 ${skipped.length} 个章节（不计为完成）：\n` + skipped.map(chapter => `${chapter.number} ${chapter.title}`).join('\n') : '')
             + (timedOut.length ? `\n超时跳过 ${timedOut.length} 个章节（不计为完成）：\n` + timedOut.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
             + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '')
-            + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '');
+            + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '')
+            + (documentStates.length ? '\n资料状态记录：\n' + documentStates.join('\n') : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
         const owner=studyOwnerDocument(doc),scope=owner&&courseScoreKey(owner);
@@ -1740,55 +1772,88 @@
                     const readDocument = async (reader, task) => {
                         if(run.skipLearned && courseTaskComplete(reader.node)===true){task.status='already';return;}
                         const readingDeadline=now()+limits.documentMs;
-                        if(reader.kind==='remote-scroll') {
-                            const end=now()+limits.documentMs,loadEnd=now()+limits.loadMs;
-                            let stable=0,state;
-                            while(stable<2) {
+                        if(reader.kind==='remote-scroll' || reader.kind==='scroll') {
+                            const remote=reader.kind==='remote-scroll',contentRoot=reader.contentRoot||reader.node;
+                            let previousTargets=[],signature='',stable=0,stableSince=null,confirmationSince=null;
+                            let unavailableSince=null,lastProgress=now(),lastPosition='',fallbackPasses=0;
+                            task.bottomCorrections=0;task.fallbackPasses=0;
+                            const ensureCurrent=()=>{
                                 guard();
                                 if(!reader.node.isConnected || !courseFrameTree(owner).documents.includes(reader.doc))throw new Error('资料页面已切换，已停止');
-                                state=await race(reader.request('read',context.abort.signal,limits.loadMs));
-                                if(!state.loaded || !state.height) {
-                                    if(now()>loadEnd)throw courseTimeoutError('PPT 图片仍在加载，无法确认阅读区域');
-                                    await wait(limits.pollMs);continue;
+                            };
+                            const inspect=async op=>{
+                                ensureCurrent();
+                                if(now()>=readingDeadline)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
+                                let states,targetsChanged=false;
+                                if(remote) {
+                                    const state=await race(reader.request(op,context.abort.signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
+                                    ensureCurrent();
+                                    if(state.canBottom!==true)throw new Error('阅读器版本未同步，请更新脚本并刷新整个课程页');
+                                    states=[state];
+                                } else {
+                                    const targets=reader.targets();
+                                    targetsChanged=targets.length!==previousTargets.length || targets.some((node,i)=>node!==previousTargets[i]);
+                                    previousTargets=targets;
+                                    states=targets.map(target=>{
+                                        if(op==='bottom')courseScrollToBottom(target);
+                                        else if(op==='top')courseDocumentScrollTo(target,0);
+                                        else if(op==='scan')courseDocumentScrollTo(target,Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*0.9))));
+                                        return courseDocumentScrollState(target,contentRoot);
+                                    });
                                 }
-                                const bottom=state.top>=Math.max(0,state.total-state.height)-2;
-                                stable=bottom?stable+1:0;
-                                if(!bottom) {guard();await race(reader.request('step',context.abort.signal,limits.loadMs));}
-                                const percent=Math.min(100,Math.floor((state.top+state.height)/Math.max(state.height,state.total)*100));
-                                emit(`正在阅读第 ${task.number||1} 份 PPT：${percent}%（滚动位置），等待平台确认完成…`,'course-document');
-                                await wait(limits.slideMs);
-                                if(now()>end)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
-                            }
-                            await until(()=>courseTaskComplete(reader.node)===true,limits.completionMs,'PPT 已到最底部，但平台未确认任务完成');
-                            task.status='done';task.reader='remote-scroll';report.documents++;return;
-                        }
-                        if (reader.kind==='scroll') {
-                            const end=now()+limits.documentMs;
-                            await until(()=>reader.targets().length,limits.loadMs,'资料滚动区域尚未加载或无法确认，请人工检查');
-                            let stable=0;
-                            while(stable<2) {
-                                guard();
-                                if(!reader.node.isConnected || !courseFrameTree(owner).documents.includes(reader.doc)) throw new Error('资料页面已切换，已停止');
-                                const targets=reader.targets();
-                                if(!targets.length) throw new Error('资料滚动区域尚未加载或无法确认，请人工检查');
-                                let bottom=true;
-                                for(const target of targets) {
-                                    const height=target.clientHeight,max=Math.max(0,target.scrollHeight-height);
-                                    if(height<=0 || !Number.isFinite(max)) throw new Error('资料滚动尺寸无法读取');
-                                    if(target.scrollTop<max-2) {
-                                        bottom=false;
-                                        const before=target.scrollTop;
-                                        guard();target.scrollTop=Math.min(max,before+Math.max(1,Math.floor(height*0.8)));
-                                        await until(()=>target.scrollTop>before || courseTaskComplete(reader.node)===true,limits.loadMs,'资料滚动没有响应');
-                                    }
+                                if(states.some(state=>!['top','height','total'].every(k=>Number.isFinite(state[k])&&state[k]>=0)))throw new Error('资料滚动尺寸无法读取');
+                                const loaded=states.length>0 && states.every(state=>state.loaded&&state.height>0);
+                                const bottom=loaded && states.every(state=>Math.abs(Math.max(0,state.total-state.height)-state.top)<=1);
+                                const nextSignature=JSON.stringify(states.map(state=>[state.targetId||'',state.height,state.total,state.imageCount]));
+                                const changed=targetsChanged||nextSignature!==signature;
+                                if(changed)signature=nextSignature;
+                                const position=JSON.stringify(states.map(state=>state.top));
+                                if(changed || position!==lastPosition){lastProgress=now();lastPosition=position;}
+                                const first=states[0];
+                                task.documentState=first?{top:first.top,height:first.height,total:first.total,
+                                    distance:Math.max(...states.map(state=>Math.abs(Math.max(0,state.total-state.height)-state.top))),
+                                    imageCount:first.imageCount,pendingImages:first.pendingImages}:null;
+                                return {loaded,bottom,changed,pending:states.some(state=>state.pendingImages>0)};
+                            };
+                            const reset=()=>{stable=0;stableSince=null;confirmationSince=null;};
+                            let state=await inspect('read');
+                            while(true) {
+                                ensureCurrent();
+                                if(!state.loaded) {
+                                    reset();unavailableSince??=now();
+                                    if(now()-unavailableSince>=limits.loadMs)throw courseTimeoutError('PPT 图片或阅读区域仍在加载，无法确认阅读区域');
+                                } else {
+                                    unavailableSince=null;
+                                    task.bottomCorrections++;state=await inspect('bottom');
+                                    if(state.changed || !state.bottom || !state.loaded)reset();
+                                    if(state.bottom) {
+                                        stableSince??=now();stable++;
+                                        if(stable>=limits.documentBottomSamples && now()-stableSince>=limits.documentStableMs) {
+                                            if(state.pending) {
+                                                if(fallbackPasses>=limits.documentFallbackPasses)throw courseTimeoutError('PPT 快速遍历后仍有图片未加载，无法确认阅读完成');
+                                                task.fallbackPasses=++fallbackPasses;reset();
+                                                emit(`正在补载第 ${task.number||1} 份 PPT…`,'course-document');
+                                                state=await inspect('top');
+                                                while(!state.bottom || !state.loaded) {
+                                                    await wait(limits.documentFallbackStepMs);state=await inspect('scan');
+                                                    if(now()-lastProgress>=limits.loadMs)throw courseTimeoutError('资料滚动没有响应或图片仍未加载');
+                                                }
+                                                // 最后一页的懒加载也需要一个真实等待间隔。
+                                                await wait(limits.documentCheckMs);state=await inspect('read');continue;
+                                            }
+                                            if(courseTaskComplete(reader.node)===true) {
+                                                task.status='done';task.reader=reader.kind;report.documents++;return;
+                                            }
+                                            confirmationSince??=now();
+                                            if(now()-confirmationSince>=limits.completionMs)throw courseTimeoutError('PPT 已确认到最底部，但平台尚未确认任务完成');
+                                        }
+                                    } else if(now()-lastProgress>=limits.loadMs)throw courseTimeoutError('资料滚动没有响应，无法确认到达底部');
                                 }
-                                stable=bottom?stable+1:0;
-                                emit('正在滚动阅读资料，等待到达底部…','course-document');
-                                await wait(limits.slideMs);
-                                if(now()>end) throw courseTimeoutError('资料滚动阅读超时，请人工检查');
+                                emit(`正在确认第 ${task.number||1} 份 PPT 的底部与完成状态…`,'course-document');
+                                await wait(limits.documentCheckMs);state=await inspect('read');
+                                // read 捕捉等待期间的布局变化，不能让紧随其后的 bottom 覆盖该变化。
+                                if(state.changed || !state.bottom || !state.loaded)reset();
                             }
-                            await until(()=>courseTaskComplete(reader.node)===true,limits.completionMs,'资料已到最底部，但平台未确认任务完成');
-                            task.status='done';task.reader='scroll';report.documents++;return;
                         }
                         const last=reader.last();
                         if (reader.current()<reader.total && last && courseElementVisible(last) && !last.disabled) {guard();last.click();}
@@ -2614,7 +2679,7 @@
           @media(prefers-reduced-motion:reduce){#status-spinner{animation:none}}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.06</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.07</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -3032,7 +3097,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.06',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.07',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

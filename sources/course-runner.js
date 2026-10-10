@@ -1,5 +1,5 @@
     const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
-        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, submitMs:30000 });
+        stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000 });
     let courseRunner;
     function courseTimeoutError(message) {
         return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
@@ -40,13 +40,18 @@
             const position=Number.isFinite(state.seconds)?Math.floor(state.seconds):'未知';
             return `${chapter.number} ${chapter.title} · 视频 ${task.number || 1}：暂停 ${task.pauseCount || 0} 次，恢复 ${task.resumes || 0} 次；${task.lastPause?'最后暂停时':'检测时'}课程页${visibility}${focus}；检测时位置 ${position} 秒，readyState=${state.readyState ?? '未知'}，networkState=${state.networkState ?? '未知'}，错误码=${state.errorCode ?? '无'}。暂停来源尚未确认。`+courseVideoEventTrace(task);
         }));
+        const documentStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='document'&&task.documentState).map(task=>{
+            const state=task.documentState;
+            return `${chapter.number} ${chapter.title} · 资料 ${task.number||1}：位置 ${Math.round(state.top)}/${Math.round(Math.max(0,state.total-state.height))}，距底部 ${Math.round(state.distance*100)/100}px；图片 ${state.imageCount} 张，未加载 ${state.pendingImages} 张；到底校正 ${task.bottomCorrections||0} 次，快速遍历 ${task.fallbackPasses||0} 轮。`;
+        }));
         return `${report.status === 'done' ? (skipped.length || taskFree.length || timedOut.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (completedQuizzes ? `\n${completedQuizzes} 个章节测验已完成，已跳过作答。` : '')
             + (taskFree.length ? `\n${taskFree.length} 个章节无任务点，已直接继续下一节。` : '')
             + (skipped.length ? `\n用户跳过 ${skipped.length} 个章节（不计为完成）：\n` + skipped.map(chapter => `${chapter.number} ${chapter.title}`).join('\n') : '')
             + (timedOut.length ? `\n超时跳过 ${timedOut.length} 个章节（不计为完成）：\n` + timedOut.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
             + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '')
-            + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '');
+            + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '')
+            + (documentStates.length ? '\n资料状态记录：\n' + documentStates.join('\n') : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
         const owner=studyOwnerDocument(doc),scope=owner&&courseScoreKey(owner);
@@ -290,55 +295,88 @@
                     const readDocument = async (reader, task) => {
                         if(run.skipLearned && courseTaskComplete(reader.node)===true){task.status='already';return;}
                         const readingDeadline=now()+limits.documentMs;
-                        if(reader.kind==='remote-scroll') {
-                            const end=now()+limits.documentMs,loadEnd=now()+limits.loadMs;
-                            let stable=0,state;
-                            while(stable<2) {
+                        if(reader.kind==='remote-scroll' || reader.kind==='scroll') {
+                            const remote=reader.kind==='remote-scroll',contentRoot=reader.contentRoot||reader.node;
+                            let previousTargets=[],signature='',stable=0,stableSince=null,confirmationSince=null;
+                            let unavailableSince=null,lastProgress=now(),lastPosition='',fallbackPasses=0;
+                            task.bottomCorrections=0;task.fallbackPasses=0;
+                            const ensureCurrent=()=>{
                                 guard();
                                 if(!reader.node.isConnected || !courseFrameTree(owner).documents.includes(reader.doc))throw new Error('资料页面已切换，已停止');
-                                state=await race(reader.request('read',context.abort.signal,limits.loadMs));
-                                if(!state.loaded || !state.height) {
-                                    if(now()>loadEnd)throw courseTimeoutError('PPT 图片仍在加载，无法确认阅读区域');
-                                    await wait(limits.pollMs);continue;
+                            };
+                            const inspect=async op=>{
+                                ensureCurrent();
+                                if(now()>=readingDeadline)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
+                                let states,targetsChanged=false;
+                                if(remote) {
+                                    const state=await race(reader.request(op,context.abort.signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
+                                    ensureCurrent();
+                                    if(state.canBottom!==true)throw new Error('阅读器版本未同步，请更新脚本并刷新整个课程页');
+                                    states=[state];
+                                } else {
+                                    const targets=reader.targets();
+                                    targetsChanged=targets.length!==previousTargets.length || targets.some((node,i)=>node!==previousTargets[i]);
+                                    previousTargets=targets;
+                                    states=targets.map(target=>{
+                                        if(op==='bottom')courseScrollToBottom(target);
+                                        else if(op==='top')courseDocumentScrollTo(target,0);
+                                        else if(op==='scan')courseDocumentScrollTo(target,Math.min(Math.max(0,target.scrollHeight-target.clientHeight),target.scrollTop+Math.max(1,Math.floor(target.clientHeight*0.9))));
+                                        return courseDocumentScrollState(target,contentRoot);
+                                    });
                                 }
-                                const bottom=state.top>=Math.max(0,state.total-state.height)-2;
-                                stable=bottom?stable+1:0;
-                                if(!bottom) {guard();await race(reader.request('step',context.abort.signal,limits.loadMs));}
-                                const percent=Math.min(100,Math.floor((state.top+state.height)/Math.max(state.height,state.total)*100));
-                                emit(`正在阅读第 ${task.number||1} 份 PPT：${percent}%（滚动位置），等待平台确认完成…`,'course-document');
-                                await wait(limits.slideMs);
-                                if(now()>end)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
-                            }
-                            await until(()=>courseTaskComplete(reader.node)===true,limits.completionMs,'PPT 已到最底部，但平台未确认任务完成');
-                            task.status='done';task.reader='remote-scroll';report.documents++;return;
-                        }
-                        if (reader.kind==='scroll') {
-                            const end=now()+limits.documentMs;
-                            await until(()=>reader.targets().length,limits.loadMs,'资料滚动区域尚未加载或无法确认，请人工检查');
-                            let stable=0;
-                            while(stable<2) {
-                                guard();
-                                if(!reader.node.isConnected || !courseFrameTree(owner).documents.includes(reader.doc)) throw new Error('资料页面已切换，已停止');
-                                const targets=reader.targets();
-                                if(!targets.length) throw new Error('资料滚动区域尚未加载或无法确认，请人工检查');
-                                let bottom=true;
-                                for(const target of targets) {
-                                    const height=target.clientHeight,max=Math.max(0,target.scrollHeight-height);
-                                    if(height<=0 || !Number.isFinite(max)) throw new Error('资料滚动尺寸无法读取');
-                                    if(target.scrollTop<max-2) {
-                                        bottom=false;
-                                        const before=target.scrollTop;
-                                        guard();target.scrollTop=Math.min(max,before+Math.max(1,Math.floor(height*0.8)));
-                                        await until(()=>target.scrollTop>before || courseTaskComplete(reader.node)===true,limits.loadMs,'资料滚动没有响应');
-                                    }
+                                if(states.some(state=>!['top','height','total'].every(k=>Number.isFinite(state[k])&&state[k]>=0)))throw new Error('资料滚动尺寸无法读取');
+                                const loaded=states.length>0 && states.every(state=>state.loaded&&state.height>0);
+                                const bottom=loaded && states.every(state=>Math.abs(Math.max(0,state.total-state.height)-state.top)<=1);
+                                const nextSignature=JSON.stringify(states.map(state=>[state.targetId||'',state.height,state.total,state.imageCount]));
+                                const changed=targetsChanged||nextSignature!==signature;
+                                if(changed)signature=nextSignature;
+                                const position=JSON.stringify(states.map(state=>state.top));
+                                if(changed || position!==lastPosition){lastProgress=now();lastPosition=position;}
+                                const first=states[0];
+                                task.documentState=first?{top:first.top,height:first.height,total:first.total,
+                                    distance:Math.max(...states.map(state=>Math.abs(Math.max(0,state.total-state.height)-state.top))),
+                                    imageCount:first.imageCount,pendingImages:first.pendingImages}:null;
+                                return {loaded,bottom,changed,pending:states.some(state=>state.pendingImages>0)};
+                            };
+                            const reset=()=>{stable=0;stableSince=null;confirmationSince=null;};
+                            let state=await inspect('read');
+                            while(true) {
+                                ensureCurrent();
+                                if(!state.loaded) {
+                                    reset();unavailableSince??=now();
+                                    if(now()-unavailableSince>=limits.loadMs)throw courseTimeoutError('PPT 图片或阅读区域仍在加载，无法确认阅读区域');
+                                } else {
+                                    unavailableSince=null;
+                                    task.bottomCorrections++;state=await inspect('bottom');
+                                    if(state.changed || !state.bottom || !state.loaded)reset();
+                                    if(state.bottom) {
+                                        stableSince??=now();stable++;
+                                        if(stable>=limits.documentBottomSamples && now()-stableSince>=limits.documentStableMs) {
+                                            if(state.pending) {
+                                                if(fallbackPasses>=limits.documentFallbackPasses)throw courseTimeoutError('PPT 快速遍历后仍有图片未加载，无法确认阅读完成');
+                                                task.fallbackPasses=++fallbackPasses;reset();
+                                                emit(`正在补载第 ${task.number||1} 份 PPT…`,'course-document');
+                                                state=await inspect('top');
+                                                while(!state.bottom || !state.loaded) {
+                                                    await wait(limits.documentFallbackStepMs);state=await inspect('scan');
+                                                    if(now()-lastProgress>=limits.loadMs)throw courseTimeoutError('资料滚动没有响应或图片仍未加载');
+                                                }
+                                                // 最后一页的懒加载也需要一个真实等待间隔。
+                                                await wait(limits.documentCheckMs);state=await inspect('read');continue;
+                                            }
+                                            if(courseTaskComplete(reader.node)===true) {
+                                                task.status='done';task.reader=reader.kind;report.documents++;return;
+                                            }
+                                            confirmationSince??=now();
+                                            if(now()-confirmationSince>=limits.completionMs)throw courseTimeoutError('PPT 已确认到最底部，但平台尚未确认任务完成');
+                                        }
+                                    } else if(now()-lastProgress>=limits.loadMs)throw courseTimeoutError('资料滚动没有响应，无法确认到达底部');
                                 }
-                                stable=bottom?stable+1:0;
-                                emit('正在滚动阅读资料，等待到达底部…','course-document');
-                                await wait(limits.slideMs);
-                                if(now()>end) throw courseTimeoutError('资料滚动阅读超时，请人工检查');
+                                emit(`正在确认第 ${task.number||1} 份 PPT 的底部与完成状态…`,'course-document');
+                                await wait(limits.documentCheckMs);state=await inspect('read');
+                                // read 捕捉等待期间的布局变化，不能让紧随其后的 bottom 覆盖该变化。
+                                if(state.changed || !state.bottom || !state.loaded)reset();
                             }
-                            await until(()=>courseTaskComplete(reader.node)===true,limits.completionMs,'资料已到最底部，但平台未确认任务完成');
-                            task.status='done';task.reader='scroll';report.documents++;return;
                         }
                         const last=reader.last();
                         if (reader.current()<reader.total && last && courseElementVisible(last) && !last.disabled) {guard();last.click();}
