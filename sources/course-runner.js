@@ -1,7 +1,43 @@
     const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
+        videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000 });
     let courseRunner;
+    function courseVideoPlayedRanges(video) {
+        try {
+            const played=video.played,ranges=[];
+            if(!played || !Number.isSafeInteger(played.length) || played.length<0 || played.length>10000)return {available:false,ranges};
+            for(let i=0;i<played.length;i++) {
+                const start=played.start(i),end=played.end(i);
+                if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start||i>0&&start<ranges[i-1].end)return {available:false,ranges:[]};
+                ranges.push({start,end});
+            }
+            return {available:true,ranges};
+        } catch {return {available:false,ranges:[]};}
+    }
+    function courseVideoPositionDecision(anchor,current,played,limits) {
+        const elapsed=Math.max(0,(current.at-anchor.at)/1000),delta=current.seconds-anchor.seconds;
+        const rate=value=>Number.isFinite(value)&&value>0?value:1;
+        const allowedForward=elapsed*Math.max(rate(anchor.rate),rate(current.rate))+limits.videoSeekToleranceSeconds;
+        const result={kind:'unready',delta,allowedForward,evidence:'none'};
+        if(!Number.isFinite(anchor.seconds)||!Number.isFinite(current.seconds)||!Number.isFinite(current.at)||!Number.isFinite(anchor.at)
+            ||current.seconds<0||!Number.isFinite(current.duration)||current.duration<=0||current.seconds>current.duration+limits.videoProgressEpsilonSeconds
+            ||current.seeking||current.readyState<2)return result;
+        if(delta < -limits.videoProgressEpsilonSeconds)return {...result,kind:'rollback',evidence:'position'};
+        if(delta<=limits.videoProgressEpsilonSeconds)return {...result,kind:'continuous',evidence:'position'};
+        if(played.available) {
+            let covered=anchor.seconds;
+            for(const range of played.ranges) {
+                if(range.end<covered)continue;
+                if(range.start>covered+limits.videoPlayedRangeToleranceSeconds)break;
+                covered=Math.max(covered,range.end);
+                if(covered>=current.seconds-limits.videoPlayedRangeToleranceSeconds)
+                    return {...result,kind:delta>allowedForward?'replay-seek':'continuous',evidence:'played'};
+            }
+            return {...result,kind:'forward-jump',evidence:'played-gap'};
+        }
+        return {...result,kind:delta>allowedForward?'forward-jump':'continuous',evidence:'elapsed'};
+    }
     function courseTimeoutError(message) {
         return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
     }
@@ -45,8 +81,16 @@
         }));
         const seekStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.seekState).map(task=>{
             const state=task.seekState,number=value=>Number.isFinite(value)?value.toFixed(2):'未知';
-            const outcomes={pending:'等待定位恢复',continuous:'进度连续，已继续',jump:'确认明显跳转，已停止',timeout:'定位等待超时'};
-            return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：定位 ${task.seekCount||1} 次；起点 ${number(state.from)} 秒，检测位置 ${number(state.to)} 秒，经过 ${number(state.elapsed)} 秒，允许前进 ${number(state.allowedForward)} 秒；${outcomes[state.outcome]||'判定未知'}，seeking=${typeof state.seeking==='boolean'?state.seeking:'未知'}，readyState=${Number.isInteger(state.readyState)?state.readyState:'未知'}。`;
+            const outcomes={pending:'等待定位恢复',continuous:'进度连续，已继续',rollback:'回退后重播','replay-seek':'返回已播区间',jump:'确认明显跳转，已停止','forward-jump':state.evidence==='played-gap'?'未播区间前跳，已停止':'异常前跳，已停止',timeout:'定位等待超时'};
+            const evidence={position:'位置比较',played:'浏览器已播区间','played-gap':'已播区间存在缺口',elapsed:'区间不可用，按实际经过时间检查',none:'等待有效数据'};
+            const direction={backward:'回退',forward:'前进',same:'位置基本不变'};
+            const extra=state.evidence?`；${direction[state.direction]||'方向未知'}，${evidence[state.evidence]||'依据未知'}，回退 ${number(state.rollbackSeconds)} 秒`:'';
+            return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：定位 ${task.seekCount||1} 次；起点 ${number(state.from)} 秒，检测位置 ${number(state.to)} 秒，经过 ${number(state.elapsed)} 秒，允许前进 ${number(state.allowedForward)} 秒；${outcomes[state.outcome]||'判定未知'}${extra}，seeking=${typeof state.seeking==='boolean'?state.seeking:'未知'}，readyState=${Number.isInteger(state.readyState)?state.readyState:'未知'}。`;
+        }));
+        const replayStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.replayState).map(task=>{
+            const state=task.replayState,number=value=>Number.isFinite(value)?value.toFixed(2):'未知';
+            const outcomes={replaying:'回退后重播',advanced:'已获得新增播放进展',ended:'已重播至视频结束',timeout:'反复回退超时'};
+            return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：回退 ${task.rollbackCount||0} 次；重播起点 ${number(state.startSeconds)} 秒，原最高位置 ${number(state.frontierAtStart)} 秒，当前最高位置 ${number(state.frontierSeconds)} 秒；等待 ${number(state.elapsed)} 秒，剩余 ${number(state.remaining)} 秒；${outcomes[state.outcome]||'状态未知'}。`;
         }));
         const documentStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='document'&&task.documentState).map(task=>{
             const state=task.documentState;
@@ -60,6 +104,7 @@
             + (report.reason ? `\n${report.reason}` : '') + (issues.length ? '\n需人工处理：\n' + issues.join('\n') : '')
             + (videoStates.length ? '\n视频状态记录：\n' + videoStates.join('\n') : '')
             + (seekStates.length ? '\n视频定位记录：\n' + seekStates.join('\n') : '')
+            + (replayStates.length ? '\n视频重播记录：\n' + replayStates.join('\n') : '')
             + (documentStates.length ? '\n资料状态记录：\n' + documentStates.join('\n') : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
@@ -127,7 +172,7 @@
                     ctl.report('另一个页面正在运行本课程，请先停止该页面','error'); return;
                 }
                 const configuration = readModelConfiguration();
-                const settings = {key:configuration.key,model:configuration.model,thinking:Boolean(get(KEY_THINKING,false)),effort:get(KEY_EFFORT,'high'),search:Boolean(get(KEY_SEARCH,false))};
+                const settings = configuration;
                 const entries=catalog.entries.filter(item=>!item.isGroup);
                 let startIndex=0;
                 if(!resume && fromCurrent) {
@@ -139,7 +184,7 @@
                 // 本次起点裁剪队列；换页恢复使用原队列，不重新读取当前选中章节。
                 const queue = resume && previous?.session === session ? previous.queue : entries.slice(startIndex).map(item => ({id:item.id,number:item.number,title:item.title}));
                 if (!queue?.length) return;
-                if (resume && JSON.stringify(previous.settings) !== JSON.stringify({ ...settings,key:undefined })) {
+                if (resume && JSON.stringify(previous.settings) !== JSON.stringify(modelConfigurationSignature(settings))) {
                     ctl.report('自动学习配置已变化，请重新开始','error'); return;
                 }
                 const report = resume ? previous.report : { status:'running', startedAt:now(), endedAt:null, reason:'', videos:0,documents:0,quizzes:0,
@@ -164,7 +209,7 @@
                 lease.setAttribute('data-run-id',run.id);
                 const save = () => {
                     if(run.claimed && get(key,null)?.ownerId!==run.id)throw new Error('运行锁已失效');
-                    set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:{...settings,key:undefined},submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,
+                    set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,
                         queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
                     run.claimed=true;
                     run.lastSaved = now();
@@ -228,42 +273,124 @@
                         if (courseTaskComplete(node) === false) await until(() => courseTaskComplete(node) === true,limits.completionMs,'播放/阅读结束，但平台未确认任务完成');
                     };
                     const playVideo = async (video, task) => {
+                        let contextCapturedAt=-Infinity;
                         run.activeVideo=video;
                         if (run.skipLearned && courseTaskComplete(video) === true) {task.status='already';return;}
                         video.muted=run.muteVideo;
-                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;
-                        let lastTime=video.currentTime,lastProgress=now(),lastPlay=-Infinity,playbackCheckpoint=Number(video.currentTime),wakeMedia=null;
-                        const playbackSample=()=>{const rate=Number(video.playbackRate);return {at:now(),seconds:Number(video.currentTime),rate:Number.isFinite(rate)&&rate>0?rate:1};};
-                        let sample=playbackSample(),pendingSeek=null;
-                        const beginSeek=()=>{
-                            if(!pendingSeek){pendingSeek={startedAt:now(),anchor:{...sample},stableSince:null};task.seekCount++;}
-                            // 重复定位不延长截止时间，也不覆盖定位前的可信位置。
-                            pendingSeek.stableSince=null;
-                        };
-                        const recordSeek=(current,outcome)=>{
-                            const anchor=pendingSeek.anchor,elapsed=Math.max(0,(current.at-anchor.at)/1000);
-                            task.seekState={from:anchor.seconds,to:current.seconds,elapsed,
-                                allowedForward:elapsed*Math.max(anchor.rate,current.rate)+limits.videoSeekToleranceSeconds,
-                                outcome,seeking:Boolean(video.seeking),readyState:video.readyState};
-                            return task.seekState;
-                        };
+                        task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;task.rollbackCount=0;
+                        let lastPlay=-Infinity,wakeMedia=null,pendingSeek=null,fatalError=null,replay=null;
+                        const playbackRate=()=>{const rate=Number(video.playbackRate);return Number.isFinite(rate)&&rate>0?rate:1;};
                         // 被动记录公开媒体事件；不修改播放器回调、页面可见性或平台上报。
                         const snapshot=event=>({event,at:now(),seconds:Number(video.currentTime),duration:Number(video.duration),paused:video.paused,
-                            readyState:video.readyState,networkState:video.networkState,seeking:Boolean(video.seeking),rate:playbackSample().rate,
+                            readyState:video.readyState,networkState:video.networkState,seeking:Boolean(video.seeking),rate:playbackRate(),
                             visibility:owner.visibilityState || 'unknown',focused:typeof owner.hasFocus==='function'?owner.hasFocus():null,errorCode:video.error?.code ?? null});
+                        let trustedSample=snapshot('initial'),lastMotionAt=now(),resumeProgress=0,frontierSeconds=task.startSeconds;
+                        const recordReplay=(current,outcome='replaying')=>{
+                            if(!replay)return;
+                            task.replayState={startedAt:replay.startedAt,startSeconds:replay.startSeconds,frontierAtStart:replay.frontierAtStart,
+                                frontierSeconds,deadline:replay.deadline,elapsed:Math.max(0,(current.at-replay.startedAt)/1000),remaining:Math.max(0,(replay.deadline-current.at)/1000),outcome};
+                        };
+                        const recordSeek=(current,outcome,decision)=>{
+                            const anchor=pendingSeek.anchor;
+                            task.seekState={from:anchor.seconds,to:current.seconds,elapsed:Math.max(0,(current.at-anchor.at)/1000),
+                                allowedForward:decision.allowedForward,delta:decision.delta,rollbackSeconds:Math.max(0,-decision.delta),
+                                direction:decision.delta < -limits.videoProgressEpsilonSeconds?'backward':decision.delta>limits.videoProgressEpsilonSeconds?'forward':'same',
+                                evidence:decision.evidence,outcome,seeking:current.seeking,readyState:current.readyState};
+                        };
+                        const seekTimeout=current=>{
+                            recordSeek(current,'timeout',courseVideoPositionDecision(pendingSeek.anchor,current,courseVideoPlayedRanges(video),limits));
+                            fatalError ||= courseTimeoutError('视频定位长时间未恢复，请检查播放器或网络');
+                        };
+                        const beginSeek=current=>{
+                            if(!pendingSeek){pendingSeek={startedAt:current.at,anchor:{...trustedSample},stableSince:null,finalSettleDeadline:null};task.seekCount++;}
+                            else if(pendingSeek.finalSettleDeadline!==null)seekTimeout(current);
+                            // 重复定位只重置稳定窗口，不延长起点或截止时间。
+                            pendingSeek.stableSince=null;
+                        };
+                        const commitSample=(current,natural)=>{
+                            const delta=current.seconds-trustedSample.seconds;
+                            if(replay&&!current.paused){
+                                replay.lowestRate=Math.min(replay.lowestRate,current.rate);
+                                replay.deadline=replay.startedAt+(replay.initialDistance+limits.resumeProgressSeconds)/replay.lowestRate*1000+limits.videoReplayGraceMs;
+                            }
+                            if(natural&&delta>limits.videoProgressEpsilonSeconds&&!(trustedSample.paused&&current.paused)){
+                                lastMotionAt=current.at;resumeProgress+=delta;
+                                if(resumeProgress>=limits.resumeProgressSeconds){task.unstableResumes=0;resumeProgress=0;}
+                                frontierSeconds=Math.max(frontierSeconds,current.seconds);
+                                if(replay){
+                                    if(frontierSeconds>=replay.frontierAtStart+limits.resumeProgressSeconds){recordReplay(current,'advanced');replay=null;}
+                                }
+                            }
+                            trustedSample=current;
+                            task.progressState={lastMotionAt,resumeProgressSeconds:resumeProgress,frontierSeconds};
+                            recordReplay(current);
+                        };
+                        // 所有媒体事件和轮询先校验位置再提交采样。回调仅登记，主循环统一判定/抛错。
+                        const observe=(current,canFinalize=false)=>{
+                            if(fatalError)return;
+                            const played=courseVideoPlayedRanges(video);
+                            const decision=courseVideoPositionDecision(pendingSeek?.anchor||trustedSample,current,played,limits);
+                            if(current.event==='seeking'||current.seeking)beginSeek(current);
+                            else if(!pendingSeek&&(current.event==='seeked'||decision.kind==='rollback'||decision.kind==='replay-seek'||decision.kind==='forward-jump'||
+                                decision.kind==='unready'&&(!Number.isFinite(current.seconds)||Math.abs(decision.delta)>limits.videoProgressEpsilonSeconds||current.event==='ended')))beginSeek(current);
+                            if(fatalError)return;
+                            // 普通缓冲且位置未变不属于定位，沿用原停滞等待。
+                            if(!pendingSeek&&decision.kind==='unready')return;
+                            if(!pendingSeek){commitSample(current,true);return;}
+                            const check=courseVideoPositionDecision(pendingSeek.anchor,current,played,limits);
+                            recordSeek(current,'pending',check);
+                            const expired=current.at-pendingSeek.startedAt>=limits.videoSeekTimeoutMs;
+                            if(check.kind==='unready'){
+                                pendingSeek.stableSince=null;
+                                if(expired||pendingSeek.finalSettleDeadline!==null)seekTimeout(current);
+                                return;
+                            }
+                            if(pendingSeek.stableSince===null)pendingSeek.stableSince=current.at;
+                            // 已恢复的状态先复查；晚唤醒最多获得一次最终稳定窗口。
+                            if(expired&&pendingSeek.finalSettleDeadline===null)pendingSeek.finalSettleDeadline=current.at+limits.videoSeekStableMs;
+                            if(!canFinalize)return;
+                            if(current.at-pendingSeek.stableSince<limits.videoSeekStableMs){
+                                if(pendingSeek.finalSettleDeadline!==null&&current.at>=pendingSeek.finalSettleDeadline)seekTimeout(current);
+                                return;
+                            }
+                            if(check.kind==='forward-jump'){
+                                recordSeek(current,'forward-jump',check);
+                                fatalError=new Error(`检测到视频进度跳转（${Number.isFinite(pendingSeek.anchor.seconds)?pendingSeek.anchor.seconds.toFixed(2):'未知'} → ${current.seconds.toFixed(2)} 秒），${check.evidence==='played-gap'?'存在未播区间，':''}无法确认完整播放`);
+                                return;
+                            }
+                            if(check.kind==='rollback'){
+                                task.rollbackCount++;
+                                if(!replay){
+                                    const lowestRate=Math.min(pendingSeek.anchor.rate,current.rate),initialDistance=Math.max(0,frontierSeconds-current.seconds);
+                                    replay={startedAt:current.at,startSeconds:current.seconds,frontierAtStart:frontierSeconds,initialDistance,lowestRate,
+                                        deadline:current.at+(initialDistance+limits.resumeProgressSeconds)/lowestRate*1000+limits.videoReplayGraceMs};
+                                }
+                            }
+                            recordSeek(current,check.kind,check);pendingSeek=null;
+                            // 定位位移不计播放进展，不清零失败计时或恢复预算。
+                            commitSample(current,false);
+                        };
+                        const materialRecord=settings.videoInfoEnabled?chapterContextStore(owner):null;
+                        const videoInfo=createCourseVideoInfo(settings,{signal:context.abort.signal,now,guard:()=>{
+                            guard();
+                            if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频页面已切换');
+                        },
+                            onItems:items=>{guard();if(materialRecord)mergeCourseContext(materialRecord.store,materialRecord.identity.id,items);},
+                            onStatus:message=>{task.infoStatus=String(message).slice(0,240);}});
+                        const collectVideoInfo=(forceText=false)=>{
+                            if(!settings.videoInfoEnabled)return;
+                            try {
+                                videoInfo.observe(video);
+                                if(forceText || now()-contextCapturedAt>=5000){captureCurrentCourseContext(owner,{video,expectedIdentity:materialRecord?.identity.id});contextCapturedAt=now();}
+                            } catch {task.infoStatus='当前课程资料无法读取，正常播放继续';}
+                        };
                         const onMediaEvent=event=>{
                             if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
-                            if(event.type==='seeking' || video.seeking)beginSeek();
-                            // seeked 有时先于轮询到达；仍须使用事件之前的采样进行复查。
-                            else if(event.type==='seeked' && !pendingSeek)beginSeek();
-                            if(!pendingSeek && Number.isFinite(video.currentTime))sample=playbackSample();
-                            if(pendingSeek){
-                                if(!Number.isFinite(video.currentTime) || video.readyState<2)pendingSeek.stableSince=null;
-                                recordSeek(playbackSample(),'pending');
-                            }
+                            const state=snapshot(event.type);observe(state);
+                            collectVideoInfo();
                             // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
                             if(event.type==='timeupdate'){wakeMedia?.();return;}
-                            const state=snapshot(event.type);task.playbackState=state;
+                            task.playbackState=state;
                             if(event.type==='pause'){task.pauseCount++;task.lastPause=state;}
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
                             wakeMedia?.();
@@ -274,7 +401,7 @@
                             try {await race(Promise.race([wait(limits.pollMs),mediaEvent]));}
                             finally {if(wakeMedia===wake)wakeMedia=null;}
                         };
-                        const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked'];
+                        const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked','canplay','loadeddata','ratechange'];
                         for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
                         try {
                             const startPlayback=async(recovery=false)=>{
@@ -291,8 +418,6 @@
                                     if(video.paused)await race(Promise.race([Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();}),sleep(limits.videoLoadMs).then(()=>{throw courseTimeoutError('视频启动超时');})]));
                                     guard();
                                     if(recovery){task.resumes++;if(!pendingSeek)task.unstableResumes++;}
-                                    // 恢复保留真实进度检查点；短段播放的累计进展也能证明恢复有效。
-                                    if(!recovery && !pendingSeek)playbackCheckpoint=Number(video.currentTime);
                                 } catch(error) {
                                     if(context.skipped || run.cancelled)throw error;
                                     throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
@@ -301,54 +426,57 @@
                             if(video.paused)await startPlayback();
                             emit('已启动视频，正在读取时长…','course-video');
                             await until(()=>Number.isFinite(video.duration)&&video.duration>0,limits.videoLoadMs,'视频时长无法读取或仍在加载');
-                            task.durationSeconds=Number(video.duration);lastProgress=now();
+                            task.durationSeconds=Number(video.duration);lastMotionAt=now();
                             while(true) {
                                 guard();
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
+                                collectVideoInfo();
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if(video.seeking)beginSeek();
-                                if(pendingSeek) {
-                                    const current=playbackSample(),state=recordSeek(current,'pending');
-                                    if(current.at-pendingSeek.startedAt>=limits.videoSeekTimeoutMs){
-                                        recordSeek(current,'timeout');
-                                        throw courseTimeoutError('视频定位长时间未恢复，请检查播放器或网络');
-                                    }
-                                    if(video.seeking || !Number.isFinite(current.seconds) || video.readyState<2)pendingSeek.stableSince=null;
-                                    else if(pendingSeek.stableSince===null)pendingSeek.stableSince=current.at;
-                                    if(pendingSeek.stableSince===null || current.at-pendingSeek.stableSince<limits.videoSeekStableMs){
-                                        await waitForMedia();continue;
-                                    }
-                                    const delta=current.seconds-pendingSeek.anchor.seconds;
-                                    if(!Number.isFinite(pendingSeek.anchor.seconds) || delta < -limits.videoSeekToleranceSeconds || delta>state.allowedForward){
-                                        recordSeek(current,'jump');
-                                        throw new Error(`检测到视频进度跳转（${Number.isFinite(state.from)?state.from.toFixed(2):'未知'} → ${current.seconds.toFixed(2)} 秒），无法确认完整播放`);
-                                    }
-                                    recordSeek(current,'continuous');pendingSeek=null;sample=current;
+                                const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
+                                if(fatalError)throw fatalError;
+                                // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
+                                if(pendingSeek){await waitForMedia();continue;}
+                                if(video.ended){recordReplay(currentSample,'ended');break;}
+                                if(replay&&currentSample.at>=replay.deadline){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
+                                if(!video.ended&&video.paused && now()-lastPlay>=limits.resumeMs)await startPlayback(true);
+                                // 定位位移不刷新停滞时间。先给一次普通媒体采样机会，随后必检原停滞计时；
+                                // 连续定位也不能反复续期，只有等待期间的真实普通播放进展能避免超时。
+                                if(wasPending&&!video.ended){
+                                    await waitForMedia();
+                                    if(fatalError)throw fatalError;
+                                    // 等待期间可能已结束；回到统一入口复查位置，再处理完成，不能先报停滞。
+                                    if(video.ended)continue;
+                                    if(now()-lastMotionAt>=limits.stallMs)throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
+                                    continue;
                                 }
-                                // 定位到末尾触发 ended，也必须先检查实际进度连续性。
-                                if(video.ended)break;
-                                const observedTime=Number(video.currentTime);
-                                if(Number.isFinite(observedTime))sample=playbackSample();
-                                if(observedTime>lastTime+0.05){lastProgress=now();lastTime=observedTime;}
-                                // 首次启动不算恢复；累计真实进度增加 10 秒后重置连续恢复预算。
-                                // play() resolve 或后台经过了足够墙钟时间，都不能证明恢复有效。
-                                if(observedTime-playbackCheckpoint>=limits.resumeProgressSeconds){task.unstableResumes=0;playbackCheckpoint=observedTime;}
-                                if(video.paused && now()-lastPlay>=limits.resumeMs)await startPlayback(true);
-                                if (now()-lastProgress>=limits.stallMs) throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
+                                if (now()-lastMotionAt>=limits.stallMs) throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
                                 const remaining=Math.max(0,video.duration-video.currentTime);
                                 emit(`第 ${run.chapterIndex+1}/${queue.length} 章：视频 ${Math.floor(video.currentTime)}/${Math.floor(video.duration)} 秒，剩余约 ${Math.ceil(remaining)} 秒`,'course-video');
                                 await waitForMedia();
                             }
-                            await taskDone(video);task.status='done';task.endedAt=now();report.videos++;
+                            await taskDone(video);
+                            if(settings.videoInfoEnabled){
+                                collectVideoInfo(true);videoInfo.observe(video,{force:true});
+                                emit('视频已结束，正在整理已采样的画面信息…','course-video');await race(videoInfo.flush());guard();
+                            }
+                            task.status='done';task.endedAt=now();report.videos++;
                         } finally {
+                            videoInfo.close();
                             task.playbackState=snapshot('snapshot');
                             for(const type of eventTypes)video.removeEventListener(type,onMediaEvent);
                         }
                     };
                     const readDocument = async (reader, task) => {
                         if(run.skipLearned && courseTaskComplete(reader.node)===true){task.status='already';return;}
+                        const materialIdentity=chapterContextIdentity(owner)?.id;
+                        const collectDocumentInfo=()=>{
+                            if(!settings.videoInfoEnabled)return;
+                            try {captureCurrentCourseContext(owner,{reader,expectedIdentity:materialIdentity});}
+                            catch {task.infoStatus='当前课件文字无法读取，正常阅读继续';}
+                        };
+                        collectDocumentInfo();
                         const readingDeadline=now()+limits.documentMs;
                         if(reader.kind==='remote-scroll' || reader.kind==='scroll') {
                             const remote=reader.kind==='remote-scroll',contentRoot=reader.contentRoot||reader.node;
@@ -361,6 +489,7 @@
                             };
                             const inspect=async op=>{
                                 ensureCurrent();
+                                collectDocumentInfo();
                                 if(now()>=readingDeadline)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
                                 let states,targetsChanged=false;
                                 if(remote) {
@@ -457,7 +586,7 @@
                         emit('正在分析章节测验…','generating');await race(ensureFontDecoded(doc));guard();
                         const body=doc.body;
                         const checkQuiz=()=>{guard();if(!courseFrameTree(owner).documents.includes(doc)||doc.body!==body) throw new Error('测验页面已切换，已停止');};
-                        const data=extract(doc),snapshot={doc,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),checkCurrent:checkQuiz};
+                        const data=extract(doc),snapshot={doc,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),checkCurrent:checkQuiz,courseContext:settings.videoInfoEnabled?captureCurrentCourseContext(owner):[]};
                         ctl.output(data);
                         if(!data.questions.length) throw new Error('测验没有可提取的题目');
                         if(!settings.key || !settings.model) {
@@ -470,7 +599,7 @@
                             throw new Error('测验题型尚未适配，无法自动填写');
                         }
                         let answers;
-                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,signal:context.abort.signal},message=>emit(message,'generating'))); }
+                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'))); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
                         guard();checkSnapshot(snapshot);
                         const payload={...data,...answers,model:settings.model};ctl.output(payload);
@@ -573,7 +702,7 @@
                             if(item.type==='document')task.number=++documentNumber;
                             chapter.tasks.push(task);
                             if(item.type==='video')await playVideo(item.node,task);
-                            else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);}
+                            else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);if(settings.videoInfoEnabled)captureCurrentCourseContext(owner,{reader:item.reader});}
                             else await solveQuiz(item.doc,task,chapter);
                             processed.add(item.node);
                             save();

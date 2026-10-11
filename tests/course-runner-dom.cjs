@@ -3,11 +3,11 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
-const code=source.replace(entry,'globalThis.courseAPI={initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
+const code=source.replace(entry,'globalThis.courseAPI={courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
 const logs=[],failures=[];
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function test(name,run){if(process.env.COURSE_TEST_FILTER&&!name.includes(process.env.COURSE_TEST_FILTER))return;if(process.env.COURSE_TEST_PROGRESS)console.log('RUN '+name);try{await run();logs.push(`PASS ${name}`);}catch(error){failures.push(`${name}: ${error.stack}`);}}
-const LIMITS={pollMs:3,settleMs:1,loadMs:150,videoLoadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,videoSeekToleranceSeconds:2,videoSeekStableMs:8,videoSeekTimeoutMs:100,slideMs:1,documentCheckMs:5,documentStableMs:15,documentBottomSamples:3,documentFallbackStepMs:2,documentFallbackPasses:2,submitMs:80};
+const LIMITS={pollMs:3,settleMs:1,loadMs:150,videoLoadMs:150,completionMs:60,stallMs:500,resumeMs:4,maxResumes:4,videoSeekToleranceSeconds:2,videoSeekStableMs:8,videoSeekTimeoutMs:100,videoProgressEpsilonSeconds:0.05,videoPlayedRangeToleranceSeconds:0.25,videoReplayGraceMs:80,slideMs:1,documentCheckMs:5,documentStableMs:15,documentBottomSamples:3,documentFallbackStepMs:2,documentFallbackPasses:2,submitMs:80};
 function fixture(chapters,opts={}){
  const runtimeErrors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',error=>runtimeErrors.push(error.message));
  const dom=new JSDOM('<div id="mainid"><input id="curChapterId"><div id="prev_tab"></div><iframe id="iframe"></iframe></div><div id="content1"><div id="coursetree"><ul></ul></div></div>',{url:opts.url||'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
@@ -53,9 +53,18 @@ function fixture(chapters,opts={}){
    if(task.optional)container.setAttribute('data-required','false');
    if(task.kind==='video'){
     const video=doc.createElement('video');container.append(video);let time=task.start||0,paused=true,ended=false,playing,loaded=!task.lazy,seeking=false,ready=loaded?4:0;
+    let playedRanges=(task.playedRanges||[]).map(range=>[...range]),playedUnavailable=Boolean(task.playedUnavailable);
+    const addPlayed=(start,end)=>{
+     if(end<=start)return;playedRanges.push([start,end]);playedRanges.sort((a,b)=>a[0]-b[0]);
+     playedRanges=playedRanges.reduce((all,range)=>{const last=all.at(-1);if(last&&range[0]<=last[1])last[1]=Math.max(last[1],range[1]);else all.push([...range]);return all;},[]);
+    };
+    Object.defineProperty(video,'played',{get:()=>{if(playedUnavailable)throw Error('模拟区间不可读');const copy=playedRanges.map(range=>[...range]);return {length:copy.length,start:i=>copy[i][0],end:i=>copy[i][1]};}});
     Object.defineProperties(video,{duration:{get:()=>loaded?(task.duration??3):NaN},currentTime:{get:()=>time,set(){throw Error('禁止修改视频进度')}},paused:{get:()=>paused},ended:{get:()=>ended},seeking:{get:()=>seeking},readyState:{get:()=>ready,configurable:true},networkState:{get:()=>1,configurable:true}});
     // 仅夹具控制内部媒体状态；被测脚本仍不能写入 currentTime。
     video.simulateMedia=(patch={},type)=>{
+     if(patch.natural&&'seconds'in patch)addPlayed(time,patch.seconds);
+     if('playedRanges'in patch)playedRanges=patch.playedRanges.map(range=>[...range]);
+     if('playedUnavailable'in patch)playedUnavailable=patch.playedUnavailable;
      if('seconds'in patch)time=patch.seconds;
      if('seeking'in patch)seeking=patch.seeking;
      if('readyState'in patch)ready=patch.readyState;
@@ -77,7 +86,7 @@ function fixture(chapters,opts={}){
      if(task.manual)return Promise.resolve();
      playing=setInterval(()=>{
       if(paused||task.stall||seeking)return;
-      time+=1;video.dispatchEvent(new doc.defaultView.Event('timeupdate'));
+      const previous=time;time=Math.min(time+1,video.duration);addPlayed(previous,time);video.dispatchEvent(new doc.defaultView.Event('timeupdate'));
       if((task.pauseAt===time&&!video.didPause)||(task.pauseTimes||[]).includes(time)){paused=true;video.didPause=true;video.dispatchEvent(new doc.defaultView.Event('pause'));}
       if(task.faceAtPause===time){const face=doc.createElement('div');face.className='chapterVideoFaceMaskDiv';doc.body.append(face);}
       if(time>=video.duration){ended=true;paused=true;clearInterval(playing);finish(ci,ti,i,container);video.dispatchEvent(new doc.defaultView.Event('ended'));}
@@ -164,13 +173,13 @@ async function runWith(chapters,opts,verify){const f=fixture(chapters,opts);try{
 async function waitForTest(predicate,message='等待模拟状态超时'){
  for(let i=0;i<200;i++){if(predicate())return;await delay(2);}assert.fail(message);
 }
-function assertSeekListenersRemoved(v){for(const type of ['timeupdate','seeking','seeked'])assert.equal(v.testListeners.get(type)?.size||0,0,type+' 监听未清理');}
+function assertSeekListenersRemoved(v){for(const type of ['timeupdate','seeking','seeked','canplay','loadeddata','ratechange'])assert.equal(v.testListeners.get(type)?.size||0,0,type+' 监听未清理');}
 async function manualVideoTest(run,opts={},chapters=[{tabs:[video({manual:true,start:100,duration:105})]}],startOptions={}){
  const f=fixture(chapters,opts),pending=f.runner.start(startOptions);
  try{await waitForTest(()=>f.events.some(e=>e.startsWith('play:')));await run(f,pending,f.videos.find(v=>!v.paused&&!v.ended));}
  finally{f.runner.stop();try{await pending;}finally{f.close();}}
 }
-function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.simulateMedia({ended:true},'ended');}
+function finishManual(v){while(v.currentTime<v.duration)v.simulateMedia({seconds:Math.min(v.duration,v.currentTime+0.5),natural:true},'timeupdate');v.simulateMedia({ended:true},'ended');}
 (async()=>{
  await test('完整课程：多视频→PPT→测验确认提交→无视频无测验章节→下一目录',()=>runWith([
   {tabs:[{title:'视频',tasks:[{kind:'video',start:1,pauseAt:2,duration:4},{kind:'video'}]},ppt(),quiz({essay:true,confirm:true})]},
@@ -281,6 +290,16 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
    delete task.startedAt;assert.match(f.api.courseReportText(report),/相对首条保留记录/);assert.match(f.api.courseReportText(report),/\+0\.0 秒 开始播放：视频 304 秒/);
   }finally{f.close();}
  });
+ await test('原日志335.63回退328：暂停恢复定位稳定后允许重播完成',()=>manualVideoTest(async(f,pending,v)=>{
+  Object.defineProperty(f.d,'visibilityState',{get:()=> 'hidden',configurable:true});Object.defineProperty(f.d,'hasFocus',{value:()=>false,configurable:true});
+  v.simulateMedia({paused:true},'pause');
+  v.simulateMedia({seconds:328,paused:false,seeking:true,readyState:1},'playing');
+  v.simulateMedia({},'seeking');v.simulateMedia({},'waiting');
+  v.simulateMedia({paused:true,seeking:false,readyState:4},'pause');v.simulateMedia({},'seeked');
+  const task=f.runner.report.chapters[0].tasks[0];await waitForTest(()=>task.seekState?.outcome==='rollback'||f.runner.report.status!=='running');assert.equal(task.seekState?.outcome,'rollback',f.runner.report.reason);
+  assert.equal(task.seekState.from,335.63);assert.equal(task.seekState.to,328);assert.equal(f.runner.report.status,'running');
+  finishManual(v);const r=await pending;assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(v.playbackRate,1);assertSeekListenersRemoved(v);
+ },{},[{tabs:[video({manual:true,start:335.63,duration:350,playedRanges:[[300,335.63]]})]}]));
  await test('暂停恢复短暂定位位置不变：等待稳定后继续，不反复启动',()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({paused:true},'pause');await waitForTest(()=>f.runner.report.chapters[0].tasks[0].resumes===1);
   v.simulateMedia({seeking:true,readyState:1},'seeking');await delay(12);
@@ -289,25 +308,25 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
   finishManual(v);const r=await pending,task=r.chapters[0].tasks[0];assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(task.seekCount,1);assert.equal(task.seekState.from,100);assert.equal(task.seekState.to,100);assert.equal(v.playbackRate,1);assertSeekListenersRemoved(v);
  }));
  await test('定位结束但 readyState 仍为1：等数据恢复才确认连续进度',()=>manualVideoTest(async(f,pending,v)=>{
-  v.simulateMedia({seeking:true,readyState:1},'seeking');v.simulateMedia({seeking:false,seconds:101},'seeked');await delay(20);
+  v.simulateMedia({seeking:true,readyState:1},'seeking');v.simulateMedia({seeking:false,seconds:101,playedRanges:[[100,101]]},'seeked');await delay(20);
   const task=f.runner.report.chapters[0].tasks[0];assert.equal(task.seekState.outcome,'pending');assert.equal(f.runner.report.status,'running');
   v.simulateMedia({readyState:4},'canplay');await waitForTest(()=>task.seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
  }));
  await test('后台短暂定位多次出现：保留连续进度，不增加恢复次数',()=>manualVideoTest(async(f,pending,v)=>{
   Object.defineProperty(f.d,'visibilityState',{get:()=> 'hidden',configurable:true});Object.defineProperty(f.d,'hasFocus',{value:()=>false,configurable:true});
   const task=f.runner.report.chapters[0].tasks[0];
-  for(let i=0;i<7;i++){v.simulateMedia({seeking:true},'seeking');v.simulateMedia({seeking:false,seconds:100+i*0.1},'seeked');await waitForTest(()=>task.seekState.outcome==='continuous');}
+  for(let i=0;i<7;i++){v.simulateMedia({seeking:true},'seeking');v.simulateMedia({seeking:false,seconds:100+i*0.1,playedRanges:[[100,100+i*0.1]]},'seeked');await waitForTest(()=>task.seekState.outcome==='continuous');}
   assert.equal(task.seekCount,7);assert.equal(task.resumes,0);assert(task.playbackEvents.length<=12);finishManual(v);assert.equal((await pending).videos,1);
  }));
  await test('后台经过60秒采样延迟：实际前进60秒不误判跳转',async()=>{
   let offset=0;await manualVideoTest(async(f,pending,v)=>{
-   v.simulateMedia({seeking:true},'seeking');offset+=60000;v.simulateMedia({seeking:false,seconds:160},'seeked');
-   const task=f.runner.report.chapters[0].tasks[0];await waitForTest(()=>task.seekState.outcome==='continuous');assert(task.seekState.allowedForward>=62);assert.equal(task.seekState.from,100);finishManual(v);assert.equal((await pending).status,'done');
-  },{now:()=>Date.now()+offset,limits:{videoSeekTimeoutMs:120000}},[{tabs:[video({manual:true,start:100,duration:165})]}]);
+   v.simulateMedia({seeking:true},'seeking');offset+=60000;v.simulateMedia({seeking:false,seconds:160,playedRanges:[[100,160]]},'seeked');
+   const task=f.runner.report.chapters[0].tasks[0];await waitForTest(()=>task.seekState.outcome==='continuous');assert(task.seekState.allowedForward>=62);assert.equal(task.seekState.from,100);finishManual(v);const r=await pending;assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assertSeekListenersRemoved(v);
+  },{now:()=>Date.now()+offset,limits:{videoSeekTimeoutMs:120000,stallMs:120000}},[{tabs:[video({manual:true,start:100,duration:165})]}]);
  });
- for(const target of [130,70])await test(`稳定后明显定位至${target}秒：停止且超时继续开关不能绕过`,()=>manualVideoTest(async(f,pending,v)=>{
+ for(const target of [130])await test(`稳定后明显定位至${target}秒：停止且超时继续开关不能绕过`,()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({seeking:true,seconds:target},'seeking');v.simulateMedia({seeking:false},'seeked');const r=await pending,task=r.chapters[0].tasks[0];
-  assert.equal(r.status,'stopped');assert.match(r.reason,/进度跳转/);assert.match(r.reason,new RegExp('100.00 → '+target+'.00'));assert.equal(r.videos,0);assert.equal(task.seekState.outcome,'jump');assert(!f.events.includes('chapter:1'));assertSeekListenersRemoved(v);
+  assert.equal(r.status,'stopped');assert.match(r.reason,/进度跳转/);assert.match(r.reason,new RegExp('100.00 → '+target+'.00'));assert.equal(r.videos,0);assert.equal(task.seekState.outcome,'forward-jump');assert(!f.events.includes('chapter:1'));assertSeekListenersRemoved(v);
  },{},[{tabs:[video({manual:true,start:100,duration:140})]},{tabs:[video()]}],{continueOnTimeout:true}));
  await test('定位期间位置临时回到0：恢复原位置后再判断，不立即停止',()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({seeking:true,seconds:0,readyState:1},'seeking');await delay(12);assert.equal(f.runner.report.status,'running');
@@ -315,7 +334,7 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
  }));
  await test('再次定位或数据下降会重置稳定等待，起点保持不变',()=>manualVideoTest(async(f,pending,v)=>{
   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await delay(12);
-  v.simulateMedia({seeking:true,seconds:101},'seeking');v.simulateMedia({seeking:false,readyState:1},'seeked');await delay(45);assert.equal(task.seekState.outcome,'pending');assert.equal(task.seekState.from,100);assert.equal(task.seekCount,1);
+  v.simulateMedia({seeking:true,seconds:101,playedRanges:[[100,101]]},'seeking');v.simulateMedia({seeking:false,readyState:1},'seeked');await delay(45);assert.equal(task.seekState.outcome,'pending');assert.equal(task.seekState.from,100);assert.equal(task.seekCount,1);
   v.simulateMedia({readyState:4},'timeupdate');await waitForTest(()=>task.seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
  },{limits:{videoSeekStableMs:35,videoSeekTimeoutMs:200}}));
  for(const continueOnTimeout of [false,true])await test(`定位持续无响应：超时继续=${continueOnTimeout}，失败视频不计完成`,()=>manualVideoTest(async(f,pending,v)=>{
@@ -329,7 +348,7 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
  },{limits:{videoSeekTimeoutMs:40}}));
  await test('定位直接到末尾并触发 ended：不得跳过进度判定或计完成',()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({seeking:true,seconds:140},'seeking');v.simulateMedia({seeking:false,ended:true},'ended');const r=await pending;
-  assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.match(r.reason,/进度跳转/);assert.equal(r.chapters[0].tasks[0].seekState.outcome,'jump');assertSeekListenersRemoved(v);
+  assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.match(r.reason,/进度跳转/);assert.equal(r.chapters[0].tasks[0].seekState.outcome,'forward-jump');assertSeekListenersRemoved(v);
  },{},[{tabs:[video({manual:true,start:100,duration:140})]}]));
  await test('定位期间停止：及时退出并清理新增监听',()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({seeking:true},'seeking');f.runner.stop();const r=await pending;assert.equal(r.status,'stopped');assert.equal(r.videos,0);assertSeekListenersRemoved(v);
@@ -374,6 +393,158 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
    assert.equal(task.seekState.outcome,'pending');v.simulateMedia({readyState:1},'waiting');offset+=60;v.simulateMedia({readyState:4},'playing');await delay(12);assert.equal(task.seekState.outcome,'pending');
    await waitForTest(()=>task.seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
   },{now:()=>Date.now()+offset,limits:{videoSeekStableMs:60,videoSeekTimeoutMs:300}});
+ });
+ await test('重播大于30秒回退：旧最高位置之前的真实播放刷新停滞和恢复预算',async()=>{let offset=0;await manualVideoTest(async(f,pending,v)=>{
+  v.simulateMedia({seconds:60,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');
+  const task=f.runner.report.chapters[0].tasks[0];await waitForTest(()=>task.seekState?.outcome==='rollback');
+  assert.equal(task.progressState.resumeProgressSeconds,0);assert.equal(task.progressState.frontierSeconds,100);
+  for(let i=1;i<=4;i++){
+   v.simulateMedia({paused:true},'pause');await waitForTest(()=>task.resumes===i||f.runner.report.status!=='running');assert.equal(task.resumes,i,f.runner.report.reason);
+   offset+=100;v.simulateMedia({seconds:60+i,natural:true},'timeupdate');await delay(12);
+   assert.equal(f.runner.report.status,'running');
+  }
+  assert.equal(task.unstableResumes,0);assert.equal(task.progressState.frontierSeconds,100);
+  finishManual(v);const r=await pending;assert.equal(r.videos,1);assert.equal(r.status,'done',r.reason);
+ },{now:()=>Date.now()+offset,limits:{stallMs:200,resumeProgressSeconds:4}},[{tabs:[video({manual:true,start:100,duration:120,playedRanges:[[0,100]]})]}]);});
+ for(const order of ['timeupdate-first','seeked-only','poll-only'])await test(`重播采样顺序${order}：回退起点不能被覆盖`,()=>manualVideoTest(async(f,pending,v)=>{
+  const task=f.runner.report.chapters[0].tasks[0];
+  if(order==='timeupdate-first'){v.simulateMedia({seconds:92},'timeupdate');v.simulateMedia({seeking:true,readyState:1},'playing');v.simulateMedia({},'seeking');v.simulateMedia({seeking:false,readyState:4},'seeked');}
+  else if(order==='seeked-only')v.simulateMedia({seconds:92},'seeked');
+  else v.simulateMedia({seconds:92});
+  await waitForTest(()=>task.seekState?.outcome==='rollback');assert.equal(task.seekState.from,100);assert.equal(task.seekState.to,92);assert.equal(task.seekCount,1);
+  assert.equal(task.progressState.resumeProgressSeconds,0);finishManual(v);assert.equal((await pending).videos,1);
+ }));
+ for(const event of ['timeupdate',undefined])await test(`重播前跳监测${event||'poll'}：无定位事件也不更新异常位置的可信起点`,()=>manualVideoTest(async(f,pending,v)=>{
+  v.simulateMedia({seconds:130},event);v.simulateMedia({},'playing');
+  const r=await pending,task=r.chapters[0].tasks[0];assert.equal(r.videos,0);assert.equal(task.seekState.from,100);assert.equal(task.seekState.to,130);assert.equal(task.seekState.outcome,'forward-jump');
+  v.simulateMedia({seconds:100},'timeupdate');assert.equal(task.seekState.outcome,'forward-jump');assertSeekListenersRemoved(v);
+ },{},[{tabs:[video({manual:true,start:100,duration:140})]}]));
+ await test('重播返回已播区间：明显位置前移可接受，但定位位移不增加恢复额度',()=>manualVideoTest(async(f,pending,v)=>{
+  const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:130,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');
+  await waitForTest(()=>task.seekState?.outcome==='replay-seek');assert.equal(task.seekState.evidence,'played');assert.equal(task.progressState.resumeProgressSeconds,0);
+  finishManual(v);assert.equal((await pending).videos,1);
+ },{},[{tabs:[video({manual:true,start:100,duration:140,playedRanges:[[50,140]]})]}]));
+ await test('重播区间有洞：即使经过时间足够也不能把下载或可定位区间当作已播放',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   offset+=30000;v.simulateMedia({seconds:130,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');
+   const r=await pending;assert.equal(r.videos,0);assert.match(r.reason,/未播区间/);assert.equal(r.chapters[0].tasks[0].seekState.evidence,'played-gap');
+  },{now:()=>Date.now()+offset},[{tabs:[video({manual:true,start:100,duration:140,playedRanges:[[100,110],[120,140]]})]}]);
+ });
+ await test('重播区间辅助接口：空区间、不可读、无效区间、边缘容差与区间缺口',async()=>{
+  const f=fixture([{tabs:[video({manual:true})]}]);try{
+   const read=f.api.courseVideoPlayedRanges,decide=f.api.courseVideoPositionDecision;
+   assert.equal(read({played:{length:0}}).available,true);
+   assert.equal(read({get played(){throw Error('不可读');}}).available,false);
+   assert.equal(read({played:{length:1,start:()=>NaN,end:()=>2}}).available,false);
+   const anchor={at:0,seconds:100,rate:1},current={at:1000,seconds:101,rate:1,duration:140,seeking:false,readyState:4};
+   assert.equal(decide(anchor,current,{available:true,ranges:[]},LIMITS).kind,'forward-jump');
+   assert.equal(decide(anchor,current,{available:true,ranges:[{start:100.1,end:100.8}]},LIMITS).kind,'continuous');
+   assert.equal(decide(anchor,current,{available:true,ranges:[{start:100,end:100.1},{start:100.5,end:101}]},LIMITS).kind,'forward-jump');
+   assert.equal(decide(anchor,{...current,rate:2,seconds:104},{available:false},LIMITS).kind,'continuous');
+   assert.equal(decide(anchor,{...current,rate:2,seconds:105},{available:false},LIMITS).kind,'forward-jump');
+   assert.equal(decide({...anchor,rate:NaN},{...current,rate:0,seconds:104},{available:false},LIMITS).kind,'forward-jump');
+   for(const seconds of [NaN,Infinity,-1,141])assert.equal(decide(anchor,{...current,seconds},{available:false},LIMITS).kind,'unready');
+   const v=f.videos[0];v.simulateMedia({playedRanges:[[90,100]]});const copy=read(v);v.simulateMedia({playedRanges:[[0,1]]});assert.equal(copy.ranges[0].start,90);
+  }finally{f.close();}
+ });
+ await test('重播区间不可读：实际经过时间内的增长继续，报告标注降级证据',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   offset+=1000;v.simulateMedia({seconds:101,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');
+   const task=f.runner.report.chapters[0].tasks[0];await waitForTest(()=>task.seekState?.outcome==='continuous');assert.equal(task.seekState.evidence,'elapsed');
+   finishManual(v);const r=await pending;assert.equal(r.videos,1,r.reason);
+  },{now:()=>Date.now()+offset},[{tabs:[video({manual:true,start:100,duration:105,playedUnavailable:true})]}]);
+ });
+ await test('重播区间不可读：超过正常经过时间的前跳仍停止',()=>manualVideoTest(async(f,pending,v)=>{
+  v.simulateMedia({seconds:130,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');const r=await pending;
+  assert.equal(r.videos,0);assert.equal(r.chapters[0].tasks[0].seekState.evidence,'elapsed');assert.match(r.reason,/进度跳转/);
+ },{},[{tabs:[video({manual:true,start:100,duration:140,playedUnavailable:true})]}]));
+ await test('重播定位晚唤醒：数据恢复后获得一次最终稳定窗口',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seeking:true,readyState:1},'seeking');offset+=200;
+   v.simulateMedia({seeking:false,readyState:4},'seeked');await waitForTest(()=>task.seekState?.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
+  },{now:()=>Date.now()+offset});
+ });
+ for(const interruption of ['seeking','waiting'])await test(`重播定位最终窗口再次${interruption}：立即超时且不能续期`,async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   v.simulateMedia({seeking:true,readyState:1},'seeking');offset+=200;v.simulateMedia({seeking:false,readyState:4},'seeked');
+   v.simulateMedia(interruption==='seeking'?{seeking:true}:{readyState:1},interruption);v.simulateMedia({seeking:false,readyState:4},'seeked');
+   const r=await pending;assert.equal(r.videos,0);assert.match(r.reason,/定位长时间未恢复/);assert.equal(r.chapters[0].tasks[0].seekState.outcome,'timeout');
+  },{now:()=>Date.now()+offset});
+ });
+ for(const continueOnTimeout of [false,true])await test(`重播循环回退超时继续=${continueOnTimeout}：起点和距离不能反复续期`,async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:95,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+   const first={...task.replayState};v.simulateMedia({seconds:96,natural:true},'timeupdate');
+   v.simulateMedia({seconds:94,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===2);
+   assert.equal(task.replayState.startedAt,first.startedAt);assert.equal(task.replayState.deadline,first.deadline);
+   offset+=16000;v.simulateMedia({seconds:95,natural:true},'timeupdate');
+   const r=await pending;assert.equal(r.status,continueOnTimeout?'done':'stopped');assert.match(continueOnTimeout?r.chapters[0].reason:r.reason,/反复回退/);
+   assert.equal(task.replayState.outcome,'timeout');assert.equal(r.videos,continueOnTimeout?1:0);assert.equal(f.events.includes('chapter:1'),continueOnTimeout);assertSeekListenersRemoved(v);
+  },{now:()=>Date.now()+offset},[{tabs:[video({manual:true,start:100,duration:120,playedRanges:[[0,100]]})]},{tabs:[video()]}],{continueOnTimeout});
+ });
+ await test('重播长距离回退：计时包含重播距离，不能套用固定五分钟或旧最高位置停滞',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:0,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+   assert(task.replayState.deadline-task.replayState.startedAt>=110000);offset+=20000;v.simulateMedia({seconds:1,natural:true},'timeupdate');await delay(10);
+   assert.equal(f.runner.report.status,'running');assert.equal(task.progressState.frontierSeconds,100);finishManual(v);assert.equal((await pending).videos,1);
+  },{now:()=>Date.now()+offset},[{tabs:[video({manual:true,start:100,duration:120,playedRanges:[[0,100]]})]}]);
+ });
+ await test('重播速率下降按首次距离重算：新增播放达到十秒才结束重播监测',()=>manualVideoTest(async(f,pending,v)=>{
+  const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:95,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+  const first={...task.replayState};v.playbackRate=0.5;v.simulateMedia({},'ratechange');
+  assert.equal(task.replayState.startedAt,first.startedAt);assert(task.replayState.deadline>first.deadline);
+  assert.equal(task.progressState.resumeProgressSeconds,0);v.simulateMedia({seconds:96,natural:true},'timeupdate');
+  for(let seconds=96.5;seconds<=110;seconds+=0.5)v.simulateMedia({seconds,natural:true},'timeupdate');
+  assert.equal(task.replayState.outcome,'advanced');assert.equal(task.progressState.frontierSeconds,110);assert.equal(v.playbackRate,0.5);
+  finishManual(v);assert.equal((await pending).videos,1);assert.equal(v.playbackRate,0.5);
+ },{},[{tabs:[video({manual:true,start:100,duration:115,playedRanges:[[0,100]]})]}]));
+ await test('重播期间停止与报告兼容：新字段过滤、十二条容量、监听清理',()=>manualVideoTest(async(f,pending,v)=>{
+  const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:92,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+  task.replayState.url='https://mock.invalid/?secret=mock-only-key';task.seekState.evidence='mock-only-key';
+  for(let i=0;i<20;i++)v.simulateMedia({},'waiting');f.runner.stop();const r=await pending,text=f.api.courseReportText(r);
+  assert(task.playbackEvents.length<=12);assert.match(text,/视频重播记录/);assert.match(text,/回退后重播/);assert(!text.includes('mock.invalid'));assert(!text.includes('mock-only-key'));assert.equal(r.videos,0);assertSeekListenersRemoved(v);
+  delete task.seekState.evidence;delete task.seekState.rollbackSeconds;delete task.replayState;task.seekState.outcome='jump';assert.doesNotThrow(()=>f.api.courseReportText(r));assert.match(f.api.courseReportText(r),/确认明显跳转/);
+ }));
+ await test('重播到末尾但平台未确认：不记完成',()=>manualVideoTest(async(f,pending,v)=>{
+  const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:92,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+  finishManual(v);const r=await pending;assert.equal(r.videos,0);assert.match(r.reason,/平台未确认/);assertSeekListenersRemoved(v);
+ },{noAck:true},undefined,{continueOnTimeout:false}));
+ await test('重播普通缓冲位置未变：不误入定位的六十秒超时',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({readyState:1},'waiting');offset+=150;v.simulateMedia({},'waiting');await delay(12);
+   assert.equal(f.runner.report.status,'running');assert.equal(task.seekCount,0);assert.equal(task.seekState,undefined);
+   v.simulateMedia({readyState:4},'canplay');finishManual(v);const r=await pending;assert.equal(r.videos,1,r.reason);assertSeekListenersRemoved(v);
+  },{now:()=>Date.now()+offset,limits:{videoSeekTimeoutMs:100,stallMs:500}});
+ });
+ for(const acknowledged of [true,false])await test(`重播末尾不足十秒且晚唤醒：平台确认=${acknowledged}`,async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:95,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+   for(let seconds=95.5;seconds<=105;seconds+=0.5){offset+=500;v.simulateMedia({seconds,natural:true},'timeupdate');}
+   v.simulateMedia({ended:true},'ended');assert(Date.now()+offset<task.replayState.deadline);offset+=6000;assert(Date.now()+offset>task.replayState.deadline);
+   const r=await pending;assert.equal(r.status,acknowledged?'done':'stopped',r.reason);assert.equal(r.videos,acknowledged?1:0);
+   assert.equal(task.replayState.outcome,'ended');assert.match(f.api.courseReportText(r),/已重播至视频结束/);
+   if(!acknowledged)assert.match(r.reason,/平台未确认/);assertSeekListenersRemoved(v);
+  },{noAck:!acknowledged,now:()=>Date.now()+offset,limits:{stallMs:300000}},undefined,{continueOnTimeout:false});
+ });
+ await test('重播期限到期时仍在定位：先确认未播末尾前跳，超时开关不能绕过',async()=>{
+  let offset=0;await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:95,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>task.rollbackCount===1);
+   v.simulateMedia({seconds:105,seeking:true,readyState:1},'seeking');offset+=16000;await delay(15);
+   assert.equal(f.runner.report.status,'running');assert(!f.events.includes('chapter:1'));assert.equal(f.runner.report.videos,0);
+   v.simulateMedia({seeking:false,readyState:4},'seeked');v.simulateMedia({ended:true},'ended');const r=await pending;
+   assert.equal(r.status,'stopped');assert.equal(r.videos,0);assert.equal(task.seekState.outcome,'forward-jump');assert.match(r.reason,/未播区间/);assert(!f.events.includes('chapter:1'));assertSeekListenersRemoved(v);
+  },{now:()=>Date.now()+offset,limits:{stallMs:300000,videoSeekTimeoutMs:60000}},[{tabs:[video({manual:true,start:100,duration:105,playedRanges:[[0,100]]})]},{tabs:[video()]}],{continueOnTimeout:true});
+ });
+ await test('重播稳定后的等待期间正常结束：晚唤醒超过五分钟不先报停滞',async()=>{
+  let offset=0,task,held=false;const sleep=ms=>{
+   if(ms===LIMITS.pollMs&&!held&&task?.seekState?.outcome==='rollback'){held=true;return new Promise(()=>{});}return delay(ms);
+  };
+  await manualVideoTest(async(f,pending,v)=>{
+   task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seconds:95,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await waitForTest(()=>held);
+   for(let seconds=95.5;seconds<=105;seconds+=0.5){offset+=500;v.simulateMedia({seconds,natural:true},'timeupdate');}
+   v.simulateMedia({ended:true},'ended');assert(Date.now()+offset<task.replayState.deadline);offset+=320000;
+   const r=await pending;assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(task.replayState.outcome,'ended');assertSeekListenersRemoved(v);
+  },{sleep,now:()=>Date.now()+offset,limits:{stallMs:300000,videoReplayGraceMs:300000}},undefined,{continueOnTimeout:false});
  });
  await test('恢复前出现人脸验证立即停止：诊断不能被用于绕过验证',()=>runWith([{tabs:[video({duration:8,pauseTimes:[2],faceAtPause:2})]},{tabs:[video()]}],{},(f,r)=>{
   assert.equal(r.status,'stopped');assert.match(r.reason,/人脸/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert.equal(r.chapters[0].tasks[0].resumes,0);assert(!f.events.includes('chapter:1'));
@@ -719,7 +890,7 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.08');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.09');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{
@@ -909,8 +1080,22 @@ function finishManual(v){v.simulateMedia({seconds:v.duration},'timeupdate');v.si
   const f=fixture([{tabs:[ppt()]}]);try{f.doc.querySelector('[data-course-task]').hidden=true;const reader=f.api.courseDocumentReader(f.doc);assert.equal(reader,null);}finally{f.close();}
  });
  await test('分页PPT反复回到首页时按阅读总时限停止',async()=>{
-  const f=fixture([{tabs:[ppt({nextOnly:true})]}]);let safety;try{const r2=f.api.createCourseRunner(f.d,f.api.controller,{limits:{...LIMITS,documentMs:25}});let clicks=0;const counter=f.doc.querySelector('[data-slide-current]');f.doc.querySelector('[data-slide-next]').onclick=()=>{clicks++;counter.value='2';f.w.setTimeout(()=>{if(counter.isConnected)counter.value='1';},0);};safety=setTimeout(()=>r2.stop('防止测试挂起'),150);const r=await r2.start({continueOnTimeout:false});assert.equal(r.status,'stopped');assert.match(r.reason,/阅读超时/);assert.equal(r.documents,0);assert(clicks>1);}finally{clearTimeout(safety);f.close();}
+  const base=Date.now();let clock=base,counter,resetPending=false,clicks=0,resets=0,safety;
+  const f=fixture([{tabs:[ppt({nextOnly:true})]}],{now:()=>clock,limits:{documentMs:25},sleep:async ms=>{
+   if(resetPending&&ms===LIMITS.slideMs){counter.value='1';resetPending=false;resets++;}
+   await delay(ms);
+  }});
+  try{
+   counter=f.doc.querySelector('[data-slide-current]');
+   f.doc.querySelector('[data-slide-next]').onclick=()=>{clicks++;clock+=10;counter.value='2';resetPending=true;};
+   const pending=f.runner.start({continueOnTimeout:false});
+   safety=setTimeout(()=>f.runner.stop('防止测试挂起'),5000);
+   const r=await pending;
+   assert.equal(r.status,'stopped');assert.match(r.reason,/阅读超时/);assert.equal(r.documents,0);
+   assert.equal(clicks,3);assert.equal(resets,3);assert.equal(clock-base,30);
+  }finally{clearTimeout(safety);f.close();}
  });
+
  await test('首次资料控件延迟加载时等待控件，不当作普通文字或立即停止',async()=>{
   const f=fixture([{tabs:[{title:'PPT',tasks:[{kind:'ppt'}]}]}]);try{const c=f.doc.querySelector('[data-course-task]'),reader=c.firstChild;reader.remove();c.textContent='正在加载资料';const p=f.runner.start();await delay(15);c.replaceChildren(reader);const r=await p;assert.equal(r.status,'done');assert.equal(r.documents,1);}finally{f.close();}
  });

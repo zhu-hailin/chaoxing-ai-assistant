@@ -449,10 +449,90 @@
         switchChapterView('run');
         switchPanelView('questions');
     }
+    const chapterContextCache = new WeakMap();
+    function chapterContextIdentity(doc) {
+        const owner=studyOwnerDocument(doc),chapterId=owner?.querySelector('#curChapterId')?.value;
+        const scope=owner && courseScoreKey(owner);
+        return owner && scope && chapterId ? {owner,chapterId:String(chapterId),id:`${scope}:${chapterId}`} : null;
+    }
+    function chapterContextStore(doc) {
+        const identity=chapterContextIdentity(doc);if(!identity)return null;
+        let store=chapterContextCache.get(identity.owner);
+        if(store?.chapterId!==identity.id){store=createCourseContext(identity.id);chapterContextCache.set(identity.owner,store);}
+        return {identity,store};
+    }
+    function captureCurrentCourseContext(doc, options={}) {
+        const currentIdentity=chapterContextIdentity(doc);
+        if(!currentIdentity || options.expectedIdentity && options.expectedIdentity!==currentIdentity.id)return [];
+        const documents=courseFrameTree(currentIdentity.owner).documents;
+        if(options.video && (!options.video.isConnected || !documents.includes(options.video.ownerDocument)))return [];
+        if(options.reader && (!options.reader.node?.isConnected || !documents.includes(options.reader.doc)))return [];
+        const record=chapterContextStore(doc);if(!record)return [];
+        const {identity,store}=record;
+        const append=values=>mergeCourseContext(store,identity.id,collectCourseContext({chapterId:identity.id,...values}));
+        if(options.video)append({video:options.video});
+        if(options.reader)append({reader:options.reader});
+        if(!options.video && !options.reader)for(const current of documents) {
+            for(const video of current.querySelectorAll('video'))append({video});
+            const reader=courseDocumentReader(current);if(reader)append({reader});
+        }
+        // 仅采集带明确章节身份的资料区域，不扫描答案区或任意页面正文。
+        const notesRoots=documents.flatMap(current=>[...current.querySelectorAll('[data-course-notes][data-chapter-id]')])
+            .filter(root=>root.getAttribute('data-chapter-id')===identity.chapterId);
+        if(notesRoots.length)append({notesRoots});
+        return courseContextForPrompt(store,identity.id);
+    }
     function readModelConfiguration() {
-        const key = clean(get(KEY_DS));
-        const model = clean(get(KEY_MODEL, 'deepseek-flash'));
-        return { key, model, configured: Boolean(key && model) };
+        const cfg=readProviderConfiguration();
+        return {...cfg,videoInfoEnabled:get(KEY_AUTO_CONTEXT,true)!==false};
+    }
+    function refreshModelCapabilities(shadow, busy = false) {
+        const cfg = readModelConfiguration();
+        const caps = providerModelCapabilities(cfg.provider, cfg.model);
+        shadow.getElementById('thinking').checked = cfg.thinking;
+        shadow.getElementById('thinking').disabled = busy || !caps.thinking || caps.thinkingRequired;
+        shadow.getElementById('effort').disabled = busy || !caps.effort || !cfg.thinking;
+        shadow.getElementById('search').checked = cfg.search;
+        shadow.getElementById('search').disabled = busy || !caps.search;
+        const tested=cfg.provider==='custom' ? typeof verifiedModelImages==='function' && verifiedModelImages(cfg.provider,cfg.model,cfg.baseURL) : caps.imageEvidence==='image-test';
+        const label = tested ? '视觉（已通过图片识别测试）' : cfg.provider === 'custom' ? (cfg.images ? '视觉（自定义声明）' : '文本（自定义声明）')
+            : caps.known ? (cfg.images ? '视觉：可分析题干和选项中的图片' : '文本：图片题将保留待核对') : '图片能力未确认：图片题将保留待核对';
+        shadow.getElementById('auto-context').checked = cfg.videoInfoEnabled;
+        shadow.getElementById('info-model').disabled = busy || !cfg.videoInfoEnabled || cfg.provider === 'custom';
+        shadow.getElementById('info-interval').disabled = busy || !cfg.videoInfoEnabled;
+        shadow.getElementById('model-capability').textContent = label + (caps.thinkingRequired ? '；此模型始终开启深度思考。' : '。');
+    }
+    function renderModelSettings(ctl, fetchedModels = []) {
+        if (!panelView) return;
+        const shadow = panelView.shadow, cfg = readModelConfiguration(), provider = getModelProvider(cfg.provider);
+        const el = id => shadow.getElementById(id), doc = panelView.host.ownerDocument;
+        el('provider').value = cfg.provider;
+        el('ds-key').value = '';
+        el('ds-key').placeholder = cfg.key ? `${provider.name} Key 已保存；输入可替换` : `${provider.name} API Key`;
+        el('preset-model-block').hidden = cfg.provider === 'custom';
+        el('custom-model-block').hidden = cfg.provider !== 'custom';
+        el('custom-base').value = readProviderSetting('custom', 'baseURL', '');
+        el('custom-model').value = readProviderSetting('custom', 'model', '');
+        el('custom-images').checked = Boolean(readProviderSetting('custom', 'images', false));
+        const models = [...provider.models];
+        const remembered=typeof rememberedImageModels==='function'?rememberedImageModels(cfg.provider,cfg.baseURL):[];
+        for(const id of remembered)if(!models.some(m=>m.id===id))models.push({id,name:id});
+        for (const item of fetchedModels) if (!models.some(m => m.id === item.id)) models.push(item);
+        if (cfg.model && !models.some(m => m.id === cfg.model)) models.push({id:cfg.model, name:cfg.model});
+        el('model').replaceChildren();
+        for (const model of models) {
+            const option = doc.createElement('option'); option.value = model.id;
+            option.textContent = modelOptionLabel(cfg.provider, model.id, model.name); el('model').append(option);
+        }
+        el('model').value = cfg.model;
+        const visionModels = cfg.provider==='custom' ? (cfg.images && cfg.model ? [{id:cfg.model,name:cfg.model}] : []) : models.filter(item=>providerModelCapabilities(cfg.provider,item.id).images);
+        el('info-model').replaceChildren();
+        for (const model of visionModels) { const option=doc.createElement('option');option.value=model.id;option.textContent=model.name;el('info-model').append(option); }
+        if (!visionModels.length) { const option=doc.createElement('option');option.value='';option.textContent='当前接口未确认图片能力';el('info-model').append(option); }
+        el('info-model').value=cfg.infoModel;
+        el('info-interval').value=cfg.videoInfoIntervalSeconds;
+        el('effort').value = cfg.effort;
+        refreshModelCapabilities(shadow, ctl.state.busy || courseRunActive());
     }
     function createAssistantPanel(doc, ctl) {
         if (doc.getElementById(ROOT_ID)) return;
@@ -464,9 +544,11 @@
         const shadow = host.attachShadow({ mode: 'open' });
         /* PANEL_TEMPLATE */
         doc.body.append(host);
-        panelView = { host, shadow, sourceDoc: doc, userPosition: null };
+        panelView = { host, shadow, sourceDoc: doc, userPosition: null, windowMode: 'closed', floatingPosition: null };
+        initAssistantWindowCoordination(doc);
         initPanelDragging();
         initPanelResizing();
+        initFloatingLauncher(ctl);
         const toggleFromStudy = () => ctl.togglePanel();
         doc.addEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy);
         window.addEventListener('pagehide', () => doc.removeEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy), { once: true });
@@ -496,48 +578,100 @@
         el('panel').setAttribute('role', 'dialog');
         el('panel').setAttribute('aria-label', '学习通AI助手');
         const closePanel = () => {
-            el('panel').hidden = true;
-            settingsButton()?.setAttribute('aria-expanded', 'false');
+            setAssistantWindowMode('closed');
             settingsButton()?.focus();
+        };
+        el('minimize').onclick = () => {
+            if (el('panel').hidden) return;
+            setAssistantWindowMode('minimized');
+            el('floating-launcher').focus();
         };
         el('close').onclick = closePanel;
         shadow.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && !el('panel').hidden) { event.stopPropagation(); closePanel(); }
+            if (event.key === 'Escape' && panelView.windowMode !== 'closed') { event.stopPropagation(); closePanel(); }
         });
-        const reposition = () => { if (!el('panel').hidden) positionAssistantPanel(); };
+        const reposition = repositionAssistantWindow;
         window.addEventListener('resize', reposition);
         window.addEventListener('scroll', reposition, { passive: true });
+        window.addEventListener('pagehide', () => {
+            window.removeEventListener('resize', reposition);
+            window.removeEventListener('scroll', reposition);
+            panelView.cancelFloatingDrag?.();
+            for (const [owner, listener] of panelView.windowListeners) owner.removeEventListener('cx-ai-assistant-window-activate', listener);
+            panelView.windowListeners.clear();
+        }, {once:true});
+        const changedModelSettings = () => {
+            invalidateAnalysisTask('分析配置已变化，请重新分析');
+            ctl.last = null; renderRunState(ctl.state);
+        };
+        el('provider').onchange = () => {
+            if (ctl.state.busy || courseRunActive()) return;
+            set(KEY_PROVIDER, getModelProvider(el('provider').value).id);
+            renderModelSettings(ctl); changedModelSettings();
+        };
         el('save-ds').onclick = () => {
             if (ctl.state.busy || courseRunActive()) return;
             const key = clean(el('ds-key').value);
             if (!key) return ctl.report('请输入 API Key');
-            set(KEY_DS, key);
-            el('ds-key').value = '';
-            ctl.report(readModelConfiguration().configured ? '模型配置已保存' : 'Key 已保存，请先选择模型');
+            saveProviderKey(key); renderModelSettings(ctl);
+            ctl.report(readModelConfiguration().configured ? '模型配置已保存' : 'Key 已保存，请配置接口与模型');
         };
         el('clear-ds').onclick = () => {
             if (ctl.state.busy || courseRunActive()) return;
-            set(KEY_DS, ''); el('ds-key').value = ''; ctl.last = null;
-            ctl.report('DeepSeek Key 已清除');
+            saveProviderKey(''); renderModelSettings(ctl); ctl.last = null;
+            ctl.report(`${getModelProvider(readModelConfiguration().provider).name} Key 已清除`);
         };
-        const savedModel = get(KEY_MODEL, 'deepseek-flash');
-        if (![...el('model').options].some(o => o.value === savedModel)) {
-            const option = doc.createElement('option'); option.value = savedModel; option.textContent = savedModel; el('model').append(option);
-        }
-        el('model').value = savedModel;
-        el('thinking').checked = Boolean(get(KEY_THINKING, false));
-        el('effort').value = get(KEY_EFFORT, 'high');
-        if (!el('effort').value) el('effort').value = 'high';
-        el('search').checked = Boolean(get(KEY_SEARCH, false));
-        for (const [id, key, checkbox] of [['model', KEY_MODEL, false], ['thinking', KEY_THINKING, true], ['effort', KEY_EFFORT, false], ['search', KEY_SEARCH, true]]) {
+        el('save-custom').onclick = () => {
+            if (ctl.state.busy || courseRunActive() || readModelConfiguration().provider !== 'custom') return;
+            try {
+                const baseURL = normalizeModelBaseURL(el('custom-base').value), model = clean(el('custom-model').value);
+                if (!model || model.length > 200) throw new Error('请输入有效模型 ID');
+                saveProviderSetting('baseURL', baseURL, 'custom'); saveProviderSetting('model', model, 'custom');
+                saveProviderSetting('images', el('custom-images').checked, 'custom');
+                renderModelSettings(ctl); changedModelSettings(); ctl.report('自定义接口已保存');
+            } catch (error) { ctl.report(error.message, 'error'); }
+        };
+        for (const [id, checkbox] of [['model', false], ['thinking', true], ['effort', false], ['search', true]]) {
             el(id).onchange = () => {
                 if (ctl.state.busy || courseRunActive()) return;
-                set(key, checkbox ? el(id).checked : el(id).value);
-                invalidateAnalysisTask('分析配置已变化，请重新分析');
-                ctl.last = null;
-                renderRunState(ctl.state);
+                saveProviderSetting(id, checkbox ? el(id).checked : el(id).value);
+                refreshModelCapabilities(shadow); changedModelSettings();
             };
         }
+        el('auto-context').onchange = () => {
+            if (ctl.state.busy || courseRunActive()) return;
+            set(KEY_AUTO_CONTEXT,el('auto-context').checked); changedModelSettings();
+        };
+        for (const [id,field] of [['info-model','infoModel'],['info-interval','videoInfoIntervalSeconds']]) el(id).onchange=()=>{
+            if (ctl.state.busy || courseRunActive()) return;
+            try {saveProviderSetting(field,el(id).value);changedModelSettings();}
+            catch(error){renderModelSettings(ctl);ctl.report(error.message,'error');}
+        };
+        renderModelSettings(ctl);
+        el('detect-images').onclick=async()=>{
+            if(ctl.state.busy || courseRunActive())return;
+            const cfg=readModelConfiguration();
+            if(!cfg.configured)return ctl.report('请先保存当前平台的 Key、接口与模型','error');
+            const caps=providerModelCapabilities(cfg.provider,cfg.model);
+            if(cfg.provider!=='custom' && caps.known)return ctl.report(caps.images?'此预置模型的图片能力已由官方文档确认':'此预置模型经官方文档确认为文字模型','idle');
+            const abort=new AbortController();ctl.capabilityTest=abort;
+            const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
+            ctl.report('正在测试当前模型的图片识别能力…','capability-check',true);
+            try {
+                const result=await detectModelImageCapability(cfg,{signal:abort.signal,guard:()=>{
+                    const current=readModelConfiguration();
+                    if(abort.signal.aborted || !host.isConnected || current.provider!==cfg.provider || current.model!==cfg.model || current.baseURL!==cfg.baseURL || current.key!==cfg.key)throw new Error('图片能力检测已取消');
+                }});
+                if(abort.signal.aborted)return;
+                if(result.images===true){renderModelSettings(ctl);invalidateAnalysisTask('模型图片能力已更新，请重新分析');ctl.last=null;ctl.report('当前模型已通过图片识别测试','capability-check',true);}
+                else ctl.report(result.reason || '图片能力尚未确认，请稍后重试','capability-check',true);
+            } catch {if(!abort.signal.aborted)ctl.report('图片能力尚未确认，请检查接口与模型','error',true);}
+            finally {
+                window.removeEventListener('pagehide',cancel);if(ctl.capabilityTest===abort){ctl.capabilityTest=null;ctl.state.busy=false;renderRunState(ctl.state);}
+                if(abort.signal.aborted)ctl.report('图片能力检测已取消','idle');
+            }
+        };
+        el('cancel-images').onclick=()=>ctl.capabilityTest?.abort();
         el('models').onclick = () => ctl.loadModels();
         el('extract').onclick = () => ctl.extractOnly();
         el('solve').onclick = () => ctl.runAnswerFlow({ autoPrefill: false });
@@ -569,14 +703,135 @@
         panelView.host.before(marker);
         panelView.host.id = 'cx-ai-quiz-panel';
         owner.body.append(panelView.host);
-        const reposition = () => { if (!panelView.shadow.getElementById('panel').hidden) positionAssistantPanel(); };
+        initAssistantWindowCoordination(owner);
+        const reposition = repositionAssistantWindow;
         owner.defaultView.addEventListener('resize', reposition);
         owner.defaultView.addEventListener('scroll', reposition, { passive: true });
         window.addEventListener('pagehide', () => {
             owner.defaultView.removeEventListener('resize', reposition);
             owner.defaultView.removeEventListener('scroll', reposition);
+            panelView.cancelFloatingDrag?.();
             panelView.host.remove();
         }, { once: true });
+    }
+
+    function initAssistantWindowCoordination(doc) {
+        if (!panelView) return;
+        panelView.windowListeners ??= new Map();
+        if (panelView.windowListeners.has(doc)) return;
+        const listener = event => {
+            const activeHost = event.detail?.host;
+            if (panelView.host.ownerDocument !== doc || !activeHost || activeHost === panelView.host || activeHost.ownerDocument !== doc) return;
+            // 顶层课程与嵌套测验各自保留任务和内容，只互斥可见窗口。
+            setAssistantWindowMode('closed');
+        };
+        panelView.windowListeners.set(doc, listener);
+        doc.addEventListener('cx-ai-assistant-window-activate', listener);
+    }
+
+    function setAssistantWindowMode(mode) {
+        if (!panelView || !['open','minimized','closed'].includes(mode)) return;
+        panelView.cancelFloatingDrag?.();
+        const {host} = panelView;
+        if (mode === 'minimized' && panelView.windowMode !== 'minimized') {
+            // 隐藏面板和重置 host 原点前，记录缩小按钮在所属视口中的中心。
+            // 每次缩小重新取锚点，悬浮入口上次的拖动位置不影响本次出现位置。
+            const buttonRect = panelView.shadow.getElementById('minimize').getBoundingClientRect();
+            const launcherRect = panelView.shadow.getElementById('floating-launcher').getBoundingClientRect();
+            const width = launcherRect.width || 56, height = launcherRect.height || 56;
+            if ([buttonRect.left, buttonRect.top, buttonRect.width, buttonRect.height].every(Number.isFinite) && buttonRect.width > 0 && buttonRect.height > 0) {
+                panelView.floatingPosition = {left:buttonRect.left + (buttonRect.width - width) / 2, top:buttonRect.top + (buttonRect.height - height) / 2};
+            } else {
+                const panelRect = panelView.shadow.getElementById('panel').getBoundingClientRect();
+                panelView.floatingPosition = [panelRect.left, panelRect.top, panelRect.width, panelRect.height].every(Number.isFinite) && panelRect.width > 0 && panelRect.height > 0
+                    ? {left:panelRect.left + panelRect.width - width, top:panelRect.top} : null;
+            }
+            panelView.windowPlacement = {left:host.style.left, top:host.style.top, transform:host.style.transform};
+            // transform 会成为 fixed 子元素的包含块；悬浮入口以真实视口为坐标原点。
+            host.style.left = '0px'; host.style.top = '0px'; host.style.transform = 'none';
+        } else if (mode !== 'minimized' && panelView.windowMode === 'minimized' && panelView.windowPlacement) {
+            Object.assign(host.style, panelView.windowPlacement);
+            panelView.windowPlacement = null;
+        }
+        panelView.windowMode = mode;
+        panelView.shadow.getElementById('panel').hidden = mode !== 'open';
+        const launcher = panelView.shadow.getElementById('floating-launcher');
+        launcher.hidden = mode !== 'minimized';
+        launcher.setAttribute('aria-expanded', String(mode === 'open'));
+        settingsButton()?.setAttribute('aria-expanded', String(mode === 'open'));
+        if (mode === 'minimized') positionFloatingLauncher();
+        if (mode !== 'closed') {
+            const owner = host.ownerDocument;
+            owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-assistant-window-activate', {detail:{host}}));
+        }
+    }
+
+    function repositionAssistantWindow() {
+        if (!panelView) return;
+        if (panelView.windowMode === 'minimized') positionFloatingLauncher();
+        else if (!panelView.shadow.getElementById('panel').hidden) positionAssistantPanel();
+    }
+
+    function positionFloatingLauncher(position = panelView?.floatingPosition) {
+        if (!panelView) return;
+        const launcher = panelView.shadow.getElementById('floating-launcher');
+        const view = panelView.host.ownerDocument.defaultView;
+        const width = launcher.getBoundingClientRect().width || 56;
+        const height = launcher.getBoundingClientRect().height || 56;
+        const left = Math.max(0, Math.min(position?.left ?? view.innerWidth - width - 20, Math.max(0, view.innerWidth - width)));
+        const top = Math.max(0, Math.min(position?.top ?? view.innerHeight - height - 24, Math.max(0, view.innerHeight - height)));
+        panelView.floatingPosition = {left, top};
+        launcher.style.left = `${left}px`; launcher.style.top = `${top}px`;
+        return panelView.floatingPosition;
+    }
+
+    function initFloatingLauncher(ctl) {
+        const launcher = panelView.shadow.getElementById('floating-launcher');
+        let drag = null, suppressClick = false;
+        const finish = event => {
+            if (!drag || event.pointerId !== drag.id) return;
+            suppressClick = drag.moved;
+            const id = drag.id;
+            drag = null;
+            try { if (launcher.hasPointerCapture?.(id)) launcher.releasePointerCapture(id); } catch { /* 页面变更时捕获可能已经释放。 */ }
+        };
+        panelView.cancelFloatingDrag = () => {
+            if (drag) finish({pointerId:drag.id});
+            suppressClick = false;
+        };
+        launcher.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || panelView.windowMode !== 'minimized') return;
+            // 新的一次点击可以正常恢复，不继承上次拖动的点击抑制。
+            suppressClick = false;
+            const point = positionFloatingLauncher();
+            drag = {id:event.pointerId, x:event.clientX, y:event.clientY, ...point, moved:false};
+            try { launcher.setPointerCapture(event.pointerId); } catch { /* 旧浏览器继续使用按钮事件。 */ }
+        });
+        launcher.addEventListener('pointermove', event => {
+            if (!drag || event.pointerId !== drag.id) return;
+            const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+            if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+            drag.moved = true;
+            positionFloatingLauncher({left:drag.left + dx, top:drag.top + dy});
+            event.preventDefault();
+        });
+        launcher.addEventListener('pointerup', finish);
+        launcher.addEventListener('pointercancel', finish);
+        launcher.addEventListener('lostpointercapture', finish);
+        launcher.addEventListener('click', event => {
+            if (suppressClick && event.detail !== 0) { suppressClick = false; event.preventDefault(); return; }
+            suppressClick = false;
+            if (panelView.windowMode !== 'minimized') return;
+            ctl.openPanel();
+            panelView.shadow.getElementById('minimize').focus();
+        });
+        launcher.addEventListener('keydown', event => {
+            const delta = {ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key];
+            if (!delta || panelView.windowMode !== 'minimized') return;
+            event.preventDefault();event.stopPropagation();
+            const point = positionFloatingLauncher();
+            positionFloatingLauncher({left:point.left + delta[0], top:point.top + delta[1]});
+        });
     }
 
     function updatePanelHeight(top) {
@@ -705,8 +960,15 @@
             s.getElementById('status-spinner').hidden = !busy;
             s.getElementById('panel').dataset.phase = state.phase;
             s.getElementById('panel').setAttribute('aria-busy',String(busy));
-            for (const id of ['extract', 'solve', 'models', 'save-ds', 'clear-ds', 'ds-key', 'model', 'thinking', 'effort', 'search']) s.getElementById(id).disabled = busy;
-            s.getElementById('effort').disabled = busy || !s.getElementById('thinking').checked;
+            const launcher = s.getElementById('floating-launcher');
+            launcher.dataset.busy = String(busy);
+            launcher.dataset.phase = state.phase;
+            launcher.setAttribute('aria-busy', String(busy));
+            launcher.title = busy ? '任务运行中，点击恢复助手；拖动调整位置' : '恢复学习通AI助手；拖动调整位置';
+            for (const id of ['extract', 'solve', 'models', 'detect-images', 'save-ds', 'clear-ds', 'ds-key', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
+            s.getElementById('cancel-images').hidden=!controller?.capabilityTest;
+            s.getElementById('cancel-images').disabled=controller?.capabilityTest?.signal.aborted===true;
+            refreshModelCapabilities(s, busy);
             s.getElementById('prefill').disabled = busy || !controller?.last;
             const task=controller?.task;
             s.getElementById('analysis-stop').hidden = !state.busy || !task?.active;
@@ -750,7 +1012,7 @@
             if (batch.length && model !== resolveQuestionModel(settings.model || 'deepseek-flash', batch[0])) { batches.push(batch); batch = []; size = 2; }
             const fits = candidate => {
                 const placeholderEvidence = settings.search ? Object.fromEntries(candidate.map(q => [q.id, Array.from({length:3}, () => ({title:'占'.repeat(120),url:'u'.repeat(500),excerpt:'摘'.repeat(650)}))])) : {};
-                assertRequestSize(buildAnswerPayload(model,candidate,settings.thinking,settings.effort,placeholderEvidence,preparedMedia));
+                assertConfiguredRequestSize(settings, buildConfiguredAnswerPayload({...settings,model},candidate,placeholderEvidence,preparedMedia));
             };
             try { fits([...batch,question]); }
             catch (error) {
@@ -764,11 +1026,10 @@
         return batches;
     }
     function analysisConfiguration(settings) {
-        return {model:settings.model,thinking:settings.thinking,effort:settings.effort,search:settings.search};
+        return modelConfigurationSignature(settings);
     }
     function currentAnalysisSettings() {
-        const configuration=readModelConfiguration();
-        return {key:configuration.key,model:configuration.model,thinking:Boolean(get(KEY_THINKING,false)),effort:get(KEY_EFFORT,'high'),search:Boolean(get(KEY_SEARCH,false))};
+        return readModelConfiguration();
     }
     function createAnalysisTask(snapshot, settings, autoPrefill) {
         return {id:Symbol('analysis'),snapshot,configuration:analysisConfiguration(settings),settings,
@@ -783,7 +1044,7 @@
         return `${state} · 已分析 ${progress.completed}/${progress.total} 题`;
     }
     function analysisSkipped(snapshot, settings) {
-        return snapshot.questions.filter(q => q.capabilities?.analyze !== false && questionImageIds(q).length && !modelSupportsImages(settings.model))
+        return snapshot.questions.filter(q => q.capabilities?.analyze !== false && questionImageIds(q).length && !modelSupportsImages(settings.model, settings))
             .map(q => ({id:q.id,reason:'所选模型不支持图片，此题暂不分析；请选择支持图片的模型'}));
     }
     function collectBatchResults(snapshot, records, skippedQuestions, complete=false) {
@@ -804,7 +1065,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.08',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.09',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -867,7 +1128,7 @@
                         }
                     }
                     report(`${prefix}：正在请求 ${model}…`,'generating');
-                    const result=await retry(()=>askDeepSeek(settings.key,model,batch,settings.thinking,settings.effort,record.evidence,prepared,settings.signal),'generating');
+                    const result=await retry(()=>askConfiguredModel({...settings,model},batch,record.evidence,prepared,settings.signal),'generating');
                     check();record.result=result;record.status='success';
                     onBatchComplete(record,i);
                 } catch(error) {
@@ -910,14 +1171,15 @@
             if(!task.snapshot) {
                 ctl.report('正在提取题目…','extracting');
                 const data=extract();
-                task.snapshot={doc:document,schemaVersion:data.schemaVersion,questions:data.questions,media:data.media,signature:signature(data.questions,data.media)};
+                task.snapshot={doc:document,schemaVersion:data.schemaVersion,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),
+                    courseContext:task.settings.videoInfoEnabled?captureCurrentCourseContext(document):[]};
             }
             task.snapshot.checkCurrent=()=>checkAnalysisTask(task);
             checkSnapshot(task.snapshot);task.status='preparing';task.skippedQuestions=analysisSkipped(task.snapshot,task.settings);renderAnalysisProgress(task);
             if(!task.snapshot.questions.some(q=>q.capabilities.analyze)) {
                 task.status='complete';renderAnalysisProgress(task);ctl.report('已保留原始题目：当前题型尚未适配，请查看题目列表','done');return;
             }
-            const result=await solveQuestionBatches(task.snapshot,{...task.settings,signal:task.abortController.signal},
+            const result=await solveQuestionBatches(task.snapshot,{...task.settings,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
             checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
@@ -949,7 +1211,7 @@
     async function runAnswerFlow({autoPrefill=true}={}) {
         const ctl=controller;if(ctl.state.busy || courseRunActive())return;
         const configuration=readModelConfiguration();
-        if(!configuration.configured){ctl.openPanel('model');ctl.report('请先配置模型：保存 DeepSeek API Key 并选择模型','error');return;}
+        if(!configuration.configured){ctl.openPanel('model');ctl.report('请先配置模型：保存 API Key 并选择模型','error');return;}
         if(ctl.task){ctl.task.abortController.abort();ctl.task.preparedMedia.clear();}
         ctl.last=null;ctl.clearOutput();
         const task=createAnalysisTask(null,currentAnalysisSettings(),autoPrefill);ctl.task=task;
@@ -966,7 +1228,7 @@
                 if (!panelView) return;
                 movePanelToStudyPage();
                 refreshCourseSidebar();
-                panelView.shadow.getElementById('panel').hidden = false;
+                setAssistantWindowMode('open');
                 if (view === 'model') switchSettingsView('model');
                 if (typeof view === 'string') switchPanelView(view);
                 positionAssistantPanel();
@@ -977,8 +1239,7 @@
                 const panel = panelView.shadow.getElementById('panel');
                 if (panel.hidden) ctl.openPanel();
                 else {
-                    panel.hidden = true;
-                    settingsButton()?.setAttribute('aria-expanded', 'false');
+                    setAssistantWindowMode('closed');
                 }
             },
             output(data) { ctl.result = data; renderResultList(data); },
@@ -1011,17 +1272,15 @@
             },
             async loadModels() {
                 if (ctl.state.busy || courseRunActive()) return;
-                const key = get(KEY_DS);
-                if (!key) return ctl.report('请先保存 DeepSeek API Key');
+                const configuration = readModelConfiguration();
+                if (!configuration.key) return ctl.report('请先保存 API Key');
+                if (!configuration.baseURL) return ctl.report('请先保存有效接口地址');
                 ctl.report('正在获取模型列表…', 'idle', true);
                 try {
-                    const models = await fetchModels(key);
+                    const models = await fetchConfiguredModels(configuration);
                     if (!models.length) throw new Error('模型列表没有有效条目');
-                    const select = panelView.shadow.getElementById('model');
-                    const previous = select.value; select.replaceChildren();
-                    for (const m of models) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; select.append(o); }
-                    select.value = models.some(m => m.id === previous) ? previous : models[0].id;
-                    set(KEY_MODEL, select.value); invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
+                    renderModelSettings(ctl, models);
+                    invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
                     ctl.report(`获取成功：${models.length} 个模型`, 'done');
                 } catch (e) { ctl.report(`获取模型失败：${e.message}`, 'error'); }
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
@@ -1069,7 +1328,7 @@
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findQuizPanel(doc.querySelector('#mainid #iframe')?.contentDocument);
                 if (quizDoc) {
-                    panelView.shadow.getElementById('panel').hidden = true;
+                    setAssistantWindowMode('closed');
                     quizDoc.dispatchEvent(new quizDoc.defaultView.Event('cx-ai-toggle-quiz-panel'));
                 } else controller.togglePanel();
             };

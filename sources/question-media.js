@@ -2,9 +2,11 @@
     const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
     const MAX_REQUEST_BODY_BYTES = 44 * 1024 * 1024;
     const MAX_REQUEST_IMAGES = 600;
-    const VISION_MODELS = new Set(['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']);
     function questionImageIds(question) { return [...new Set([...(question.imageIds || []), ...(question.contextImageIds || [])])]; }
-    function modelSupportsImages(model) { return VISION_MODELS.has(model); }
+    function modelSupportsImages(model, settings = {provider:'deepseek'}) {
+        const provider=getModelProvider(settings.provider || 'deepseek').id;
+        return provider==='custom' ? settings.images===true : providerModelCapabilities(provider,model).images;
+    }
     function resolveQuestionModel(selectedModel) { return selectedModel; }
     function mediaAddressAllowed(value, doc = document) {
         try {
@@ -168,9 +170,12 @@
         if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw new Error(`本批图片单边尺寸超过 ${edge} 像素`);
         return records;
     }
-    function buildChatContent(questions, evidence = {}, preparedMedia = new Map()) {
+    function buildChatContent(questions, evidence = {}, preparedMedia = new Map(), courseContext = []) {
         const records = requestMedia(questions, preparedMedia);
+        const context=(Array.isArray(courseContext)?courseContext:[]).filter(item=>item && typeof item.text==='string' && item.text.trim())
+            .map(item=>({kind:typeof item.kind==='string'?item.kind.trim():'',title:typeof item.title==='string'?item.title.trim():'',text:item.text.trim(),...(item.truncated ? {truncated:true} : {})}));
         const text = JSON.stringify({ questions:questions.map(toAIQuestion), evidence,
+            ...(context.length ? {courseContext:context} : {}),
             ...(records.length ? { imageManifest:records.map(({imageIds,sources,questionIds}) => ({imageIds,sources,questionIds})) } : {}) });
         if (!records.length) return text;
         const content = [{ type:'text', text }];
