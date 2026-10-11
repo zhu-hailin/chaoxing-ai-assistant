@@ -12,8 +12,18 @@
 
     const fontCache = new Map();
     let fontTable;
+    function fontRootNeedsDecoding(root) {
+        // 只检查实际文本；图片本身不依赖字体。保留平台节点、属性和事件。
+        const copy = root.cloneNode(true);
+        copy.querySelectorAll('script,style,noscript,template').forEach(node => node.remove());
+        const text = clean(copy.textContent).replace(/[\u200b\ufeff]/g, '');
+        if (!text) return false;
+        const label = '(?:简答|问答|论述|单选|多选|判断|填空|单项选择|多项选择|是非)题?';
+        const onlyType = new RegExp('^(?:\\d+\\s*[.．、]\\s*)?(?:【\\s*' + label + '\\s*】|\\[\\s*' + label + '\\s*\\]|（\\s*' + label + '\\s*）|\\(\\s*' + label + '\\s*\\))$');
+        return !onlyType.test(text);
+    }
     async function ensureFontDecoded(doc = document) {
-        const roots = [...doc.querySelectorAll('.font-cxsecret')];
+        const roots = [...doc.querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
         if (!roots.length) return;
         const styles = [...doc.querySelectorAll('style')];
         const style = styles.find(el =>
@@ -1065,7 +1075,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.09',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.10',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

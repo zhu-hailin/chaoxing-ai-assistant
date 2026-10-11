@@ -201,6 +201,67 @@
         assert(!root.classList.contains('font-cxsecret'),'解密完成后未移除类');
         await f.api.ensureFontDecoded();assert(root.textContent==='【单选题】局乙丙，英文缩写（LAN）。','重复解密改变文本');f.remove();
     });
+    await test('纯图片简答题不要求字体，提取保留题图且可分析', async () => {
+        const questions='<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="https://example.test/question.png"></div></div><textarea></textarea></div>';
+        const f=await fixture({questions});
+        try {
+            await f.api.controller.extractOnly();
+            assert(f.api.controller.state.phase==='done',f.api.controller.state.message);
+            const data=f.api.extract();
+            assert(data.total===1 && data.questions[0].type==='essay','题型或题数错误');
+            assert(data.media.length===1 && data.questions[0].capabilities.analyze,'图片或分析能力丢失');
+            assert(f.d.querySelector('img').getAttribute('src')==='https://example.test/question.png','题图被修改');
+            assert(f.d.querySelector('.fontLabel').classList.contains('font-cxsecret'),'误删平台字体标记');
+            assert(f.requests.length===0 && f.submits===0,'提取触发模型请求或提交');
+        } finally { f.remove(); }
+    });
+    await test('图片题标签四种括号、序号、空包装和嵌套标记均不误报', async () => {
+        for(const label of ['【简答题】','[简答题]','（简答题）','(简答题)','1. 【问答题】','2、[论述题]','']) {
+            const questions=`<div class="singleQuesId" data="image-only"><div class="Zy_TItle font-cxsecret"><div class="fontLabel font-cxsecret"><span>${label}</span><img src="https://example.test/question.png"></div></div><textarea></textarea></div>`;
+            const f=await fixture({questions});
+            try { await f.api.ensureFontDecoded();assert(f.requests.length===0 && f.submits===0,'字体检查有外部操作'); }
+            finally { f.remove(); }
+        }
+    });
+    await test('纯图片包装有外部字体声明仍可读取，不调用解码依赖', async () => {
+        const f=await fixture({questions:'<div class="singleQuesId" data="image-only"><div class="Zy_TItle font-cxsecret"><div class="fontLabel">【简答题】</div><img src="https://example.test/question.png"></div><textarea></textarea></div>'});
+        try {
+            const s=f.d.createElement('style');s.textContent="@font-face{font-family:font-cxsecret;src:url('/font.ttf')}";f.d.head.append(s);
+            f.w.Typr=undefined;f.w.md5=undefined;
+            await f.api.controller.extractOnly();
+            assert(f.api.controller.state.phase==='done',f.api.controller.state.message);
+            assert(f.api.extract().media.length===1,'标签和图片为兄弟时丢图');
+        } finally { f.remove(); }
+    });
+    await test('混合测验图片题不能绕过另一题缺少字体的真实文字', async () => {
+        const image='<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="https://example.test/question.png"></div></div><textarea></textarea></div>';
+        const f=await fixture({questions:image+choice('real','单选',[['A','甲'],['B','乙']])});
+        try {
+            const title=f.d.querySelectorAll('.fontLabel')[1];title.classList.add('font-cxsecret');const before=title.textContent;
+            await f.api.runAnswerFlow();
+            assert(f.api.controller.state.phase==='error' && f.api.controller.state.message.includes('Base64'),'真实文字检查被绕过');
+            assert(title.textContent===before && title.classList.contains('font-cxsecret'),'失败修改平台文字或标记');
+            assert(f.requests.length===0 && f.submits===0,'字体失败仍请求或提交');
+        } finally { f.remove(); }
+    });
+    await test('图片容器残留真实题文或未知标签仍要求解密', async () => {
+        for(const text of ['【简答题】坁坅','【简答题】请解方程','【教师自创题】']) {
+            const f=await fixture({questions:`<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">${text}<img src="https://example.test/question.png"></div></div><textarea></textarea></div>`});
+            try { let failed=false;try{await f.api.ensureFontDecoded();}catch(error){failed=error.message.includes('Base64');}assert(failed,'过度放行 '+text); }
+            finally { f.remove(); }
+        }
+    });
+    await test('混合测验有可解字体时只解真实文字，纯图片标签与节点保留', async () => {
+        const f=await fixture({questions:'<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="https://example.test/question.png"></div></div><textarea></textarea></div>'+choice('real','单选',[['A','甲'],['B','乙']])});
+        try {
+            const s=f.d.createElement('style');s.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}";f.d.head.append(s);
+            const titles=f.d.querySelectorAll('.fontLabel'),image=f.d.querySelector('img');titles[1].classList.add('font-cxsecret');titles[1].textContent='【单选题】一';
+            await f.api.ensureFontDecoded();
+            assert(titles[1].textContent==='【单选题】乙' && !titles[1].classList.contains('font-cxsecret'),'真实文字未解密');
+            assert(titles[0].textContent==='【简答题】' && titles[0].classList.contains('font-cxsecret') && image===f.d.querySelector('img'),'纯图片题节点被修改');
+        } finally { f.remove(); }
+    });
+
     await test('缺少字体资源阻止生成，但设置仍可用', async () => {
         const f=await fixture();f.d.querySelector('.fontLabel').classList.add('font-cxsecret');await f.api.runAnswerFlow();
         assert(!f.requests.length && !f.api.controller.state.busy && f.api.controller.state.phase==='error','字体错误未停止');

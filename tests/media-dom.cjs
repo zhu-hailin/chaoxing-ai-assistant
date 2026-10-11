@@ -45,6 +45,19 @@ function answer(request, overrides={}){
  return {payload,data};
 }
 (async()=>{
+ await test('带字体标记的纯图片简答题完整读题与视觉请求不再被阻断',async()=>{
+  const f=fixture(`<div id="RightCon"><div class="ceyan_name"><h3>图片测验</h3></div><span class="testTit_status">待完成</span><div class="singleQuesId" data="q1"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="${DATA}"></div></div><textarea></textarea></div></div>`);
+  try {
+   f.api.initQuizAssistant();const flow=f.api.runAnswerFlow();const request=await pending(f);
+   const {payload,data}=answer(request);
+   await flow;
+   assert(payload.messages[1].content.some(item=>item.type==='image_url'),'未发送图片内容');
+   assert.equal(data.questions.length,1);assert.equal(data.questions[0].type,'essay');
+   assert.equal(f.api.controller.state.phase,'done');
+   assert.equal(f.api.controller.result.prefill.filled,1);
+   assert(f.d.querySelector('textarea').value.includes('CREATE TABLE'));
+  } finally {f.close();}
+ });
  await test('四种简答标签、题号剥离和普通公式保护',async()=>{
   const forms=['【简答题】','[简答题]','(简答题)','（简答题）'];const f=fixture(forms.map((label,i)=>`<div class="TiMu" questionid="${i}"><h3 class="stem">${i+1}. ${label}解释概念</h3><textarea></textarea></div>`).join('')+'<div class="TiMu" questionid="formula"><h3 class="stem">(A+B) 求值</h3></div>');
   try{const d=f.api.extract();assert.equal(d.schemaVersion,2);assert(d.questions.slice(0,4).every(q=>q.type==='essay'&&q.question==='解释概念'));assert.equal(d.questions[4].type,'unknown');assert.equal(d.questions[4].question,'(A+B) 求值');}finally{f.close();}

@@ -5,10 +5,12 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--skip-readme", action="store_true")
+parser.add_argument("--source-root", type=Path, help="从已验证的隔离副本发布，保留开发目录中的未发布修改")
 args = parser.parse_args()
 
-root = Path(__file__).resolve().parent
-publish = root / '.publish'
+project = Path(__file__).resolve().parent
+root = args.source_root.resolve() if args.source_root else project
+publish = project / '.publish'
 assert (publish / '.git').exists()
 paths = ['.gitignore', 'AGENTS.md', 'README.md', 'CHANGELOG.md', '学习通AI助手.user.js', 'build_script.py',
          'implementation.js', 'course_catalog.js', 'package.json', 'package-lock.json',
@@ -19,6 +21,7 @@ paths = ['.gitignore', 'AGENTS.md', 'README.md', 'CHANGELOG.md', '学习通AI助
          'tests/analysis-task-dom.cjs', 'tests/model-providers-dom.cjs', 'tests/course-context-dom.cjs', 'tests/course-video-info-dom.cjs', 'tests/model-capability-dom.cjs', 'tests/course-info-integration-dom.cjs', 'tests/panel-window-dom.cjs', 'tests/自动课程模拟.html']
 paths += [str(p.relative_to(root)) for p in (root / 'sources').iterdir() if p.suffix in ('.js', '.html')]
 paths += [str(p.relative_to(root)) for p in (root / 'docs').glob('*.md')]
+paths += ['docs/脚本使用风险分析图.html']
 paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*.png')]
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]

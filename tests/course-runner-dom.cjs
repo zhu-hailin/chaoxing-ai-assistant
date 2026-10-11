@@ -332,11 +332,15 @@ function finishManual(v){while(v.currentTime<v.duration)v.simulateMedia({seconds
   v.simulateMedia({seeking:true,seconds:0,readyState:1},'seeking');await delay(12);assert.equal(f.runner.report.status,'running');
   v.simulateMedia({seeking:false,seconds:100,readyState:4},'seeked');await waitForTest(()=>f.runner.report.chapters[0].tasks[0].seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
  }));
- await test('再次定位或数据下降会重置稳定等待，起点保持不变',()=>manualVideoTest(async(f,pending,v)=>{
-  const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');await delay(12);
-  v.simulateMedia({seeking:true,seconds:101,playedRanges:[[100,101]]},'seeking');v.simulateMedia({seeking:false,readyState:1},'seeked');await delay(45);assert.equal(task.seekState.outcome,'pending');assert.equal(task.seekState.from,100);assert.equal(task.seekCount,1);
-  v.simulateMedia({readyState:4},'timeupdate');await waitForTest(()=>task.seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
- },{limits:{videoSeekStableMs:35,videoSeekTimeoutMs:200}}));
+ await test('再次定位或数据下降会重置稳定等待，起点保持不变',async()=>{
+  // 使用注入时钟，避免机器负载把12ms等待拉长到35ms稳定窗口之外。
+  let clock=0;
+  await manualVideoTest(async(f,pending,v)=>{
+   const task=f.runner.report.chapters[0].tasks[0];v.simulateMedia({seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');clock=12;await delay(12);
+   v.simulateMedia({seeking:true,seconds:101,playedRanges:[[100,101]]},'seeking');v.simulateMedia({seeking:false,readyState:1},'seeked');clock=57;await delay(45);assert.equal(task.seekState.outcome,'pending');assert.equal(task.seekState.from,100);assert.equal(task.seekCount,1);
+   v.simulateMedia({readyState:4},'timeupdate');clock=92;await waitForTest(()=>task.seekState.outcome==='continuous');finishManual(v);assert.equal((await pending).videos,1);
+  },{now:()=>clock,limits:{videoSeekStableMs:35,videoSeekTimeoutMs:200}});
+ });
  for(const continueOnTimeout of [false,true])await test(`定位持续无响应：超时继续=${continueOnTimeout}，失败视频不计完成`,()=>manualVideoTest(async(f,pending,v)=>{
   v.simulateMedia({seeking:true,readyState:1},'seeking');const repeat=setInterval(()=>v.simulateMedia({},'seeking'),8);
   try{const r=await pending,task=r.chapters[0].tasks[0];assert.equal(r.status,continueOnTimeout?'done':'stopped');assert.match(continueOnTimeout?r.chapters[0].reason:r.reason,/定位长时间未恢复/);assert.equal(task.seekState.outcome,'timeout');assert.equal(task.seekCount,1);assert.equal(task.seekState.from,100);assert.equal(r.videos,continueOnTimeout?1:0);assert.equal(f.events.includes('chapter:1'),continueOnTimeout);assert.equal(f.events.filter(e=>e==='play:0:0:0').length,1);assertSeekListenersRemoved(v);}
@@ -890,7 +894,7 @@ function finishManual(v){while(v.currentTime<v.duration)v.simulateMedia({seconds
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.09');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.10');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{
