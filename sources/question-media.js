@@ -146,7 +146,7 @@
     }
 
     function toAIQuestion(question) {
-        return { id:question.id, number:question.number, type:question.type, question:question.question,
+        return { id:question.id, number:question.number, type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
             imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [] };

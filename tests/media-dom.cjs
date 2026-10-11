@@ -1,3 +1,5 @@
+const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
+const classificationRequests=[];
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -18,7 +20,9 @@ function fixture(html, options={}) {
  const w=dom.window,requests=[],writes=[];
  w.GM_getValue=(key,fallback)=>({deepseek_api_key:'mock-key',cx_model:options.model||'deepseek-flash',cx_search:options.search||false}[key]??fallback);
  w.GM_setValue=(key,value)=>writes.push({key,value});w.GM_getResourceText=()=>'{}';
- w.GM_xmlhttpRequest=request=>{requests.push(request);if(options.mediaResponse && request.method==='GET')queueMicrotask(()=>options.mediaResponse(request));};
+ w.GM_xmlhttpRequest=request=>{
+    const policy=policyInput(request);if(policy){classificationRequests.push(request);queueMicrotask(()=>respondPolicy(request,policy));return {abort(){request.onabort?.();}};}
+requests.push(request);if(options.mediaResponse && request.method==='GET')queueMicrotask(()=>options.mediaResponse(request));};
  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
  // jsdom 不解码图片：只模拟浏览器 Image 的完成事件，不请求真实网络。
  w.Image=class {set src(value){if(!value)return;queueMicrotask(()=>{if(options.decodeError)this.onerror?.();else{this.naturalWidth=options.width||1;this.naturalHeight=options.height||1;this.onload?.();}});}};
@@ -66,10 +70,10 @@ function answer(request, overrides={}){
   const f=fixture(homework(group(essay('q1',`建表<img src="${DATA}">`,`<dl><dt>我的答案</dt><dd><img src="https://p.ananas.chaoxing.com/my-answer.png"></dd></dl><div class="teacher-comment"><img src="comment.png"></div>`)+essay('q2','根据表1查询'))));
   try{const d=f.api.extract();assert.equal(d.total,2);assert.equal(d.media.length,1);assert.equal(d.questions[0].source.adapter,'chaoxing-homework');assert(d.questions.every(q=>q.type==='essay'));assert.equal(d.questions[1].contextImageIds[0],d.media[0].id);assert(!JSON.stringify(d).includes('my-answer'));assert(!JSON.stringify(d).includes('imageNodes'));}finally{f.close();}
  });
- await test('提交后查看页使用状态提示，仍可分析但不预填；作答页不误判已提交',async()=>{
+ await test('提交后只读页显示人工处理且不请求解答；作答页不误判已提交',async()=>{
   const markup=homework(group(essay('q1','解释概念','<dl><dt>我的答案：</dt><dd>已交答案</dd></dl>')+essay('q2','解释概念','<textarea readonly>已交答案</textarea>')));
   const f=fixture(markup);
-  try{const data=f.api.extract();assert(data.questions.every(q=>q.capabilities.analyze&&!q.capabilities.prefill));assert(data.questions.every(q=>q.diagnostics.join('；')==='答案已提交，当前页面仅供查看，暂不预填'));f.api.initQuizAssistant();const flow=f.api.runAnswerFlow();answer(await pending(f));await flow;assert.equal(f.api.controller.result.prefill.skipped,2);assert.equal(f.d.querySelector('textarea').value,'已交答案');assert(!f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output').textContent.includes('多个或缺失文本框'));}finally{f.close();}
+  try{const data=f.api.extract();assert(data.questions.every(q=>q.capabilities.analyze&&!q.capabilities.prefill));assert(data.questions.every(q=>q.diagnostics.join('；')==='答案已提交，当前页面仅供查看，暂不预填'));f.api.initQuizAssistant();await f.api.runAnswerFlow();assert.equal(f.requests.length,0);assert.equal(f.api.controller.result.manualCount,2);assert.equal(f.d.querySelector('textarea').value,'已交答案');assert(!f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('output').textContent.includes('多个或缺失文本框'));}finally{f.close();}
   const g=fixture(markup,{url:'https://mooc1.chaoxing.com/work/doHomeWorkNew'});
   try{const q=g.api.extract().questions;assert(q[0].diagnostics.includes('多个或缺失文本框，暂不自动预填'));assert(q[1].diagnostics.includes('文本控件不可编辑'));assert(q.every(item=>!item.diagnostics.some(text=>text.includes('答案已提交'))));}finally{g.close();}
  });
@@ -162,7 +166,7 @@ function answer(request, overrides={}){
   try{f.api.initQuizAssistant();const flow=f.api.runAnswerFlow();const request=await pending(f);const media=f.api.extract().media;answer(request,{mediaAnalysis:[{imageId:media[0].id,summary:'goods 表结构',columns:['字段','类型','约束'],rows:[['id','INT(11)','主键、自增']],items:['表中有6个字段']}]});await flow;assert.equal(f.api.controller.state.phase,'done');assert.equal(f.d.querySelector('textarea').value,'CREATE TABLE goods (\n  id INT PRIMARY KEY\n);');assert.equal(f.d.querySelectorAll('textarea')[1].value,'手工答案');assert.equal(submits,0);const output=f.d.getElementById('cx-ai-study-root').shadowRoot;assert.equal(output.querySelectorAll('.image-table').length,2);assert(output.querySelector('.image-details').textContent.includes('6个字段'));const copy=f.api.formatResultText(f.api.controller.result);assert(copy.includes('id | INT(11) | 主键、自增'));assert(!copy.includes('data:image'));assert(!copy.includes('尚未生成答案'));}finally{f.close();}
  });
  await test('联网检索也发送对应图片，缺少真实来源继续报错',async()=>{
-  const f=fixture(homework(group(essay('q1',`题目<img src="${DATA}">`))),{search:true});
+  const f=fixture(homework(group(essay('q1',`题目<img src="${DATA}">`,'<textarea></textarea>'))),{search:true});
   try{f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});const search=await pending(f);const data=JSON.parse(search.data);assert.equal(data.model,'deepseek-flash');assert(data.messages[0].content.some(part=>part.type==='image'&&part.source.type==='base64'));search.onload({status:200,responseText:JSON.stringify({content:[{type:'text',text:'没有来源'}]})});await flow;assert.equal(f.api.controller.state.phase,'error');assert(!f.api.controller.last);assert(f.api.controller.result.questions.length);assert(!f.api.controller.state.busy);}finally{f.close();}
  });
  await test('请求图片变化后不预填，失败保留列表并恢复加载状态',async()=>{

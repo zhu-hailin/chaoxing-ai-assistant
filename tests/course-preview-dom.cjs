@@ -32,7 +32,7 @@ const logs=[],failures=[];
   }catch(error){failures.push(`${label}: ${error.stack}`);}finally{if(dom?.window.courseDemo?.runner.report?.status==='running'){dom.window.courseDemo.runner.stop();await delay(200);}dom?.window.courseDemo?.close();dom?.window.close();}
  }
  for(const mode of ['idle','running']){
-  let dom;const label=mode==='idle'?'设置双页：齿轮入口、键盘切换、配置入口与报告复制':'运行中浏览设置与开发者报告：保留视频进度且不重复启动';
+  let dom;const label=mode==='idle'?'设置三页：齿轮入口、键盘切换、配置入口与报告复制':'运行中浏览设置与开发者报告：保留视频进度且不重复启动';
   try{
    const errors=[],console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
    dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=normal',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
@@ -44,7 +44,7 @@ const logs=[],failures=[];
    s.getElementById('settings-tab-model').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert(model.hidden&&!developer.hidden);assert.equal(s.activeElement.id,'settings-tab-developer');assert.equal(s.getElementById('settings-tab-developer').getAttribute('aria-selected'),'true');
    let copied;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{copied=text}},configurable:true});s.getElementById('course-copy-report').click();await delay(5);assert.equal(copied,f.api.courseReportText(f.runner.report));assert(!copied.includes('mock-preview-key'));
    s.getElementById('nav-questions').click();nav.click();assert(!developer.hidden);s.getElementById('close').click();f.api.controller.openPanel();assert(!developer.hidden);
-   s.getElementById('settings-tab-developer').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(!model.hidden&&developer.hidden);assert.equal(input.value,value);assert.equal(s.activeElement.id,'settings-tab-model');
+   s.getElementById('settings-tab-developer').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(model.hidden&&developer.hidden);assert(!s.getElementById('settings-learning-page').hidden);assert.equal(s.activeElement.id,'settings-tab-learning');s.getElementById('settings-tab-learning').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));assert(!model.hidden&&developer.hidden);assert.equal(input.value,value);assert.equal(s.activeElement.id,'settings-tab-model');
    s.getElementById('settings-tab-developer').click();f.api.controller.openPanel('model');assert(!model.hidden&&developer.hidden);
    if(mode==='running'){assert(input.disabled);assert(f.runner.busy);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,1);assert(!s.getElementById('video-progress-wrap').hidden);s.getElementById('nav-chapters').click();s.getElementById('course-stop').click();assert(f.runner.busy);assert.equal(s.getElementById('course-stop').textContent,'确认停止（5s）');s.getElementById('course-stop').click();for(let i=0;i<50&&f.runner.report?.status==='running';i++)await delay(10);assert(!f.runner.busy);assert.equal(f.runner.report.status,'stopped');assert(s.getElementById('video-progress-wrap').hidden);assert(!input.disabled);}
    assert.equal(f.requests.length,0);assert.deepEqual(errors,[]);logs.push(`PASS ${label}`);

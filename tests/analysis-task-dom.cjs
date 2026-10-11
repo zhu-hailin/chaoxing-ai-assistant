@@ -1,3 +1,5 @@
+const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
+const classificationRequests=[];
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
@@ -23,6 +25,8 @@ function fixture(html=choices(),options={}) {
  w.Image=class{constructor(){images.push(this);}set src(value){this.value=value;if(value&&!options.hangImage)queueMicrotask(()=>{this.naturalWidth=this.naturalHeight=1;this.onload?.();});}};
  const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===2000?8:ms,...args);
  w.GM_xmlhttpRequest=request=>{
+    const policy=policyInput(request);if(policy){classificationRequests.push(request);queueMicrotask(()=>respondPolicy(request,policy));return {abort(){request.onabort?.();}};}
+
    const record={request,aborted:false};requests.push(record);
    queueMicrotask(()=>options.handle?.(request,record,requests));
    return {abort(){record.aborted=true;request.onabort?.();}};
@@ -56,10 +60,10 @@ const bodies=f=>f.requests.filter(r=>r.request.url.endsWith('/chat/completions')
   let fail=true;const f=fixture(choices(2),{search:true,handle:r=>{if(!r.url.endsWith('/chat/completions'))evidence(r);else if(fail)r.onload({status:401,responseText:'{}'});else reply(r);}});
   try{await f.api.runAnswerFlow({autoPrefill:false});assert.equal(postCount(f),3);fail=false;await f.api.resumeAnalysisTask();assert.equal(postCount(f),4);assert.equal(f.api.controller.result.analyzedCount,2);}finally{f.close();}
  });
- await test('成功图片缓存保留，恢复只下载失败图片，媒体GET不携带Key',async()=>{
+ await test('图片失败只降级该题，其他图片可作答；重新运行重判且GET无Key',async()=>{
   const one='https://p.ananas.chaoxing.com/one.png',two='https://p.ananas.chaoxing.com/two.png';let failing=true;
   const f=fixture(picture(one)+picture(two,'2'),{handle:r=>{if(r.method==='POST')reply(r);else if(r.url===two&&failing)r.onload({status:404,response:new ArrayBuffer(0)});else r.onload({status:200,response:Uint8Array.from(Buffer.from(PNG,'base64')).buffer});}});
-  try{await f.api.runAnswerFlow({autoPrefill:false});assert.equal(f.api.controller.task.preparedMedia.size,1);failing=false;await f.api.resumeAnalysisTask();assert.equal(f.requests.filter(x=>x.request.url===one).length,1);assert.equal(f.requests.filter(x=>x.request.url===two).length,2);assert(f.requests.filter(x=>x.request.method==='GET').every(x=>!x.request.headers));assert.equal(f.api.controller.task.preparedMedia.size,0);assert.equal(f.api.controller.task.status,'complete');}finally{f.close();}
+  try{await f.api.runAnswerFlow({autoPrefill:false});assert.equal(f.api.controller.task.status,'complete');assert.equal(f.api.controller.result.uncertainCount,1);assert.equal(f.api.controller.result.analyzedCount,1);assert.equal(f.api.controller.result.answers[1].answer.length,0);failing=false;await f.api.runAnswerFlow({autoPrefill:false});assert.equal(f.api.controller.result.analyzedCount,2);assert(f.requests.filter(x=>x.request.method==='GET').every(x=>!x.request.headers));assert.equal(f.api.controller.task.preparedMedia.size,0);}finally{f.close();}
  });
  await test('停止模型请求，晚到响应不覆盖结果；恢复不重跑成功批次',async()=>{
   let held,hold=true;const f=fixture(choices(11),{handle:r=>{const d=JSON.parse(JSON.parse(r.data).messages[1].content);if(d.questions[0].id==='q11'&&hold)held=r;else reply(r);}});

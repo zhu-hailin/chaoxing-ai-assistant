@@ -50,7 +50,7 @@
         w.GM_getResourceText = () => JSON.stringify({aaaaaaaa: 20057, bbbbbbbb: 19993});
         w.Typr = { parse: () => [{}], U: {codeToGlyph: (_,c) => [19968,20057].includes(c) ? c : 0, glyphToPath: (_,c) => c} };
         w.md5 = str => '0'.repeat(24) + (str === '19968' ? 'aaaaaaaa' : 'bbbbbbbb');
-        let requests = [], requestMode = 'ok', clicks = 0, submits = 0;
+        let classificationRequests = [], requests = [], requestMode = 'ok', clicks = 0, submits = 0;
         const catalogClicks=[];
         const catalogDoc=ancestorCatalog?document:d;
         if(catalog) for(const target of catalogDoc.querySelectorAll('#coursetree .posCatalog_name')) target.addEventListener('click',()=>{
@@ -59,7 +59,14 @@
             target.parentElement.classList.add('posCatalog_active');
         });
         w.confirm = () => { throw new Error('不应该调用确认弹窗'); };
-        w.GM_xmlhttpRequest = o => requests.push(o);
+        w.GM_xmlhttpRequest = o => {
+            const p=JSON.parse(o.data),c=p.messages?.[1]?.content;
+            let input;try{input=JSON.parse(Array.isArray(c)?c[0].text:c);}catch{}
+            if(input?.task==='answer-policy') {
+                classificationRequests.push(o);
+                queueMicrotask(()=>o.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({classifications:input.questions.map(q=>({id:q.id,status:'auto',category:q.type==='blank'?'text-blank':'knowledge',reason:'模拟分类通过'}))})}}]})}));
+            }else requests.push(o);
+        };
         d.querySelector('form').addEventListener('submit', e => { e.preventDefault(); submits++; });
         d.getElementById('save').addEventListener('click', () => submits++);
         for (const li of d.querySelectorAll('.Zy_ulTop li')) li.addEventListener('click', () => {
@@ -117,7 +124,7 @@
         const panel=host.shadowRoot.getElementById('panel');const settings=f.d.getElementById('cx-ai-toolbar').shadowRoot.getElementById('settings');
         f.d.querySelector('.ceyan_name').getBoundingClientRect=()=>({top:42});
         settings.click();assert(!panel.hidden && host.style.left==='50%' && host.style.top==='42px' && !host.style.bottom,'面板仍在底部');
-        assert(panel.style.maxHeight.includes('580px'),'面板高度无上限');
+        assert(panel.style.maxHeight.includes('540px'),'面板未使用缩小后的高度上限');
         settings.click();assert(panel.hidden,'二次点击不关闭');settings.click();
         panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(panel.hidden,'Escape不关闭');f.remove();
     });

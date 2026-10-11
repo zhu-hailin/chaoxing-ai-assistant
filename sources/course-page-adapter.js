@@ -7,11 +7,22 @@
         }
         return true;
     }
+    function courseAnswerEditorFrame(frame) {
+        // UEditor 的答案输入框不是课程任务；空白或暂不可读也不应阻断题目策略判断。
+        // 仅排除现场确认的题目内编辑器结构；远程任务、验证框架及未知 iframe 仍需检查。
+        const holder = frame.parentElement, editor = holder?.parentElement;
+        const question = frame.closest(QUESTION_SELECTOR);
+        const src = (frame.getAttribute('src') || '').trim();
+        return Boolean(question && /^ueditor_\d+$/.test(frame.id)
+            && holder?.matches('.edui-editor-iframeholder') && editor?.matches('.edui-editor')
+            && question.contains(editor) && !frame.closest(STEM_SELECTOR)
+            && (!src || /^about:blank(?:[?#].*)?$/i.test(src) || /^javascript:/i.test(src)));
+    }
     function courseFrameTree(owner) {
         const documents = [owner], inaccessible = [], seen = new Set([owner]);
         const root = owner.querySelector('#mainid #iframe');
         const visit = (frame, depth) => {
-            if (depth > 12 || !courseElementVisible(frame)) return;
+            if (depth > 12 || !courseElementVisible(frame) || (frame !== root && courseAnswerEditorFrame(frame))) return;
             try {
                 const doc = frame.contentDocument;
                 if (!doc?.documentElement) { if(!courseRemoteReaderFrame(frame))inaccessible.push(frame); return; }
@@ -77,6 +88,25 @@
             if(text==='任务点')return 'required';
         }
         return null;
+    }
+    function courseVideoForegroundPolicy(video) {
+        const container=courseTaskContainer(video);
+        if(!container)return {required:false,evidence:null};
+        // 仅当前任务的可见短提示；不将题干、其他任务或隐藏说明当作播放限制。
+        for(const node of container.querySelectorAll('span,p,div,em')) {
+            if(node.children.length || !courseElementVisible(node) || node.closest(QUESTION_SELECTOR)
+                ||node.closest('.ans-attach-ct,[data-course-task]')!==container)continue;
+            const text=clean(node.textContent);
+            if(text.length>240 || !/观看|播放/.test(text))continue;
+            if(/(?:观看|播放)(?:时|过程中|视频时)?[^。；]{0,50}(?:不可|不能|禁止|不得)[^。；]{0,35}(?:离开|切换窗口|切换页面|切换标签|最小化)/.test(text)
+                ||/(?:必须|需要)(?:在)?前台(?:观看|播放)/.test(text))return {required:true,evidence:text.slice(0,120)};
+        }
+        return {required:false,evidence:null};
+    }
+    function courseOwnerForegroundState(owner) {
+        let focused=false;
+        try {focused=typeof owner.hasFocus==='function'&&owner.hasFocus();}catch{}
+        return {visible:owner.visibilityState==='visible',focused};
     }
     function courseVisibleMarker(container, selector) {
         return Boolean(container && (container.matches(selector)&&courseElementVisible(container)

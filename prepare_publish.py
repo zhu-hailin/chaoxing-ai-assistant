@@ -22,6 +22,7 @@ paths = ['.gitignore', 'AGENTS.md', 'README.md', 'CHANGELOG.md', '学习通AI助
 paths += [str(p.relative_to(root)) for p in (root / 'sources').iterdir() if p.suffix in ('.js', '.html')]
 paths += [str(p.relative_to(root)) for p in (root / 'docs').glob('*.md')]
 paths += ['docs/脚本使用风险分析图.html']
+paths += ['tests/answer-policy-dom.cjs', 'tests/answer-policy-mock.cjs', 'tests/answer-policy-results.json']
 paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*.png')]
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]

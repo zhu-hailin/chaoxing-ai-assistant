@@ -100,6 +100,10 @@
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
         const typeLabel = readQuestionTypeLabel(node, stem, group);
         const question = stripQuestionPrefix(stem?.textContent, typeLabel);
+        const instructions = clean([node.getAttribute('data-answer-instructions'),
+            ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(child=>child.textContent),
+            group?.querySelector(':scope > .type_tit')?.textContent,
+            group?.querySelector(':scope > .question-instructions')?.textContent].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')];
         let optionTargets, options, writer;
@@ -132,7 +136,7 @@
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, typeLabel, options, controls, media, unboundOptionImages, binding: { node, inputs, optionTargets, imageNodes, writer } };
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, inputs, optionTargets, imageNodes, writer } };
     }
     registerPageAdapter({
         id: 'chaoxing-chapter',
@@ -159,6 +163,41 @@
         try { return /\/work\/view(?:\/|$)/.test(new URL(node.ownerDocument.URL).pathname); }
         catch { return false; }
     }
+
+    // 作答内容要求与 DOM 可写入能力分开判断；仅使用当前题及其所属题组说明。
+    function questionLocalAnswerPolicy(question, instructions = question.instructions || '') {
+        const text = clean([instructions, question.question].filter(Boolean).join('；'));
+        const rules = [
+            ['handwriting', /(?:请|须|需要|需|必须|要求|用|采用|以|只能|仅限|只接受)(?:先|直接|本人|亲自|在纸上|用纸笔|使用纸笔|进行|采用|用|以|纸质|方式|作答|答案|纸笔|\s){0,8}(?:手写|手绘)|(?:^|[；;。！？])\s*手写|(?:拍照|扫描)[^。！？；;]{0,15}(?:上传|提交)|(?:上传|提交)[^。！？；;]{0,15}(?:手写|照片|手稿)/, '需要手写或拍照上传'],
+            ['copying', /(?:请|须|需|要求|进行|完成)(?:先|逐字|认真|用笔|在纸上|英文|英语|\s){0,5}(?:抄写|誊写|临摹)|(?:^|[；;。！？])\s*(?:抄写|誊写|临摹)/, '需要抄写或书写练习'],
+            ['drawing', /(?:请|须|需要|需|要求)(?:先|根据材料|根据题意|用笔|自行|完成|制作|构建|一张|\s){0,6}(?:绘制|画出|手绘|思维导图|标注下图|标出图中)|(?:绘制|画出|制作|构建)[^。！？；;]{0,15}(?:图|曲线|示意|结构)/, '需要绘图、思维导图或标注']
+        ];
+        for (const [category, pattern, reason] of rules) {
+            const match=text.match(pattern);
+            if(match) return {status:'manual',category,reason,evidence:match[0].slice(0,200)};
+        }
+        if(question.type==='unknown' || question.capabilities?.analyze===false)
+            return {status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''};
+        if(question.capabilities?.prefill===false)
+            return {status:'manual',category:'controls',reason:question.diagnostics?.join('；') || '控件暂不支持自动填写',evidence:''};
+        if(['single','multiple','judge'].includes(question.type) && question.question && !questionImageIds(question).length)
+            return {status:'auto',category:'objective',reason:'明确的选择或判断题',evidence:question.source?.typeLabel || question.type};
+        return {status:'needs-classification',category:'pending',reason:'需要判断作答要求',evidence:''};
+    }
+    function questionCanAutoAnswer(question, policy) {
+        const local=questionLocalAnswerPolicy(question);
+        return local.status!=='manual' && question.capabilities?.analyze!==false &&
+            (policy || local).status==='auto';
+    }
+    function questionPrefillPolicy(question, entry) {
+        const local=questionLocalAnswerPolicy(question);
+        if(local.status==='manual')return local;
+        // 已分类结果只能限制本地白名单，不能解除明确的人工要求。
+        if(entry?.answerPolicy && ['auto','manual','uncertain'].includes(entry.answerPolicy.status))return entry.answerPolicy;
+        if(local.status==='auto')return local;
+        return {status:'uncertain',category:'missing-policy',reason:'缺少作答要求判断，请重新分析',evidence:''};
+    }
+
     function finishQuestion(raw, type, parser, inferred = false) {
         const diagnostics = [];
         const uniqueOptions = new Set(raw.options.map(option => option.key)).size === raw.options.length;
@@ -183,12 +222,13 @@
         if (type === 'unknown') { diagnostics.push('未识别题型，保留原始题目供核对'); prefill = false; }
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
         const question = {
-            id: raw.id, number: raw.number, type, question: raw.question, options: raw.options,
+            id: raw.id, number: raw.number, type, question: raw.question, instructions:raw.instructions || '', options: raw.options,
             groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:[],
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
             capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages, prefill }, diagnostics
         };
+        question.answerPolicy=questionLocalAnswerPolicy(question);
         return { question, binding: { ...raw.binding, type, canPrefill: prefill } };
     }
     registerQuestionParser({ id: 'declared-type', match: raw => canonicalType(raw) !== 'unknown', parse: raw => finishQuestion(raw, canonicalType(raw), 'declared-type') });
@@ -216,5 +256,6 @@
                 question.diagnostics = question.diagnostics.filter(text => text !== '缺少可读取题干');
             }
         }
+        for(const question of questions)question.answerPolicy=questionLocalAnswerPolicy(question);
         return { schemaVersion: 2, questions, media, bindings };
     }

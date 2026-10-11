@@ -1,9 +1,11 @@
+const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
+const classificationRequests=[];
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { createRequire } = require('node:module');
 const { webcrypto } = require('node:crypto');
-const projectRequire = createRequire('D:/Project/xuexitong/package.json');
+const projectRequire = createRequire(path.join(__dirname, '../package.json'));
 const { JSDOM } = projectRequire('jsdom');
 const candidatePath = path.join(__dirname, '../学习通AI助手.user.js');
 const source = fs.readFileSync(candidatePath, 'utf8').replace(/\r\n/g, '\n');
@@ -28,6 +30,8 @@ function fixture(html = '', options = {}) {
   w.GM_deleteValue = key => storage.delete(key);
   w.GM_getResourceText = () => '{}';
   w.GM_xmlhttpRequest = request => {
+    const policy=policyInput(request);if(policy){classificationRequests.push(request);queueMicrotask(()=>respondPolicy(request,policy));return {abort(){request.onabort?.();}};}
+
     requests.push(request);
     if(options.respond) queueMicrotask(() => options.respond(request));
     return {abort() {aborts++; request.onabort?.();}};

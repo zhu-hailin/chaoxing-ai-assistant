@@ -1,3 +1,4 @@
+const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),Module=require('node:module');
 // 复用现有脱敏课程夹具，严格截断测试 IIFE，绝不执行其结果文件写入。
 const fixturePath=path.join(__dirname,'course-runner-dom.cjs');
@@ -6,9 +7,9 @@ const boundary=fixtureSource.indexOf('\n(async()=>{');
 assert(boundary>0,'课程夹具边界不存在，停止而不是执行完整测试文件');
 let prefix=fixtureSource.slice(0,boundary);
 assert(!prefix.includes('writeFileSync')&&!prefix.includes('\n(async()=>{'),'不得执行旧测试 IIFE 或文件写入');
-const exportAnchor='globalThis.courseAPI={courseVideoPlayedRanges,';
-assert(prefix.includes(exportAnchor));
-prefix=prefix.replace(exportAnchor,'globalThis.courseAPI={captureCurrentCourseContext,chapterContextIdentity,chapterContextStore,readModelConfiguration,createCourseVideoInfo,courseVideoPlayedRanges,');
+const exportAnchor='globalThis.courseAPI={';
+assert.equal(prefix.split(exportAnchor).length,2,'课程 API 导出入口必须唯一');
+prefix=prefix.replace(exportAnchor,'globalThis.courseAPI={captureCurrentCourseContext,chapterContextIdentity,chapterContextStore,readModelConfiguration,createCourseVideoInfo,');
 const videoAnchor='video.pause=()=>{paused=true;};videos.push(video);';
 assert(prefix.includes(videoAnchor));
 prefix=prefix.replace(videoAnchor,`video.pause=()=>{paused=true;};videos.push(video);
@@ -30,7 +31,7 @@ prefix=prefix.replace(docAnchor,`  if(page.notes!==undefined){const note=doc.cre
 prefix+='\nmodule.exports={fixture,video,ppt,quiz,waitForTest,delay};';
 const fixtureModule=new Module(fixturePath,module);
 fixtureModule.filename=fixturePath;
-fixtureModule.paths=Module._nodeModulePaths('D:/Project/xuexitong');
+fixtureModule.paths=Module._nodeModulePaths(path.resolve(__dirname,'..'));
 fixtureModule._compile(prefix,fixturePath);
 const {fixture,video,quiz,waitForTest,delay}=fixtureModule.exports;
 const logs=[],failures=[];
@@ -38,6 +39,7 @@ async function test(name,run){try{await run();logs.push('PASS '+name);}catch(err
 function installMock(f,{holdOCR=false}={}){
   const pendingOCR=[],aborted=[];
   f.w.GM_xmlhttpRequest=request=>{
+    const classification=policyInput(request);if(classification){respondPolicy(request,classification);return;}
     f.requests.push(request);let cancelled=false;
     const payload=JSON.parse(request.data),content=payload.messages.find(m=>m.role==='user').content;
     const isOCR=Array.isArray(content);

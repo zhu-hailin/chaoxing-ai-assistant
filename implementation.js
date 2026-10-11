@@ -1,15 +1,4 @@
     // 字体解密部分源自 wyn665817 的 MIT 脚本；改为文本节点转换和可重入模块。
-    function initBackgroundPlayback() {
-        if (window.top !== window.self || location.hostname !== 'mooc1.chaoxing.com'
-            || !location.pathname.startsWith('/mycourse/studentstudy')) return;
-        window.addEventListener('mouseout', event => {
-            if (event.relatedTarget === null) {
-                event.stopImmediatePropagation();
-                event.stopPropagation();
-            }
-        }, true);
-    }
-
     const fontCache = new Map();
     let fontTable;
     function fontRootNeedsDecoding(root) {
@@ -157,9 +146,73 @@
 
     let controller;
     let panelView;
+    let assistantUiHidden = false, visibilityInitialized = false, visibilityMenusRegistered = false, visibilityListener = null;
+    const assistantUiHosts = new Map();
+    function initAssistantVisibility() {
+        if (visibilityInitialized) return;
+        visibilityInitialized = true;
+        assistantUiHidden = get(UI_HIDDEN_KEY, false) === true;
+        if (window === window.top && !visibilityMenusRegistered && typeof GM_registerMenuCommand === 'function') {
+            GM_registerMenuCommand('隐藏助手全部界面', () => setAssistantUiHidden(true));
+            GM_registerMenuCommand('显示助手界面', () => setAssistantUiHidden(false));
+            visibilityMenusRegistered = true;
+        }
+        if (typeof GM_addValueChangeListener === 'function') {
+            visibilityListener = GM_addValueChangeListener(UI_HIDDEN_KEY, (_key, _old, value) => {
+                assistantUiHidden = value === true;
+                applyAssistantVisibility();
+            });
+        }
+        applyAssistantVisibility();
+    }
+    function registerAssistantUiHost(host) {
+        initAssistantVisibility();
+        if (!assistantUiHosts.has(host)) {
+            assistantUiHosts.set(host, { display: null });
+            // 可见性与业务状态分离；隐藏宿主上的合成点击也不能重新打开窗口。
+            for (const type of ['click', 'pointerdown', 'keydown']) host.addEventListener(type, event => {
+                if (assistantUiHidden) { event.preventDefault(); event.stopImmediatePropagation(); }
+            }, true);
+        }
+        applyAssistantVisibility();
+        return host;
+    }
+    function applyAssistantVisibility() {
+        if (assistantUiHidden) {
+            panelView?.cancelFloatingDrag?.();
+            panelView?.clearStopConfirmation?.();
+            panelView?.clearRetryConfirmation?.();
+        }
+        for (const [host, state] of assistantUiHosts) {
+            if (assistantUiHidden) {
+                if (state.display === null) state.display = { value: host.style.getPropertyValue('display'), priority: host.style.getPropertyPriority('display') };
+                host.style.setProperty('display', 'none', 'important');
+            } else if (state.display !== null) {
+                if (state.display.value) host.style.setProperty('display', state.display.value, state.display.priority);
+                else host.style.removeProperty('display');
+                state.display = null;
+            }
+        }
+    }
+    function setAssistantUiHidden(hidden) {
+        assistantUiHidden = hidden === true;
+        set(UI_HIDDEN_KEY, assistantUiHidden);
+        applyAssistantVisibility();
+        if (!assistantUiHidden) {
+            const owner = studyOwnerDocument(document);
+            const quiz = owner && findQuizPanel(owner.querySelector('#mainid #iframe')?.contentDocument);
+            if (quiz && quiz !== document) quiz.dispatchEvent(new quiz.defaultView.Event('cx-ai-show-quiz-panel'));
+            else controller?.openPanel();
+        }
+    }
+    window.addEventListener('pagehide', () => {
+        if (visibilityListener !== null && typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(visibilityListener);
+        visibilityListener = null; visibilityInitialized = false;
+    });
+    window.addEventListener('pageshow', () => initAssistantVisibility());
     let toolbarView;
     let studyToolbarView;
-    const PANEL_WIDTH = 720;
+    const PANEL_WIDTH = 640;
     function studyOwnerDocument(doc = document) {
         let view = doc?.defaultView;
         try {
@@ -293,7 +346,7 @@
             fragment.append(node('p', 'result-empty', '提取后将在这里显示题目列表'));
         } else {
             const answers = new Map((data.answers || []).map(entry => [entry.id, entry]));
-            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}`));
+            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
             const list = node('ol', 'question-list');
             for (const question of data.questions) {
                 const entry = answers.get(question.id);
@@ -302,6 +355,9 @@
                 const heading = node('div', 'question-heading');
                 heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
                 card.append(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
+                const policy=data.answerPolicies?.[question.id] || entry?.answerPolicy || question.answerPolicy;
+                if(policy)card.append(node('p','note answer-policy',policy.status==='auto'?'可一键答题':
+                    `${policy.status==='manual'?'需人工处理':policy.status==='needs-classification'?'待判断作答要求':'需人工确认'}：${policy.reason || '请核对作答要求'}`));
                 if (question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
                 const skipped = data.skippedQuestions?.find(item => item.id === question.id);
                 if (skipped) card.append(node('p', 'note', skipped.reason));
@@ -361,6 +417,7 @@
           #status{font-size:12px;text-align:right;overflow-wrap:anywhere;max-width:360px;margin-top:4px}
           #status:empty{display:none}
         </style><div class="buttons"><button type="button" id="generate"><span class="spinner" hidden aria-hidden="true"></span><span id="label">一键生成答案</span></button><button type="button" id="settings">学习通AI助手</button></div><div id="status" role="status" aria-live="polite"></div>`;
+        registerAssistantUiHost(host);
         placeQuizToolbar(doc, host, resolveToolbarTarget(doc));
         toolbarView = { host, shadow };
         shadow.getElementById('generate').onclick = () => ctl.runAnswerFlow({ autoPrefill: true });
@@ -401,7 +458,7 @@
         if (focus) shadow.getElementById(`chapter-tab-${view}`).focus();
     }
     function switchSettingsView(view, { focus = false } = {}) {
-        if (!panelView || !['model','developer'].includes(view)) return;
+        if (!panelView || !['model','learning','developer'].includes(view)) return;
         const { shadow } = panelView;
         for (const button of shadow.querySelectorAll('[data-settings-view]')) {
             const selected = button.dataset.settingsView === view;
@@ -553,6 +610,7 @@
         host.style.cssText = 'position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:2147483647;max-width:calc(100vw - 26px)';
         const shadow = host.attachShadow({ mode: 'open' });
         /* PANEL_TEMPLATE */
+        registerAssistantUiHost(host);
         doc.body.append(host);
         panelView = { host, shadow, sourceDoc: doc, userPosition: null, windowMode: 'closed', floatingPosition: null };
         initAssistantWindowCoordination(doc);
@@ -560,8 +618,13 @@
         initPanelResizing();
         initFloatingLauncher(ctl);
         const toggleFromStudy = () => ctl.togglePanel();
+        const showFromStudy = () => ctl.openPanel();
         doc.addEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy);
-        window.addEventListener('pagehide', () => doc.removeEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy), { once: true });
+        doc.addEventListener('cx-ai-show-quiz-panel', showFromStudy);
+        window.addEventListener('pagehide', () => {
+            doc.removeEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy);
+            doc.removeEventListener('cx-ai-show-quiz-panel', showFromStudy);
+        }, { once: true });
         initCourseSidebar();
         initPanelNavigation();
         initCourseRunControls(doc, ctl);
@@ -741,6 +804,8 @@
 
     function setAssistantWindowMode(mode) {
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
+        if (assistantUiHidden) return;
+        if(mode!=='open')panelView.clearRetryConfirmation?.();
         panelView.cancelFloatingDrag?.();
         const {host} = panelView;
         if (mode === 'minimized' && panelView.windowMode !== 'minimized') {
@@ -748,7 +813,7 @@
             // 每次缩小重新取锚点，悬浮入口上次的拖动位置不影响本次出现位置。
             const buttonRect = panelView.shadow.getElementById('minimize').getBoundingClientRect();
             const launcherRect = panelView.shadow.getElementById('floating-launcher').getBoundingClientRect();
-            const width = launcherRect.width || 56, height = launcherRect.height || 56;
+            const width = launcherRect.width || 44, height = launcherRect.height || 44;
             if ([buttonRect.left, buttonRect.top, buttonRect.width, buttonRect.height].every(Number.isFinite) && buttonRect.width > 0 && buttonRect.height > 0) {
                 panelView.floatingPosition = {left:buttonRect.left + (buttonRect.width - width) / 2, top:buttonRect.top + (buttonRect.height - height) / 2};
             } else {
@@ -786,8 +851,8 @@
         if (!panelView) return;
         const launcher = panelView.shadow.getElementById('floating-launcher');
         const view = panelView.host.ownerDocument.defaultView;
-        const width = launcher.getBoundingClientRect().width || 56;
-        const height = launcher.getBoundingClientRect().height || 56;
+        const width = launcher.getBoundingClientRect().width || 44;
+        const height = launcher.getBoundingClientRect().height || 44;
         const left = Math.max(0, Math.min(position?.left ?? view.innerWidth - width - 20, Math.max(0, view.innerWidth - width)));
         const top = Math.max(0, Math.min(position?.top ?? view.innerHeight - height - 24, Math.max(0, view.innerHeight - height)));
         panelView.floatingPosition = {left, top};
@@ -849,7 +914,7 @@
         const panel = shadow.getElementById('panel');
         const view = host.ownerDocument.defaultView;
         if (panelView.userSize) panel.style.width = `${Math.min(panelView.userSize.width, Math.max(0, view.innerWidth - 26))}px`;
-        const available = Math.max(0, Math.min(panelView.userSize?.height ?? 580, view.innerHeight - top - 16));
+        const available = Math.max(0, Math.min(panelView.userSize?.height ?? 540, view.innerHeight - top - 16));
         if (panelView.userSize) panel.style.height = `${available}px`;
         panel.style.maxHeight = `${available}px`;
         const head = shadow.querySelector('.head');
@@ -955,7 +1020,7 @@
             s.getElementById('generate').disabled = busy;
             s.querySelector('.spinner').hidden = !busy;
             s.getElementById('generate').setAttribute('aria-busy', String(busy));
-            const labels = { decoding: '解密中…', extracting: '提取中…', 'preparing-images':'读取图片…', searching: '检索中…', generating: '生成中…', prefilling: '预填中…' };
+            const labels = { decoding: '解密中…', extracting: '提取中…', 'preparing-images':'读取图片…', classifying:'判断作答要求…', searching: '检索中…', generating: '生成中…', prefilling: '预填中…' };
             s.getElementById('label').textContent = state.busy ? (labels[state.phase] || '处理中…') : '一键生成答案';
             s.getElementById('status').textContent = state.message;
         }
@@ -1043,39 +1108,81 @@
     }
     function createAnalysisTask(snapshot, settings, autoPrefill) {
         return {id:Symbol('analysis'),snapshot,configuration:analysisConfiguration(settings),settings,
-            autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),batches:[],skippedQuestions:[]};
+            autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
     }
     function checkAnalysisTask(task) {
         throwIfAborted(task.abortController.signal);
         if(controller?.task!==task)throw cancelledError();
+        if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(currentAnalysisSettings()))) {
+            const error=new Error('分析配置已变化，请重新分析');error.code='ANALYSIS_CONFIG_CHANGED';throw error;
+        }
     }
     function analysisProgressText(progress) {
-        const state={preparing:'正在准备',running:'分析中',failed:'已暂停，等待重试',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成'}[progress.status] || progress.status;
+        const state={preparing:'正在准备',classifying:'判断作答要求',running:'分析中',failed:'已暂停，等待重试',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成'}[progress.status] || progress.status;
         return `${state} · 已分析 ${progress.completed}/${progress.total} 题`;
     }
-    function analysisSkipped(snapshot, settings) {
-        return snapshot.questions.filter(q => q.capabilities?.analyze !== false && questionImageIds(q).length && !modelSupportsImages(settings.model, settings))
-            .map(q => ({id:q.id,reason:'所选模型不支持图片，此题暂不分析；请选择支持图片的模型'}));
+    function analysisSkipped(snapshot, settings, policies=new Map()) {
+        return snapshot.questions.flatMap(q=>{
+            const policy=policies.get(q.id) || questionLocalAnswerPolicy(q);
+            if(policy.status==='manual' || policy.status==='uncertain')return [{id:q.id,reason:policy.reason,answerPolicy:policy}];
+            if(questionImageIds(q).length && !modelSupportsImages(settings.model,settings))
+                return [{id:q.id,reason:'所选模型不支持图片，此题需人工确认；请选择支持图片的模型',answerPolicy:{status:'uncertain',category:'images',reason:'所选模型不支持图片，此题需人工确认',evidence:''}}];
+            return [];
+        });
     }
-    function collectBatchResults(snapshot, records, skippedQuestions, complete=false) {
+    async function prepareAnswerPolicies(snapshot,settings,preparedMedia,{signal,progress,report=()=>{},check=()=>{},retry=action=>action()}={}) {
+        const policies=progress?.answerPolicies || new Map();
+        for(const q of snapshot.questions) {
+            const local=questionLocalAnswerPolicy(q);
+            if(local.status==='manual' || local.status==='auto')policies.set(q.id,local);
+            else if(questionImageIds(q).length && !modelSupportsImages(settings.model,settings))
+                policies.set(q.id,{status:'uncertain',category:'images',reason:'所选模型不支持图片，此题需人工确认',evidence:''});
+        }
+        const pending=snapshot.questions.filter(q=>!policies.has(q.id));
+        // 按题准备材料：单题图片失败只降级该题，成功材料仍复用；取消及快照变化必须退出。
+        for(const q of snapshot.questions.filter(q=>!policies.has(q.id) || policies.get(q.id).status==='auto')) {
+            check();throwIfAborted(signal);
+            const ids=new Set(questionImageIds(q));
+            try {await retry(()=>prepareQuestionMedia((snapshot.media || []).filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,{signal,prepared:preparedMedia}),'preparing-images');}
+            catch(error){check();throwIfAborted(signal);policies.set(q.id,{status:'uncertain',category:'images',reason:`图片材料无法读取，需人工确认：${error.message}`,evidence:''});}
+        }
+        const classify=pending.filter(q=>!policies.has(q.id));
+        for(const batch of splitQuestionBatches(classify,{...settings,search:false,courseContext:[]},preparedMedia)) {
+            check();report(`正在判断第 ${batch[0].number}–${batch.at(-1).number} 题的作答要求…`,'classifying');
+            const model=resolveQuestionModel(settings.model,batch[0]);
+            const result=await retry(()=>classifyQuestionAnswerPolicies({...settings,model,courseContext:[]},batch,preparedMedia,signal),'classifying');
+            check();throwIfAborted(signal);
+            for(const [id,policy] of result)policies.set(id,policy);
+        }
+        return policies;
+    }
+    function collectBatchResults(snapshot, records, skippedQuestions, complete=false, policies=new Map()) {
         const answers=[],evidence={},modelsByQuestion={},mediaAnalysis=new Map();
         for(const record of records.filter(item=>item.status==='success')) {
-            answers.push(...record.result.answers);
+            for(const entry of record.result.answers) {
+                const policy=entry.answerPolicy || policies.get(entry.id);
+                answers.push({...entry,...(policy?{answerPolicy:policy}:{})});
+            }
             Object.assign(evidence,record.evidence);
             for(const q of record.questions)modelsByQuestion[q.id]=record.model;
             for(const entry of record.result.mediaAnalysis)if(!mediaAnalysis.has(entry.imageIds[0]))mediaAnalysis.set(entry.imageIds[0],entry);
         }
         const byId=new Map(answers.map(answer=>[answer.id,answer]));
-        const ordered=snapshot.questions.flatMap(q=>byId.has(q.id)?[byId.get(q.id)]:complete?[{id:q.id,number:q.number,type:q.type,answer:[],reason:skippedQuestions.find(item=>item.id===q.id)?.reason || q.diagnostics?.join('；') || '题型未适配，需人工核对'}]:[]);
-        return {answers:ordered,evidence,modelsByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,analyzedCount:answers.length,batchCount:records.length};
+        const ordered=snapshot.questions.flatMap(q=>byId.has(q.id)?[byId.get(q.id)]:complete?[{id:q.id,number:q.number,type:q.type,answer:[],answerPolicy:policies.get(q.id) || questionLocalAnswerPolicy(q),reason:skippedQuestions.find(item=>item.id===q.id)?.reason || q.diagnostics?.join('；') || '题型未适配，需人工核对'}]:[]);
+        const answerPolicies=Object.fromEntries(policies);
+        for(const entry of answers)if(entry.answerPolicy)answerPolicies[entry.id]=entry.answerPolicy;
+        return {answers:ordered,answerPolicies,evidence,modelsByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,
+            manualCount:Object.values(answerPolicies).filter(p=>p.status==='manual').length,
+            uncertainCount:Object.values(answerPolicies).filter(p=>p.status==='uncertain').length,
+            analyzedCount:answers.filter(a=>a.answer.length).length,batchCount:records.length};
     }
     function renderAnalysisProgress(task, complete=false) {
         if(controller?.task!==task || !task.snapshot)return;
-        const result=collectBatchResults(task.snapshot,task.batches,task.skippedQuestions,complete);
+        const result=collectBatchResults(task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies);
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.10',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.11',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1102,17 +1209,16 @@
         }
     }
     async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},retryTransient=false}={}) {
-        const skippedQuestions=analysisSkipped(snapshot,settings),skipped=new Set(skippedQuestions.map(item=>item.id));
-        const analyzable=snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id));
-        const needed=new Set(analyzable.flatMap(questionImageIds));
         const check=()=>{throwIfAborted(settings.signal);checkSnapshot(snapshot);};
         const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
-        if(progress)progress.skippedQuestions=skippedQuestions;
-        let records;
+        let records,policies,skippedQuestions;
         try {
-            await retry(()=>prepareQuestionMedia((snapshot.media || []).filter(item=>needed.has(item.id)),report,check,snapshot.doc || document,{signal:settings.signal,prepared}),'preparing-images');
+            policies=await prepareAnswerPolicies(snapshot,settings,prepared,{signal:settings.signal,progress,report,check,retry});
             check();
+            skippedQuestions=analysisSkipped(snapshot,settings,policies);
+            if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
+            const analyzable=snapshot.questions.filter(q=>questionCanAutoAnswer(q,policies.get(q.id)));
             records=progress?.batches.length?progress.batches:splitQuestionBatches(analyzable,settings,prepared)
                 .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
             if(progress){progress.batches=records;progress.status='running';}
@@ -1146,7 +1252,7 @@
                     error.message=`第 ${i+1}/${records.length} 批未完成：${error.message}；本次尚未预填`;throw error;
                 }
             }
-            return collectBatchResults(snapshot,records,skippedQuestions,true);
+            return collectBatchResults(snapshot,records,skippedQuestions,true,policies);
         } finally {if(!progress)prepared.clear();}
     }
     function invalidateAnalysisTask(reason) {
@@ -1193,18 +1299,18 @@
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
             checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
-            if(!result.analyzedCount){ctl.report('所选模型不支持图片，此类题目暂不能分析，请选择支持图片的模型','done');return;}
+            if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('没有有效答案可以预填，请核对题目与模型结果');ctl.report(`没有可自动填写的答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
             ctl.last={...task.snapshot,answers:result.answers};
             if(task.autoPrefill) {
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
                 ctl.output({...ctl.result,prefill:summary});
-                ctl.report(summaryText(summary)+(result.skippedQuestions.length?`\n${result.skippedQuestions.length} 道图片题因模型不支持而跳过。`:''),'done');
-            } else ctl.report(`AI 已分析 ${result.analyzedCount} 道题${result.skippedQuestions.length?`，${result.skippedQuestions.length} 道图片题因模型不支持而跳过`:''}，请核对结果后点击预填。`,'done');
+                ctl.report(summaryText(summary)+(result.skippedQuestions.length?`\n${result.skippedQuestions.length} 道题需人工处理或确认，已跳过。`:''),'done');
+            } else ctl.report(`AI 已分析 ${result.analyzedCount} 道题${result.skippedQuestions.length?`，${result.skippedQuestions.length} 道题需人工处理或确认，已跳过`:''}，请核对结果后点击预填。`,'done');
         } catch(error) {
             if(ctl.task!==task)return;
             ctl.last=null;task.error=error.message;
-            const changed=task.snapshot && (()=>{try{const data=extract(task.snapshot.doc);return signature(data.questions,data.media)!==task.snapshot.signature;}catch{return true;}})();
+            const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{const data=extract(task.snapshot.doc);return signature(data.questions,data.media)!==task.snapshot.signature;}catch{return true;}})();
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
             if(changed)task.preparedMedia.clear();
             renderAnalysisProgress(task);
@@ -1235,6 +1341,7 @@
                 Object.assign(ctl.state, { message, phase, busy }); renderRunState(ctl.state);
             },
             openPanel(view) {
+                if (assistantUiHidden) return;
                 if (!panelView) return;
                 movePanelToStudyPage();
                 refreshCourseSidebar();
@@ -1332,6 +1439,7 @@
             const host = doc.createElement('div');
             host.id = 'cx-ai-study-toolbar';
             host.style.cssText = 'display:flex;justify-content:flex-end;width:100%;max-width:100%;box-sizing:border-box;margin:8px 0 12px;clear:both';
+            registerAssistantUiHost(host);
             const shadow = host.attachShadow({ mode: 'open' });
             shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
             studyToolbarView = { host, shadow };
