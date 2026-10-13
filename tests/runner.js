@@ -3,7 +3,7 @@
     const source = window.deliverySource || await (await fetch('../学习通AI助手.user.js')).text();
     const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
     if (!source.includes(entry)) throw new Error('测试导出入口未匹配');
-    const instrumented = source.replace(entry, `globalThis.testAPI = { initQuizAssistant, ensureFontDecoded, extract, signature, normalize, prefill, prefillChecked, resolveQuizHeader, runAnswerFlow, splitQuestionBatches, savedKeys, startQuizObserver, getWebEvidence, readCourseCatalog, readQuizScore, refreshCourseSidebar, navigateCourseChapter, get controller(){ return controller; } };`);
+    const instrumented = source.replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */').replace(entry, `globalThis.testAPI = { initQuizAssistant, ensureFontDecoded, extract, signature, normalize, prefill, prefillChecked, resolveQuizHeader, runAnswerFlow, splitQuestionBatches, savedKeys, startQuizObserver, getWebEvidence, readCourseCatalog, readQuizScore, refreshCourseSidebar, navigateCourseChapter, saveProviderKey,renderModelSettings,refreshCredentialStatus,get controller(){ return controller; } };`);
     const template = `<style>body{font:14px/1.5 system-ui;margin:0;color:#172038}.newTestTitle{padding:16px 24px;background:#f6f8fb;border-bottom:1px solid #dde3ef;display:flex;justify-content:space-between}.CeYan{padding:28px}.ceyan_name h3{font-size:20px;margin:0 0 12px}.ceyan_name p{color:#8693ab}.singleQuesId{padding-top:28px}.Zy_ulTop{padding:0;list-style:none}.Zy_ulTop li{display:flex;gap:16px;padding:10px;cursor:pointer}.num_option{border:1px solid #dce3ef;border-radius:50%;width:28px;height:28px;display:inline-flex;justify-content:center;align-items:center}.num_option.check{background:#5b80fa;color:white}input,textarea{max-width:100%}</style>
     <div id="RightCon"><div class="newTestTitle"><span>章节测验</span><span class="testTit_status">待完成</span></div><div class="radiusBG"><div class="CeYan"><div class="ceyan_name"><h3>计算机网络的定义和分类</h3><p>题量：4　满分：100</p></div><form><div class="ZyBottom" id="questions"></div><button type="button" id="save">暂时保存</button><button type="submit" id="submit">提交</button></form></div></div></div>`;
     const choice = (id, type, values) => `<div class="singleQuesId" ${id ? `data="${id}" id="question${id}"` : ''}><div class="Zy_TItle"><div class="fontLabel">【${type}题】测试题目${id || '无ID'}</div></div><ul class="Zy_ulTop">${values.map(([key, text]) => `<li role="${type === '多选' ? 'checkbox' : 'radio'}"><span class="num_option" data="${key}">${key}</span><a class="after">${text}</a></li>`).join('')}</ul><input type="hidden" name="answer${id || 'local-1'}"></div>`;
@@ -106,7 +106,7 @@
         await f.api.runAnswerFlow();assert(f.requests.length===1,'重复请求');
         const s=f.d.getElementById('cx-ai-toolbar').shadowRoot,panel=f.d.getElementById('cx-ai-study-root').shadowRoot;
         assert(!s.querySelector('.spinner').hidden && s.getElementById('generate').disabled,'缺少加载状态');
-        assert(panel.getElementById('model').disabled && panel.getElementById('clear-ds').disabled,'配置未锁定');
+        assert(panel.getElementById('model').disabled && panel.getElementById('custom-model').disabled,'配置未锁定');
         panel.getElementById('model').dispatchEvent(new f.w.Event('change'));assert(f.api.controller.state.busy,'配置事件解除互斥');
         s.getElementById('settings').click();assert(!panel.getElementById('panel').hidden,'执行时不能打开设置');
         f.respond();await p;assert(f.api.controller.state.phase==='done',f.api.controller.state.message);
@@ -393,7 +393,7 @@
         assert(card('1').querySelector('.ai-answer').textContent==='B. LAN','单选答案错位');
         assert(card('2').querySelector('.ai-answer').textContent.includes('A. 甲；C. 丙') && card('2').querySelectorAll('.is-answer').length===2,'多选未完整显示');
         assert(card('3').querySelector('.ai-answer').textContent==='对' && card('4').querySelector('.ai-answer').textContent==='网络','判断或填空未转为可读答案');
-        assert(card('1').querySelector('.answer-reason').textContent.includes('<img') && !s.querySelector('img') && !card('1').querySelector('b'),'外部文本被解释为 HTML');
+        assert(card('1').querySelector('.answer-reason').textContent.includes('<img') && !s.getElementById('output').querySelector('img') && !card('1').querySelector('b'),'外部文本被解释为 HTML');
         assert(f.clicks===0 && f.submits===0,'仅分析时发生预填或提交');f.remove();
     });
     await test('无效答案提示人工核对，来源仅显示安全链接', async () => {
@@ -457,21 +457,21 @@
     });
     await test('运行中可浏览三页，配置锁定与状态持续，切换保留结果和输入', async () => {
         const f=await fixture({catalog:true}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
-        s.getElementById('ds-key').value='mock-unsaved-value';const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);
+        s.getElementById('custom-model').value='mock-unsaved-value';const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);
         assert(!s.getElementById('view-questions').hidden,'分析未切到题目页');s.getElementById('nav-model').click();
-        assert(s.getElementById('model').disabled && s.getElementById('ds-key').disabled && f.api.controller.state.busy && s.getElementById('panel').getAttribute('aria-busy')==='true','切页解除互斥');
+        assert(s.getElementById('model').disabled && s.getElementById('custom-model').disabled && f.api.controller.state.busy && s.getElementById('panel').getAttribute('aria-busy')==='true','切页解除互斥');
         s.getElementById('nav-chapters').click();assert(!s.getElementById('status-spinner').hidden && s.getElementById('catalog-refresh').disabled,'全局状态或目录锁定丢失');
         f.respond();await flow;assert(s.getElementById('nav-chapters').getAttribute('aria-selected')==='true' && s.getElementById('status-spinner').hidden && s.getElementById('panel').getAttribute('aria-busy')==='false','后台结果抢占页面或加载未恢复');
         s.getElementById('nav-questions').click();const output=s.getElementById('output');assert(output.querySelectorAll('.ai-answer').length===4,'切换丢失答案');output.scrollTop=120;
-        s.getElementById('nav-model').click();assert(s.getElementById('ds-key').value==='mock-unsaved-value','切换重置输入');s.getElementById('nav-questions').click();assert(output.scrollTop===120,'切换重置题目滚动位置');f.remove();
+        s.getElementById('nav-model').click();assert(s.getElementById('custom-model').value==='mock-unsaved-value','切换重置输入');s.getElementById('nav-questions').click();assert(output.scrollTop===120,'切换重置题目滚动位置');f.remove();
     });
     await test('未配置时提示先配置模型，提取不受限，保存和清除即时更新提示', async () => {
         const f=await fixture({key:''}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
         assert(!s.getElementById('view-questions').hidden && !s.getElementById('model-setup-notice').hidden && s.getElementById('model-setup-message').textContent.includes('请先配置模型'),'缺少 Key 未显示配置提示');
         await f.api.controller.extractOnly();assert(s.querySelectorAll('.question-card').length===4 && !f.requests.length,'提示阻止了提取或意外请求模型');
-        s.getElementById('model-setup-open').click();assert(!s.getElementById('view-model').hidden && s.activeElement===s.getElementById('ds-key'),'配置入口未进入设置或聚焦 Key');
-        s.getElementById('ds-key').value='mock-saved-key';s.getElementById('save-ds').click();assert(s.getElementById('model-setup-notice').hidden && !f.requests.length,'保存配置后提示未消失或自动发起请求');
-        s.getElementById('clear-ds').click();s.getElementById('nav-questions').click();assert(!s.getElementById('model-setup-notice').hidden && s.querySelectorAll('.question-card').length===4,'清除 Key 后没有提示或丢失列表');
+        s.getElementById('model-setup-open').click();assert(!s.getElementById('view-model').hidden && (s.activeElement===s.getElementById('provider') || s.activeElement?.id==='provider-picker'),'配置入口未进入设置或聚焦平台选择');
+        f.api.saveProviderKey('mock-saved-key');f.api.refreshCredentialStatus('deepseek');assert(s.getElementById('model-setup-notice').hidden && !f.requests.length,'保存配置后提示未消失或自动发起请求');
+        f.api.saveProviderKey('');f.api.refreshCredentialStatus('deepseek',true);s.getElementById('nav-questions').click();assert(!s.getElementById('model-setup-notice').hidden && s.querySelectorAll('.question-card').length===4,'清除 Key 后没有提示或丢失列表');
         await f.api.runAnswerFlow({autoPrefill:true});assert(!s.getElementById('view-model').hidden && f.api.controller.state.message.includes('请先配置模型') && !f.requests.length && !f.clicks && !f.api.controller.state.busy,'缺少配置仍分析或未恢复');f.remove();
     });
     await test('有 Key 但未选择模型也阻止请求，选定模型后恢复分析', async () => {

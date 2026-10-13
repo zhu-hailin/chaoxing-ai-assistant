@@ -12,7 +12,7 @@ const source = fs.readFileSync(candidatePath, 'utf8').replace(/\r\n/g, '\n');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry), '仅执行已构建候选脚本，入口定位必须成功');
 assert(source.includes('function getModelProvider'), '候选脚本尚未包含多模型升级，禁止测试旧源');
-const instrumented = source.replace(entry, `globalThis.providersAPI={getModelProvider,providerModelCapabilities,readProviderConfiguration,readModelConfiguration,readProviderSetting,saveProviderSetting,saveProviderKey,normalizeModelBaseURL,modelConfigurationSignature,modelOptionLabel,modelSupportsImages,buildConfiguredAnswerPayload,assertConfiguredRequestSize,askConfiguredModel,fetchConfiguredModels,createCourseVideoInfo,extract,prepareQuestionMedia,initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,get controller(){return controller}};`);
+const instrumented = source.replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */').replace(entry, `globalThis.providersAPI={getModelProvider,providerModelCapabilities,readProviderConfiguration,readModelConfiguration,readProviderSetting,saveProviderSetting,saveProviderKey,normalizeModelBaseURL,modelConfigurationSignature,modelOptionLabel,modelSupportsImages,buildConfiguredAnswerPayload,assertConfiguredRequestSize,askConfiguredModel,fetchConfiguredModels,createCourseVideoInfo,extract,prepareQuestionMedia,initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,get controller(){return controller}};`);
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XGnQAAAAASUVORK5CYII=';
 const DATA = `data:image/png;base64,${PNG}`;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -24,6 +24,11 @@ async function test(name, run) {
 function fixture(html = '', options = {}) {
   const dom = new JSDOM(html, {url: options.url || 'https://mooc1.chaoxing.com/work/doHomeWorkNew', runScripts: 'outside-only', pretendToBeVisual: true});
   const w = dom.window, requests = [], writes = [], storage = new Map(Object.entries(options.storage || {}));
+  const menus = new Map(), prompts = [], promptAnswers = [], alerts = [];
+  w.GM_registerMenuCommand = (name, callback) => menus.set(name, callback);
+  w.prompt = (message, initial) => {prompts.push({message, initial}); return promptAnswers.length ? promptAnswers.shift() : null;};
+  w.confirm = () => true;
+  w.alert = message => alerts.push(message);
   let aborts = 0;
   w.GM_getValue = (key, fallback) => storage.has(key) ? storage.get(key) : fallback;
   w.GM_setValue = (key, value) => { storage.set(key, value); writes.push({key, value}); };
@@ -39,7 +44,7 @@ function fixture(html = '', options = {}) {
   Object.defineProperty(w.crypto, 'subtle', {value: webcrypto.subtle});
   w.Image = class {set src(value) {if (!value) return; queueMicrotask(() => {this.naturalWidth = 1; this.naturalHeight = 1; this.onload?.();});}};
   w.eval(instrumented);
-  return {w, d: w.document, api: w.providersAPI, requests, writes, storage,
+  return {w, d: w.document, api: w.providersAPI, requests, writes, storage, menus, prompts, promptAnswers, alerts,
     get aborts() {return aborts;},
     close() {w.dispatchEvent(new w.Event('pagehide')); w.close();}};
 }
@@ -81,9 +86,9 @@ function mockChallengeCanvas(f) {
 }
 function config(f, provider, model, values = {}) {
   f.storage.set('cx_provider', provider);
-  f.api.saveProviderKey(values.key || `${provider}-mock-key`, provider);
   if(model)f.api.saveProviderSetting('model',model,provider);
   for(const [field,value] of Object.entries(values))if(field!=='key')f.api.saveProviderSetting(field,value,provider);
+  f.api.saveProviderKey(values.key || `${provider}-mock-key`, provider);
   return f.api.readProviderConfiguration();
 }
 const imageEssay = id => essay(id, `根据图回答<img src="${DATA}" alt="测试表格">`);
@@ -101,11 +106,11 @@ async function main() {
     const f=fixture();
     try {
       const profiles=[['deepseek','deepseek-flash'],['openai','gpt-4.1-mini'],['qwen','qwen-plus'],['kimi','kimi-k2.6'],['glm','glm-5.3'],['custom','my-model']];
+      f.api.saveProviderSetting('baseURL','https://gateway.example/v1','custom');
       for(const [id,model] of profiles) {
         f.api.saveProviderKey(`key-${id}`,id);f.api.saveProviderSetting('model',model,id);
         f.api.saveProviderSetting('thinking',true,id);f.api.saveProviderSetting('search',true,id);
       }
-      f.api.saveProviderSetting('baseURL','https://gateway.example/v1','custom');
       for(const [id,model] of profiles) {
         const cfg=f.api.readProviderConfiguration(id);
         assert.equal(cfg.key,`key-${id}`);assert.equal(cfg.model,model);
@@ -178,7 +183,8 @@ async function main() {
     const f=fixture();
     try {
       assert.equal(f.api.readProviderConfiguration().configured,false);
-      f.api.saveProviderKey('custom-key','custom');assert.equal(f.api.readProviderConfiguration('custom').configured,false);
+      assert.throws(()=>f.api.saveProviderKey('custom-key','custom'));
+      f.storage.set('cx_provider_custom_key','custom-key');assert.equal(f.api.readProviderConfiguration('custom').configured,false);
       f.api.saveProviderSetting('model','custom-model','custom');assert.equal(f.api.readProviderConfiguration('custom').configured,false);
       f.storage.set('cx_provider_custom_baseURL','http://bad.example/v1');assert.equal(f.api.readProviderConfiguration('custom').baseURL,'');
       assert.equal(f.api.readProviderConfiguration('custom').configured,false);
@@ -504,7 +510,9 @@ async function main() {
     try {
       config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});
       const request=await pending(f),s=panel(f);
-      for(const id of ['provider','ds-key','model','save-ds','clear-ds','custom-base','custom-model','custom-images','save-custom','auto-context','info-model','info-interval'])assert.equal(s.getElementById(id).disabled,true);
+      for(const id of ['provider','model','custom-base','custom-model','custom-images','save-custom','auto-context','info-model','info-interval'])assert.equal(s.getElementById(id).disabled,true);
+      f.promptAnswers.push('2','busy-replacement-key');f.menus.get('设置 / 替换模型 API Key')();
+      assert.equal(f.prompts.length,0);assert.equal(f.api.readProviderConfiguration().key,'openai-mock-key');
       s.getElementById('provider').value='glm';s.getElementById('provider').dispatchEvent(new f.w.Event('change'));
       assert.equal(f.api.readProviderConfiguration().provider,'openai');assert.equal(request.headers.Authorization,'Bearer openai-mock-key');
       respondAnswers(request);await flow;assert.equal(s.getElementById('provider').disabled,false);
@@ -553,7 +561,7 @@ async function main() {
       respondAnswers(await requestAt(f,0));const failed=await requestAt(f,1);
       failed.onload({status:401,responseText:JSON.stringify({error:{message:'invalid mock key'}})});await firstFlow;
       assert.equal(f.api.controller.task.status,'failed');assert.equal(f.api.controller.result.analyzedCount,10);assert.equal(f.api.controller.last,null);
-      const s=panel(f);s.getElementById('ds-key').value='corrected-key';s.getElementById('save-ds').click();
+      f.promptAnswers.push('2','corrected-key');f.menus.get('设置 / 替换模型 API Key')();
       assert.equal(f.api.controller.task.status,'failed');assert.equal(f.api.readProviderConfiguration().key,'corrected-key');
       const resumed=f.api.resumeAnalysisTask(),request=await requestAt(f,2);assert.equal(request.headers.Authorization,'Bearer corrected-key');
       const {sent}=respondAnswers(request);assert.equal(sent.questions.length,1);assert.equal(sent.questions[0].id,'q11');await resumed;

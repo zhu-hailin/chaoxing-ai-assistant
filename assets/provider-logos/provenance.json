@@ -1,0 +1,62 @@
+[
+  {
+    "provider": "deepseek",
+    "officialPage": "https://www.deepseek.com/",
+    "sourceURL": "https://www.deepseek.com/favicon.ico",
+    "retrievedAt": "2026-10-13",
+    "originalFile": "deepseek.ico",
+    "originalSHA256": "30a4420e6e4dcb17fd7de560c5004346c2bc8cd971d2d5f5ee15326603e51321",
+    "runtimeFile": "deepseek.png",
+    "runtimeSHA256": "64b7848019357d28df08746954cdc8c7ff6830212573279fb91614d16ae09199",
+    "runtimeBytes": 6430,
+    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+  },
+  {
+    "provider": "openai",
+    "officialPage": "https://openai.com/",
+    "sourceURL": "https://openai.com/favicon.svg",
+    "retrievedAt": "2026-10-13",
+    "originalFile": "openai.svg",
+    "originalSHA256": "ed615b8fd9703863918daae6106396a42926fd167abc1bcad4aca860ff0f7ba6",
+    "runtimeFile": "openai.svg",
+    "runtimeSHA256": "ed615b8fd9703863918daae6106396a42926fd167abc1bcad4aca860ff0f7ba6",
+    "runtimeBytes": 2466,
+    "processing": "None"
+  },
+  {
+    "provider": "qwen",
+    "officialPage": "https://qwen.ai/",
+    "sourceURL": "https://img.alicdn.com/imgextra/i4/O1CN01OXv3EM1FN8t9W4P79_!!6000000000474-2-tps-80-80.png",
+    "retrievedAt": "2026-10-13",
+    "originalFile": "qwen.png",
+    "originalSHA256": "cd9390bc4209c319121d111f3a1f535b3c7dd909b8f860d41acc9744138d58df",
+    "runtimeFile": "qwen.png",
+    "runtimeSHA256": "cd9390bc4209c319121d111f3a1f535b3c7dd909b8f860d41acc9744138d58df",
+    "runtimeBytes": 1658,
+    "processing": "None"
+  },
+  {
+    "provider": "kimi",
+    "officialPage": "https://www.kimi.com/",
+    "sourceURL": "https://www.kimi.com/favicon-light.ico",
+    "retrievedAt": "2026-10-13",
+    "originalFile": "kimi.ico",
+    "originalSHA256": "df91c1ecf1d4894cf05845cdce44549ed3ccca3478b97a70972d1bc82ac4f2d1",
+    "runtimeFile": "kimi.png",
+    "runtimeSHA256": "ad0579292b8bcaa2fe29fd9c758111fc26a9c902b3d48a22a1870a73f5416584",
+    "runtimeBytes": 1580,
+    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+  },
+  {
+    "provider": "glm",
+    "officialPage": "https://chatglm.cn/",
+    "sourceURL": "https://chatglm.cn/favicon.ico",
+    "retrievedAt": "2026-10-13",
+    "originalFile": "glm.ico",
+    "originalSHA256": "94e48956654f0b02d7a113628cdea50819579c6bccecec8888928f321c0f997d",
+    "runtimeFile": "glm.png",
+    "runtimeSHA256": "847ba8e5230a2122479a20d1f969a18e26947d1dd15ae5522e005343e58ee421",
+    "runtimeBytes": 2211,
+    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+  }
+]

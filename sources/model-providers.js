@@ -1,22 +1,22 @@
     // 平台能力按官方文档确认；未知模型只分析文字，不按名称猜测视觉能力。
     const KEY_PROVIDER = 'cx_provider';
     const MODEL_PROVIDERS = Object.freeze([
-        {id:'deepseek',name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
+        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
             docs:'https://api-docs.deepseek.com/quick_start/pricing/',
             models:[{id:'deepseek-flash',name:'DeepSeek Flash',images:true,thinking:true},
                 {id:'deepseek-v4-pro',name:'DeepSeek V4 Pro',images:false,thinking:true}]},
-        {id:'openai',name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
+        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
             docs:'https://developers.openai.com/api/docs/models/gpt-4.1-mini',
             models:[{id:'gpt-4.1-mini',name:'GPT-4.1 mini',images:true,thinking:false},
                 {id:'gpt-4.1',name:'GPT-4.1',images:true,thinking:false}]},
-        {id:'qwen',name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
+        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
             docs:'https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions',
             models:[{id:'qwen-plus',name:'Qwen Plus',images:false,thinking:false},
                 {id:'qwen3-vl-plus',name:'Qwen3 VL Plus',images:true,thinking:false}]},
-        {id:'kimi',name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
+        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
             docs:'https://platform.kimi.com/docs/api/chat',
             models:[{id:'kimi-k2.6',name:'Kimi K2.6',images:true,thinking:false}]},
-        {id:'glm',name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
+        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
             docs:'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
             models:[{id:'glm-5.3',name:'GLM-5.3',images:false,thinking:true,thinkingRequired:true},
                 {id:'glm-5.3-flash',name:'GLM-5.3 Flash',images:true,thinking:false}]},
@@ -58,13 +58,16 @@
     }
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
         const platform=getModelProvider(provider),id=platform.id;
-        const key=String(readProviderSetting(id,'key','') ?? '').trim();
+        const savedKey=String(readProviderSetting(id,'key','') ?? '').trim();
         const model=String(readProviderSetting(id,'model',platform.models[0]?.id || '') ?? '').trim();
         let baseURL=platform.baseURL;
         if(id==='custom') {
             try {baseURL=normalizeModelBaseURL(readProviderSetting(id,'baseURL',''));}
             catch {baseURL='';}
         }
+        // 自定义地址可在页面中编辑；旧 Key 仅能用于脚本管理器菜单明确授权的同一基础地址。
+        const credentialNeedsApproval=id==='custom' && Boolean(savedKey) && (!baseURL || readProviderSetting(id,'keyBaseURL','')!==baseURL);
+        const key=credentialNeedsApproval ? '' : savedKey;
         const capabilities=providerModelCapabilities(id,model);
         const images=id==='custom' ? readProviderSetting(id,'images',false)===true || Boolean(baseURL && typeof verifiedModelImages==='function' && verifiedModelImages(id,model,baseURL)) : capabilities.images;
         const thinking=capabilities.thinkingRequired || capabilities.thinking && Boolean(readProviderSetting(id,'thinking',false));
@@ -75,7 +78,7 @@
         const infoModel=String(readProviderSetting(id,'infoModel',defaultInfoModel) || '').trim();
         const rawInterval=Number(readProviderSetting(id,'videoInfoIntervalSeconds',30));
         const videoInfoIntervalSeconds=Number.isFinite(rawInterval)?Math.min(300,Math.max(5,rawInterval)):30;
-        return {provider:id,baseURL,key,model,images,thinking,effort,search,infoModel,videoInfoIntervalSeconds,configured:Boolean(key && model && baseURL)};
+        return {provider:id,baseURL,key,model,images,thinking,effort,search,infoModel,videoInfoIntervalSeconds,credentialNeedsApproval,configured:Boolean(key && model && baseURL)};
     }
     function saveProviderSetting(field,value,provider = get(KEY_PROVIDER,'deepseek')) {
         const id=getModelProvider(provider).id;
@@ -90,7 +93,10 @@
         set(providerSettingKey(id,field),value);
     }
     function saveProviderKey(key,provider = get(KEY_PROVIDER,'deepseek')) {
-        set(providerSettingKey(provider,'key'),String(key ?? '').trim());
+        const id=getModelProvider(provider).id,value=String(key ?? '').trim();
+        const baseURL=id==='custom' && value ? normalizeModelBaseURL(readProviderSetting(id,'baseURL','')) : '';
+        if(id==='custom')set(providerSettingKey(id,'keyBaseURL'),baseURL);
+        set(providerSettingKey(id,'key'),value);
     }
     function endpointFingerprint(value) {
         // 配置相等判断使用固定长度指纹，运行报告不保存 API 地址。

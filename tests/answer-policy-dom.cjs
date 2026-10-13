@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {createRequire}=require('node:module'),{webcrypto}=require('node:crypto');
 const root=path.resolve(__dirname,'..');
 const {JSDOM}=createRequire(path.join(root,'package.json'))('jsdom');
-const source=fs.readFileSync(path.join(root,'学习通AI助手.user.js'),'utf8');
+const source=fs.readFileSync(path.join(root,'学习通AI助手.user.js'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
 const code=source.replace(entry,'globalThis.policyAPI={extract,signature,normalize,prefill,questionLocalAnswerPolicy,questionPrefillPolicy,questionCanAutoAnswer,normalizeAnswerPolicies,classifyQuestionAnswerPolicies,buildConfiguredClassificationPayload,initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,get controller(){return controller}};');

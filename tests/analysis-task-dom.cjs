@@ -2,7 +2,7 @@ const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const classificationRequests=[];
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
-const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
 const code=source.replace(entry,'globalThis.taskAPI={initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,readMediaBytes,decodeMediaSize,prepareQuestionMedia,withAnalysisRetry,solveQuestionBatches,extract,signature,get controller(){return controller}};');

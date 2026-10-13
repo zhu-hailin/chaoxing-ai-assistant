@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { JSDOM } = require('jsdom');
-const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const delay = () => new Promise(resolve => setTimeout(resolve, 140));
 const logs = [], failures = [];
 async function test(name, run) {
@@ -44,7 +44,8 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(button.getAttribute('aria-expanded'), 'true');
             assert(s.getElementById('course-nav').hidden);
             assert(s.getElementById('extract').disabled && s.getElementById('solve').disabled);
-            assert.equal(s.getElementById('ds-key').disabled, false);
+            assert.equal(s.getElementById('ds-key'), null);
+            assert(s.getElementById('api-key-status').textContent.includes('尚未配置'));
             s.getElementById('nav-chapters').click();
             assert.equal(s.getElementById('course-nav').hidden, false);
             s.getElementById('close').click();
@@ -151,6 +152,12 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(panel.getElementById('panel').hidden, false);
             upper.click();
             assert(panel.getElementById('panel').hidden);
+            d.getElementById('cx-ai-study-toolbar').shadowRoot.getElementById('course-controls').click();
+            const mainPanel = d.getElementById('cx-ai-study-root').shadowRoot;
+            assert.equal(mainPanel.getElementById('panel').hidden, false, '测验存在时仍能打开主课程面板');
+            assert.equal(mainPanel.getElementById('view-chapters').hidden, false);
+            assert.equal(mainPanel.getElementById('course-start').disabled, false, '主页面课程操作入口可用');
+            assert.equal(panel.getElementById('panel').hidden, true, '打开课程控制时收起子测验窗口');
             quiz.dispatchEvent(new quiz.Event('pagehide'));
         } finally { f.close(); }
     });

@@ -3,7 +3,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { JSDOM } = require('jsdom');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
-const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 assert(source.includes(entry));
 const instrumented = source.replace(entry, 'globalThis.parserAPI={extract,normalize,prefill,signature,initQuizAssistant,runAnswerFlow,parseQuestionDocument,registerPageAdapter,registerQuestionParser,get controller(){return controller}};');
 const logs = [], failures = [];

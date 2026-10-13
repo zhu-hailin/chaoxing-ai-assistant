@@ -8,7 +8,7 @@ const classificationRequests=[];
 const {JSDOM, VirtualConsole} = createRequire(path.join(__dirname, '../package.json'))('jsdom');
 
 // Exercise the generated script rather than rebuilding an imitation of the window state.
-const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace(/\r\n/g, '\n');
+const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace(/\r\n/g, '\n').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry), '候选脚本入口定位失败');
 const instrumented = source.replace(entry, `globalThis.windowTestAPI={initQuizAssistant,runAnswerFlow,initAssistantVisibility,registerAssistantUiHost,setAssistantUiHidden,get controller(){return controller}};`);
@@ -73,7 +73,7 @@ function reply(request) {
 function assertNoErrors(f) {assert.deepEqual(f.errors,[]);}
 async function nestedFixture() {
   const console=new VirtualConsole(),errors=[];console.on('jsdomError',error=>errors.push(error.message));
-  const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
   // The preview embeds a pageURL override. Real child IIFEs deliberately do not;
   // use the real route shape with mock identifiers so parent discovery is exercised.
   const dom=new JSDOM(html,{url:'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account&scene=no-task',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
@@ -104,13 +104,13 @@ async function main() {
   await check('全隐藏菜单隐藏主面板、悬浮球及测验工具栏，显示后保留内容和位置',async()=>{
     const f=fixture();try {
       f.open('model');const view=f.panel.dataset.activeView,position=f.host.style.cssText;
-      f.s.getElementById('ds-key').value='unsaved-hidden-input';f.s.getElementById('output').textContent='隐藏期间保留';
+      f.s.getElementById('custom-model').value='unsaved-hidden-input';f.s.getElementById('output').textContent='隐藏期间保留';
       f.menus.get('隐藏助手全部界面')();
       for(const host of [f.host,f.d.getElementById('cx-ai-toolbar')]){assert.equal(host.style.display,'none');assert.equal(host.style.getPropertyPriority('display'),'important');}
       assert.equal(f.storage.get('cx_ui_hidden'),true);f.open('questions');assert.equal(f.panel.dataset.activeView,view);
       f.s.getElementById('minimize').click();assert.equal(f.launcher.hidden,true);f.api.controller.report('运行异常','error');assert.equal(f.host.style.display,'none');
       f.menus.get('显示助手界面')();visible(f,true,false);assert.equal(f.host.style.cssText,position);assert.equal(f.d.getElementById('cx-ai-toolbar').style.display,'block');
-      assert.equal(f.s.getElementById('ds-key').value,'unsaved-hidden-input');assert.equal(f.s.getElementById('output').textContent,'隐藏期间保留');assert.equal(f.storage.get('cx_ui_hidden'),false);assertNoErrors(f);
+      assert.equal(f.s.getElementById('custom-model').value,'unsaved-hidden-input');assert.equal(f.s.getElementById('output').textContent,'隐藏期间保留');assert.equal(f.storage.get('cx_ui_hidden'),false);assertNoErrors(f);
     }finally{f.close();}
   });
   await check('隐藏配置首次创建即生效，新 UI 宿主插入前已隐藏并正确恢复原样式优先级',async()=>{
@@ -123,12 +123,12 @@ async function main() {
   });
   await check('跨实例隐藏同步无写入循环，刷新沿用隐藏状态，pagehide 清理监听且菜单不重复',async()=>{
     const a=fixture(),b=fixture({hub:a.hub});let c;try {
-      a.api.initAssistantVisibility();assert.equal(a.menus.size,2);const writes=a.hub.writes;
+      a.api.initAssistantVisibility();assert.equal(a.menus.size,4);const writes=a.hub.writes;
       a.menus.get('隐藏助手全部界面')();assert.equal(a.hub.writes,writes+1);assert.equal(b.host.style.display,'none');
       c=fixture({hub:a.hub});assert.equal(c.host.style.display,'none');
       b.menus.get('显示助手界面')();assert.equal(a.host.style.display,'');assert.equal(c.host.style.display,'');
       a.w.dispatchEvent(new a.w.Event('pagehide'));assert(![...a.hub.listeners.values()].some(r=>r.w===a.w&&r.key==='cx_ui_hidden'));
-      a.w.dispatchEvent(new a.w.Event('pageshow'));assert.equal(a.menus.size,2);assert.equal([...a.hub.listeners.values()].filter(r=>r.w===a.w&&r.key==='cx_ui_hidden').length,1);assertNoErrors(a);assertNoErrors(b);
+      a.w.dispatchEvent(new a.w.Event('pageshow'));assert.equal(a.menus.size,4);assert.equal([...a.hub.listeners.values()].filter(r=>r.w===a.w&&r.key==='cx_ui_hidden').length,1);assertNoErrors(a);assertNoErrors(b);
     }finally{a.close();b.close();c?.close();}
   });
   await check('隐藏期间分析继续且不会自动弹出，完成后仍隐藏，恢复可查看答案',async()=>{
@@ -155,12 +155,12 @@ async function main() {
   await check('最小化与恢复保留激活页、未保存输入、输出节点以及用户窗口位置尺寸',async()=>{
     const f=fixture();try {
       f.open('model');f.s.getElementById('settings-tab-developer').click();
-      f.s.getElementById('ds-key').value='unsaved-window-input';const output=f.s.getElementById('output');output.textContent='保留输出内容';
+      f.s.getElementById('custom-model').value='unsaved-window-input';const output=f.s.getElementById('output');output.textContent='保留输出内容';
       drag(f,f.s.querySelector('[data-resize=corner]'),-80,-60);drag(f,f.s.querySelector('.head'),30,20);
       const state={left:f.host.style.left,top:f.host.style.top,width:f.panel.style.width,height:f.panel.style.height,view:f.panel.dataset.activeView};
-      f.s.getElementById('minimize').click();visible(f,false,true);assert.equal(f.s.getElementById('ds-key').value,'unsaved-window-input');
+      f.s.getElementById('minimize').click();visible(f,false,true);assert.equal(f.s.getElementById('custom-model').value,'unsaved-window-input');
       f.launcher.click();visible(f,true,false);assert.equal(f.s.getElementById('output'),output);assert.equal(output.textContent,'保留输出内容');
-      assert(!f.s.getElementById('settings-developer-page').hidden);assert.equal(f.s.getElementById('ds-key').value,'unsaved-window-input');
+      assert(!f.s.getElementById('settings-developer-page').hidden);assert.equal(f.s.getElementById('custom-model').value,'unsaved-window-input');
       assert.deepEqual({left:f.host.style.left,top:f.host.style.top,width:f.panel.style.width,height:f.panel.style.height,view:f.panel.dataset.activeView},state);
       assert.equal(f.requests.length,0);assertNoErrors(f);
     }finally{f.close();}
@@ -306,7 +306,7 @@ async function main() {
 
   await check('跨iframe全隐藏同步：父子宿主与新建测验均隐藏，菜单恢复当前子面板',async()=>{
     const n=await nestedFixture();try {
-      n.f.menus.get('隐藏助手全部界面')();const child=n.initializeChild();assert.equal(n.f.menus.size,2);
+      n.f.menus.get('隐藏助手全部界面')();const child=n.initializeChild();assert.equal(n.f.menus.size,4);
       for(const host of [n.f.d.getElementById('cx-ai-study-root'),n.f.d.getElementById('cx-ai-study-toolbar'),child.host,child.doc.getElementById('cx-ai-toolbar')])assert.equal(host.style.display,'none');
       child.api.controller.openPanel('questions');assert.equal(child.host.ownerDocument,child.doc);assert(child.s.getElementById('panel').hidden);
       n.f.menus.get('显示助手界面')();assert.equal(child.host.ownerDocument,n.f.d);assertSingleWindow(n,child.host,'panel');assert.equal(child.host.style.display,'');assert.equal(n.f.d.getElementById('cx-ai-study-toolbar').style.display,'flex');assert.deepEqual(n.errors,[]);
@@ -326,7 +326,7 @@ async function main() {
   });
   for(const action of ['launcher','toolbar'])await check(`自动学习运行中最小化后由${action==='launcher'?'悬浮按钮':'课程工具栏'}恢复，不停止或重复启动视频`,async()=>{
     const console=new VirtualConsole(),errors=[];console.on('jsdomError',error=>errors.push(error.message));
-    const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8');
+    const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
     const dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=no-task',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
     let f;try {
       await until(()=>dom.window.courseDemo,'离线课程未初始化');f=dom.window.courseDemo;

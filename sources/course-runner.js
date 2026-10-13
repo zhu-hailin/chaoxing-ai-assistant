@@ -3,6 +3,18 @@
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3 });
     let courseRunner;
+    // 仅脚本闭包持有命令入口；页面事件只传递状态，不授予操作权限。
+    const assistantConfirm = window.confirm.bind(window);
+    const assistantEventPath = Event.prototype.composedPath;
+    const assistantEventCurrentTarget = Object.getOwnPropertyDescriptor(Event.prototype,'currentTarget').get;
+    const assistantEventType = Object.getOwnPropertyDescriptor(Event.prototype,'type').get;
+    function trustedAssistantActivation(event, expectedControl, expectedType='click') {
+        /* TRUSTED_ASSISTANT_ACTIVATION */
+        try { return Boolean(expectedControl && event.isTrusted===true && assistantEventCurrentTarget.call(event)===expectedControl
+            && assistantEventType.call(event)===expectedType && assistantEventPath.call(event).includes(expectedControl)); } catch { return false; }
+    }
+    const courseRunnerControllers = new WeakMap();
+    function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
     function courseLearningSettings(value={}) {
         const minutes=(raw,min,max,fallback)=>{const n=Number(raw);return Number.isInteger(n)&&n>=min&&n<=max?n:fallback;};
         return {restEnabled:value.restEnabled===true,studyMinutes:minutes(value.studyMinutes,10,180,50),restMinutes:minutes(value.restMinutes,1,60,10)};
@@ -215,11 +227,11 @@
         const api = { owner, key, get busy() { return Boolean(current && !current.cancelled); },
             get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
             get canRetry() { return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
-            retryIncomplete(token) {
+            retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
                 const candidate=courseRetryCandidate(owner,key?get(key,null):null);
                 if(!candidate.allowed || token!==undefined&&token!==candidate.token){ctl.report(candidate.allowed?'运行记录已变化，请重新确认重试':candidate.reason,'error');return;}
-                return api.start({retry:true,retryToken:candidate.token,...readCourseLearningSettings()});
+                return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
             get report() { return current?.report || (key ? get(key,null)?.report : null); },
             stop(reason = '用户停止自动学习') {
@@ -237,7 +249,7 @@
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = true, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (!scope || studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -250,7 +262,7 @@
                 if(retry) {
                     retryCandidate=courseRetryCandidate(owner,previous);
                     if(!retryCandidate.allowed||retryCandidate.token!==retryToken){ctl.report(retryCandidate.allowed?'运行记录已变化，请重新确认重试':retryCandidate.reason,'error');return;}
-                    submit=get('cx_course_auto_submit',true)===true;skipLearned=get('cx_course_skip_learned',true)===true;
+                    skipLearned=get('cx_course_skip_learned',true)===true;
                     skipUnanswerable=get('cx_course_skip_unanswerable',false)===true;
                     continueOnTimeout=get('cx_course_timeout_next',true)===true;muteVideo=get('cx_course_mute_video',true)===true;fromCurrent=false;
                 }
@@ -287,7 +299,7 @@
                 report.protection=protection;
                 const run = {id:crypto.randomUUID(),queue,report,settings,protection,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
-                    previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? previous.submit : submit,
+                    previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? false : submit===true,
                     learning,pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
                     skipLearned:resume ? previous.skipLearned!==false : skipLearned!==false,
                     continueOnTimeout:resume ? previous.continueOnTimeout!==false : continueOnTimeout!==false,
@@ -400,9 +412,16 @@
                         if ((run.skipLearned||run.retrying) && courseTaskComplete(video) === true) {task.status='already';return;}
                         video.muted=run.muteVideo;
                         task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;task.rollbackCount=0;
-                        let lastPlay=-Infinity,wakeMedia=null,pendingSeek=null,fatalError=null,replay=null;
-                        let excludedForegroundMs=0,foregroundWaitingStartedAt=null;
-                        const videoBudgetNow=()=>{const at=now();return at-excludedForegroundMs-(foregroundWaitingStartedAt===null?0:Math.max(0,at-foregroundWaitingStartedAt));};
+                        let wakeMedia=null,pendingSeek=null,fatalError=null,replay=null;
+                        let excludedWaitMs=0,waitingStartedAt=null,foregroundWaitingStartedAt=null,manualWaitingStartedAt=null;
+                        let foregroundPausePending=false,policyPauseExpected=false,unknownPausePending=false;
+                        const syncVideoWaitBudget=()=>{
+                            const waiting=foregroundWaitingStartedAt!==null||manualWaitingStartedAt!==null;
+                            if(waiting&&waitingStartedAt===null)waitingStartedAt=now();
+                            else if(!waiting&&waitingStartedAt!==null){excludedWaitMs+=Math.max(0,now()-waitingStartedAt);waitingStartedAt=null;}
+                        };
+                        const videoBudgetNow=()=>{const at=now();return at-excludedWaitMs-(waitingStartedAt===null?0:Math.max(0,at-waitingStartedAt));};
+                        task.pauseState={waiting:false,waitCount:0,waitMs:0,reason:null};
                         task.foregroundState={required:false,evidence:null,waitCount:0,waitMs:0,waiting:false};
                         const playbackRate=()=>{const rate=Number(video.playbackRate);return Number.isFinite(rate)&&rate>0?rate:1;};
                         // 被动记录公开媒体事件；不修改播放器回调、页面可见性或平台上报。
@@ -512,12 +531,13 @@
                         const onMediaEvent=event=>{
                             if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
                             const state=snapshot(event.type);observe(state);
-                            if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused)video.pause();
+                            if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
                             // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
                             if(event.type==='timeupdate'){wakeMedia?.();return;}
                             task.playbackState=state;
-                            if(event.type==='pause'){task.pauseCount++;task.lastPause=state;}
+                            if(event.type==='pause'){task.pauseCount++;task.lastPause=state;if(!policyPauseExpected)unknownPausePending=true;policyPauseExpected=false;}
+                            if(event.type==='playing'&&!video.paused)unknownPausePending=false;
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
                             wakeMedia?.();
                         };
@@ -534,18 +554,18 @@
                             if(!task.foregroundState.required || state.visible&&state.focused)return false;
                             if(foregroundWaitingStartedAt===null){
                                 foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
-                                pausePacing();
+                                syncVideoWaitBudget();pausePacing();
                             }
-                            if(!video.paused&&!video.ended)video.pause();
+                            if(!video.paused&&!video.ended){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             return true;
                         };
                         const onForegroundChange=()=>{if(!run.cancelled&&!context.skipped){enterForegroundWait();wakeMedia?.();}};
                         const finishForegroundWait=()=>{
                             if(foregroundWaitingStartedAt===null)return;
                             const elapsed=Math.max(0,now()-foregroundWaitingStartedAt);
-                            excludedForegroundMs+=elapsed;task.foregroundState.waitMs+=elapsed;task.foregroundState.waiting=false;foregroundWaitingStartedAt=null;
+                            task.foregroundState.waitMs+=elapsed;task.foregroundState.waiting=false;foregroundWaitingStartedAt=null;syncVideoWaitBudget();
                             if(pendingSeek)pendingSeek.stableSince=null;
-                            resumePacing();
+                            if(manualWaitingStartedAt===null)resumePacing();
                         };
                         const waitForVideoForeground=async()=>{
                             try {
@@ -556,6 +576,25 @@
                                     await waitForMedia();
                                 }
                             } finally {finishForegroundWait();}
+                        };
+                        const waitForManualPlayback=async()=>{
+                            if(manualWaitingStartedAt===null){
+                                manualWaitingStartedAt=now();task.pauseState.waitCount++;task.pauseState.waiting=true;
+                                task.pauseState.reason='暂停来源未确认，请手动播放后继续';syncVideoWaitBudget();pausePacing();
+                            }
+                            try {
+                                while(video.paused&&!video.ended){
+                                    guard();await waitForVideoForeground();
+                                    if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
+                                    if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
+                                    emit('视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
+                                }
+                                unknownPausePending=false;foregroundPausePending=false;
+                            } finally {
+                                if(manualWaitingStartedAt!==null)task.pauseState.waitMs+=Math.max(0,now()-manualWaitingStartedAt);
+                                manualWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
+                                if(foregroundWaitingStartedAt===null)resumePacing();
+                            }
                         };
                         const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked','canplay','loadeddata','ratechange'];
                         for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
@@ -576,7 +615,6 @@
                                 guard();
                                 await waitForVideoForeground();
                                 if(recovery && task.unstableResumes>=limits.maxResumes)throw new Error('视频连续恢复后仍反复暂停，请检查播放器或页面提示');
-                                lastPlay=videoBudgetNow();
                                 try {
                                     video.muted=run.muteVideo;
                                     const button=courseVideoStartButton(video);
@@ -603,6 +641,7 @@
                                 }
                             };
                             if(video.paused)await startPlayback();
+                            if(video.paused&&!video.ended&&unknownPausePending)await waitForManualPlayback();
                             emit('已启动视频，正在读取时长…','course-video');
                             await videoUntil(()=>Number.isFinite(video.duration)&&video.duration>0,'视频时长无法读取或仍在加载');
                             task.durationSeconds=Number(video.duration);lastMotionAt=videoBudgetNow();
@@ -614,13 +653,18 @@
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
+                                if(!video.ended&&video.paused){
+                                    if(foregroundPausePending&&!unknownPausePending){foregroundPausePending=false;await startPlayback(true);}
+                                    else await waitForManualPlayback();
+                                    continue;
+                                }
+                                foregroundPausePending=false;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){await waitForMedia();continue;}
                                 if(video.ended){recordReplay(currentSample,'ended');break;}
                                 if(replay&&currentSample.budgetAt>=replay.deadline){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
-                                if(!video.ended&&video.paused && videoBudgetNow()-lastPlay>=limits.resumeMs)await startPlayback(true);
                                 // 定位位移不刷新停滞时间。先给一次普通媒体采样机会，随后必检原停滞计时；
                                 // 连续定位也不能反复续期，只有等待期间的真实普通播放进展能避免超时。
                                 if(wasPending&&!video.ended){
@@ -1051,8 +1095,7 @@
             } catch(error) {ctl.report(error.message,'error');}
             finally {starting=false;}
         };
-        owner.addEventListener('cx-ai-course-stop',()=>api.stop());
-        owner.addEventListener('cx-ai-course-skip',()=>api.skip());
+        courseRunnerControllers.set(owner,api);
         return api;
     }
     function initCourseRunControls(doc, ctl) {
@@ -1086,10 +1129,20 @@
             s.getElementById('course-learning-message').textContent=cfg[field]!==value?'请输入范围内的整数，已恢复默认值。':'学习设置已保存';
             set(key,cfg[field]);renderLearningFields();
         };
-        for(const [control,key,fallback] of [[autoSubmit,'cx_course_auto_submit',true],[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false]]) {
+        for(const [control,key,fallback] of [[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false]]) {
             control.checked=get(key,fallback)===true;
             control.onchange=()=>set(key,control.checked);
         }
+        // 自动提交权限仅属于本次明确选择，不从旧设置或网页修改恢复。
+        let submitAuthorized=false;autoSubmit.checked=false;
+        autoSubmit.onchange=event=>{
+            if(!trustedAssistantActivation(event,autoSubmit,'change') || !courseRunController(owner)||courseRunActive(doc)||ctl.state.busy){autoSubmit.checked=submitAuthorized;return;}
+            const enabling=autoSubmit.checked===true;
+            submitAuthorized=enabling&&assistantConfirm('本次运行会自动提交章节测验，AI 答案可能错误。是否允许本次运行自动提交？')===true;
+            if(courseRunActive(doc)||ctl.state.busy)submitAuthorized=false;
+            autoSubmit.checked=submitAuthorized;
+        };
+        const takeSubmitPermission=()=>{const allowed=submitAuthorized;submitAuthorized=false;autoSubmit.checked=false;return allowed;};
         skipUnanswerable.onchange=()=>{
             if(courseRunActive(doc)||ctl.state.busy){skipUnanswerable.checked=get('cx_course_skip_unanswerable',false)===true;return;}
             set('cx_course_skip_unanswerable',skipUnanswerable.checked);render();
@@ -1100,17 +1153,19 @@
         const clearRetryConfirmation=()=>{retryToken=null;retryConfirm.hidden=true;retryMessage.textContent='';};
         panelView.clearRetryConfirmation=clearRetryConfirmation;
         const retryCandidate=()=>owner&&courseScoreKey(owner)?courseRetryCandidate(owner,get(`cx_course_run:${courseScoreKey(owner)}`,null)):{allowed:false,reason:'仅课程学习页面支持重试'};
-        retryButton.onclick=()=>{
+        retryButton.onclick=event=>{
+            if(!trustedAssistantActivation(event,retryButton) || !courseRunController(owner))return;
             const candidate=retryCandidate();
             if(ctl.state.busy||!candidate.allowed){clearRetryConfirmation();return;}
             retryToken=candidate.token;retryConfirm.hidden=false;
             retryMessage.textContent=`将按原顺序重试 ${candidate.queue.length} 个待处理章节：${candidate.queue[0].number} ${candidate.queue[0].title} 起。请检查页面与设置后确认。`;
         };
         s.getElementById('course-retry-cancel').onclick=clearRetryConfirmation;
-        s.getElementById('course-retry-accept').onclick=()=>{
+        s.getElementById('course-retry-accept').onclick=event=>{
+            if(!trustedAssistantActivation(event,s.getElementById('course-retry-accept')) || !courseRunController(owner))return;
             const token=retryToken,candidate=retryCandidate();clearRetryConfirmation();
             if(token===null||ctl.state.busy||!candidate.allowed||candidate.token!==token){ctl.report(candidate.reason||'运行记录已变化，请重新确认重试','error');return;}
-            owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-course-retry',{detail:{token}}));
+            courseRunController(owner)?.retryIncomplete(token,{submit:takeSubmitPermission()});
         };
         s.getElementById('close').addEventListener('click',clearRetryConfirmation);
         const renderPending=report=>{
@@ -1124,7 +1179,7 @@
             }
             const protection=report?.protection;
             s.getElementById('course-protection-status').textContent=protection?.triggered?report.reason:protection?.consecutiveFailures?`连续超时 ${protection.consecutiveFailures}/${protection.limit}`:'';
-            const candidate=retryCandidate();retryButton.disabled=ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
+            const candidate=retryCandidate();retryButton.disabled=!courseRunController(owner)||ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
             retryButton.title=candidate.allowed?'按原队列顺序重试待处理章节':candidate.reason;
             if(retryToken && (ctl.state.busy||!candidate.allowed||candidate.token!==retryToken))clearRetryConfirmation();
         };
@@ -1142,32 +1197,35 @@
             progress.max=valid?duration:1;progress.value=valid?Math.max(0,Math.min(duration,elapsed)):0;
             progress.setAttribute('aria-valuetext',valid?`${Math.floor(progress.value)} / ${Math.floor(duration)} 秒`:'无正在播放的视频');
             s.getElementById('video-progress-text').textContent=valid?`${Math.floor(progress.value/duration*100)}%`:'';
-            s.getElementById('course-start').disabled=!owner||running||ctl.state.busy;
-            s.getElementById('course-stop').disabled=!running;
-            s.getElementById('course-skip').disabled=running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner);
-            s.getElementById('course-auto-submit').disabled=running||ctl.state.busy;
+            const hasCommands=Boolean(courseRunController(owner));
+            s.getElementById('course-start').disabled=!hasCommands||running||ctl.state.busy;
+            s.getElementById('course-stop').disabled=!hasCommands||!running;
+            s.getElementById('course-skip').disabled=!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner));
+            s.getElementById('course-auto-submit').disabled=!hasCommands||running||ctl.state.busy;
             skipLearned.disabled=running||ctl.state.busy;
             fromCurrent.disabled=running||ctl.state.busy;
             timeoutNext.disabled=running||ctl.state.busy;
             muteVideo.disabled=running||ctl.state.busy;
             skipUnanswerable.disabled=running||ctl.state.busy;
             for(const control of [restEnabled,studyMinutes,restMinutes])control.disabled=running||ctl.state.busy;
-            s.getElementById('course-run-note').textContent=owner?(skipUnanswerable.checked?'自动播放视频、阅读资料；无法自动答题的测验保留答案、不提交并继续，仍需人工完成。遇到验证或运行异常时沿用原保护规则。':'自动播放视频、阅读资料、完成章节测验；遇到人脸识别或无法可靠作答时停止。'):'仅课程学习页面支持；独立作业页无法刷课。';
+            s.getElementById('course-run-note').textContent=owner&&!hasCommands?'请通过课程主页面的学习通AI助手操作自动学习。':owner?(skipUnanswerable.checked?'自动播放视频、阅读资料；无法自动答题的测验保留答案、不提交并继续，仍需人工完成。遇到验证或运行异常时沿用原保护规则。':'自动播放视频、阅读资料、完成章节测验；遇到人脸识别或无法可靠作答时停止。'):'仅课程学习页面支持；独立作业页无法刷课。';
             s.getElementById('course-report').textContent=courseReportText(report);
         };
         panelView.renderCourseRunControls=render;
         if(owner===doc) {
             courseRunner=createCourseRunner(owner,ctl);
-            owner.addEventListener('cx-ai-course-retry',event=>{if(typeof event.detail?.token==='string')courseRunner?.retryIncomplete(event.detail.token);});
-            owner.addEventListener('cx-ai-course-start',event=>courseRunner?.start({submit:event.detail?.submit!==false,skipLearned:event.detail?.skipLearned!==false,fromCurrent:event.detail?.fromCurrent===true,continueOnTimeout:event.detail?.continueOnTimeout!==false,muteVideo:event.detail?.muteVideo!==false,skipUnanswerable:event.detail?.skipUnanswerable===true,...readCourseLearningSettings()}));
         }
-        s.getElementById('course-start').onclick=()=>owner?.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-course-start',{detail:{submit:s.getElementById('course-auto-submit').checked,skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked}}));
-        s.getElementById('course-skip').onclick=()=>owner?.dispatchEvent(new owner.defaultView.Event('cx-ai-course-skip'));
-        stopButton.onclick=()=>{
+        s.getElementById('course-start').onclick=event=>{
+            if(!trustedAssistantActivation(event,s.getElementById('course-start')) || !courseRunController(owner))return;
+            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,...readCourseLearningSettings()});
+        };
+        s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
+        stopButton.onclick=event=>{
+            if(!trustedAssistantActivation(event,stopButton) || !courseRunController(owner))return;
             const runId=owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id');
             if(!runId){clearStopConfirmation();return;}
             if(stopRunId===runId && Date.now()<stopUntil){
-                clearStopConfirmation();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-stop'));return;
+                clearStopConfirmation();courseRunController(owner)?.stop();return;
             }
             clearStopConfirmation();stopRunId=runId;stopUntil=Date.now()+5000;
             updateStopCountdown();stopButton.classList.add('stop-confirm');

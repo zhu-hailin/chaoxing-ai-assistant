@@ -10,9 +10,9 @@ assert(!prefix.includes('writeFileSync')&&!prefix.includes('\n(async()=>{'),'不
 const exportAnchor='globalThis.courseAPI={';
 assert.equal(prefix.split(exportAnchor).length,2,'课程 API 导出入口必须唯一');
 prefix=prefix.replace(exportAnchor,'globalThis.courseAPI={captureCurrentCourseContext,chapterContextIdentity,chapterContextStore,readModelConfiguration,createCourseVideoInfo,');
-const videoAnchor='video.pause=()=>{paused=true;};videos.push(video);';
-assert(prefix.includes(videoAnchor));
-prefix=prefix.replace(videoAnchor,`video.pause=()=>{paused=true;};videos.push(video);
+const videoAnchor='videos.push(video);';
+assert.equal(prefix.split(videoAnchor).length,2);
+prefix=prefix.replace(videoAnchor,`videos.push(video);
     Object.defineProperty(video,'textTracks',{value:task.subtitles?[{kind:'subtitles',label:'模拟字幕',cues:task.subtitles.map(text=>({text}))}]:[]});
     if(task.frames){
       Object.defineProperties(video,{videoWidth:{value:640},videoHeight:{value:360}});

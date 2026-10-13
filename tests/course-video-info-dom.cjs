@@ -2,6 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const root=path.join(__dirname,'..');
 const core=fs.readFileSync(path.join(root,'sources/assistant-core.js'),'utf8');
 const source=core.slice(core.indexOf('    const ROOT_ID'))+
+ fs.readFileSync(path.join(root,'sources/provider-logos.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/model-providers.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/question-media.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/course-video-info.js'),'utf8')+

@@ -420,7 +420,7 @@
         registerAssistantUiHost(host);
         placeQuizToolbar(doc, host, resolveToolbarTarget(doc));
         toolbarView = { host, shadow };
-        shadow.getElementById('generate').onclick = () => ctl.runAnswerFlow({ autoPrefill: true });
+        shadow.getElementById('generate').onclick = event => { if (trustedAssistantActivation(event, shadow.getElementById('generate'))) ctl.runAnswerFlow({ autoPrefill: true }); };
         shadow.getElementById('settings').hidden = Boolean(studyOwnerDocument(doc));
         shadow.getElementById('settings').onclick = () => ctl.togglePanel();
     }
@@ -568,14 +568,14 @@
         shadow.getElementById('info-model').disabled = busy || !cfg.videoInfoEnabled || cfg.provider === 'custom';
         shadow.getElementById('info-interval').disabled = busy || !cfg.videoInfoEnabled;
         shadow.getElementById('model-capability').textContent = label + (caps.thinkingRequired ? '；此模型始终开启深度思考。' : '。');
+        refreshBrandedModelPickers(shadow);
     }
     function renderModelSettings(ctl, fetchedModels = []) {
         if (!panelView) return;
         const shadow = panelView.shadow, cfg = readModelConfiguration(), provider = getModelProvider(cfg.provider);
         const el = id => shadow.getElementById(id), doc = panelView.host.ownerDocument;
         el('provider').value = cfg.provider;
-        el('ds-key').value = '';
-        el('ds-key').placeholder = cfg.key ? `${provider.name} Key 已保存；输入可替换` : `${provider.name} API Key`;
+        el('api-key-status').textContent = cfg.credentialNeedsApproval ? '自定义接口地址尚未授权，请从篡改猴菜单重新设置 API Key' : cfg.key ? `${provider.name} Key 已保存` : `${provider.name} 尚未配置 API Key`;
         el('preset-model-block').hidden = cfg.provider === 'custom';
         el('custom-model-block').hidden = cfg.provider !== 'custom';
         el('custom-base').value = readProviderSetting('custom', 'baseURL', '');
@@ -632,7 +632,7 @@
         el('model-setup-open').onclick = () => {
             switchSettingsView('model');
             switchPanelView('model');
-            el(readModelConfiguration().key ? 'model' : 'ds-key').focus();
+            el('provider-picker').focus();
         };
         const setAboutVisible = visible => {
             el('about').hidden = !visible;
@@ -682,19 +682,8 @@
             set(KEY_PROVIDER, getModelProvider(el('provider').value).id);
             renderModelSettings(ctl); changedModelSettings();
         };
-        el('save-ds').onclick = () => {
-            if (ctl.state.busy || courseRunActive()) return;
-            const key = clean(el('ds-key').value);
-            if (!key) return ctl.report('请输入 API Key');
-            saveProviderKey(key); renderModelSettings(ctl);
-            ctl.report(readModelConfiguration().configured ? '模型配置已保存' : 'Key 已保存，请配置接口与模型');
-        };
-        el('clear-ds').onclick = () => {
-            if (ctl.state.busy || courseRunActive()) return;
-            saveProviderKey(''); renderModelSettings(ctl); ctl.last = null;
-            ctl.report(`${getModelProvider(readModelConfiguration().provider).name} Key 已清除`);
-        };
-        el('save-custom').onclick = () => {
+        el('save-custom').onclick = event => {
+            if (!trustedAssistantActivation(event, el('save-custom'))) return;
             if (ctl.state.busy || courseRunActive() || readModelConfiguration().provider !== 'custom') return;
             try {
                 const baseURL = normalizeModelBaseURL(el('custom-base').value), model = clean(el('custom-model').value);
@@ -721,7 +710,8 @@
             catch(error){renderModelSettings(ctl);ctl.report(error.message,'error');}
         };
         renderModelSettings(ctl);
-        el('detect-images').onclick=async()=>{
+        el('detect-images').onclick=async event=>{
+            if (!trustedAssistantActivation(event, el('detect-images'))) return;
             if(ctl.state.busy || courseRunActive())return;
             const cfg=readModelConfiguration();
             if(!cfg.configured)return ctl.report('请先保存当前平台的 Key、接口与模型','error');
@@ -744,13 +734,13 @@
                 if(abort.signal.aborted)ctl.report('图片能力检测已取消','idle');
             }
         };
-        el('cancel-images').onclick=()=>ctl.capabilityTest?.abort();
-        el('models').onclick = () => ctl.loadModels();
+        el('cancel-images').onclick=event=>{ if (trustedAssistantActivation(event, el('cancel-images'))) ctl.capabilityTest?.abort(); };
+        el('models').onclick = event => { if (trustedAssistantActivation(event, el('models'))) ctl.loadModels(); };
         el('extract').onclick = () => ctl.extractOnly();
-        el('solve').onclick = () => ctl.runAnswerFlow({ autoPrefill: false });
-        el('prefill').onclick = () => ctl.prefillLast();
-        el('analysis-stop').onclick = stopAnalysisTask;
-        el('analysis-resume').onclick = resumeAnalysisTask;
+        el('solve').onclick = event => { if (trustedAssistantActivation(event, el('solve'))) ctl.runAnswerFlow({ autoPrefill: false }); };
+        el('prefill').onclick = event => { if (trustedAssistantActivation(event, el('prefill'))) ctl.prefillLast(); };
+        el('analysis-stop').onclick = event => { if (trustedAssistantActivation(event, el('analysis-stop'))) stopAnalysisTask(); };
+        el('analysis-resume').onclick = event => { if (trustedAssistantActivation(event, el('analysis-resume'))) resumeAnalysisTask(); };
         el('copy').onclick = async () => {
             const text = formatResultText(ctl.result);
             if (!text) return ctl.report('尚无题目列表');
@@ -1040,7 +1030,7 @@
             launcher.dataset.phase = state.phase;
             launcher.setAttribute('aria-busy', String(busy));
             launcher.title = busy ? '任务运行中，点击恢复助手；拖动调整位置' : '恢复学习通AI助手；拖动调整位置';
-            for (const id of ['extract', 'solve', 'models', 'detect-images', 'save-ds', 'clear-ds', 'ds-key', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
+            for (const id of ['extract', 'solve', 'models', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
             s.getElementById('cancel-images').hidden=!controller?.capabilityTest;
             s.getElementById('cancel-images').disabled=controller?.capabilityTest?.signal.aborted===true;
             refreshModelCapabilities(s, busy);
@@ -1182,7 +1172,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.11',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.12',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1411,6 +1401,7 @@
 
     function initQuizAssistant(doc = document) {
         if (!doc.body || !hasQuestionNodes(doc)) return;
+        initCredentialSettingsMenu();
         if (!controller) controller = createController();
         createAssistantPanel(doc, controller);
         mountQuizToolbar(doc, controller);
@@ -1441,8 +1432,9 @@
             host.style.cssText = 'display:flex;justify-content:flex-end;width:100%;max-width:100%;box-sizing:border-box;margin:8px 0 12px;clear:both';
             registerAssistantUiHost(host);
             const shadow = host.attachShadow({ mode: 'open' });
-            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
+            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button+button{margin-left:8px}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="course-controls">课程控制</button><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
             studyToolbarView = { host, shadow };
+            shadow.getElementById('course-controls').onclick = () => controller.openPanel('chapters');
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findQuizPanel(doc.querySelector('#mainid #iframe')?.contentDocument);
                 if (quizDoc) {
@@ -1481,6 +1473,7 @@
         refresh();
         window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
     }
+    initCredentialSettingsMenu();
     initCourseDocumentBridge();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();

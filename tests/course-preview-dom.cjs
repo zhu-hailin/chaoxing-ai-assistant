@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {JSDOM,VirtualConsole}=require('jsdom');
-const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const logs=[],failures=[];
 (async()=>{
@@ -38,9 +38,9 @@ const logs=[],failures=[];
    dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=normal',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
    const w=dom.window;for(let i=0;i<100&&!w.courseDemo;i++)await delay(10);
    const f=w.courseDemo,s=w.document.getElementById('cx-ai-study-root').shadowRoot,model=s.getElementById('settings-model-page'),developer=s.getElementById('settings-developer-page'),nav=s.getElementById('nav-model');
-   assert.equal(nav.getAttribute('aria-label'),'设置');assert(nav.querySelector('svg circle'));assert.equal(s.getElementById('chapter-tab-run').textContent,'自动刷课');assert(model.contains(s.getElementById('ds-key')));assert(developer.contains(s.getElementById('course-copy-report')));assert(!s.getElementById('chapter-run-page').contains(s.getElementById('course-copy-report')));assert(developer.hidden&&!model.hidden);
+   assert.equal(nav.getAttribute('aria-label'),'设置');assert(nav.querySelector('svg circle'));assert.equal(s.getElementById('chapter-tab-run').textContent,'自动刷课');assert(model.contains(s.getElementById('api-key-status')));assert(developer.contains(s.getElementById('course-copy-report')));assert(!s.getElementById('chapter-run-page').contains(s.getElementById('course-copy-report')));assert(developer.hidden&&!model.hidden);
    if(mode==='running'){s.getElementById('course-start').click();for(let i=0;i<80&&s.getElementById('video-progress-wrap').hidden;i++)await delay(10);assert(f.runner.busy);}
-   nav.click();assert(!s.getElementById('view-model').hidden);assert(!model.hidden&&developer.hidden);const input=s.getElementById('ds-key'),value=input.value;
+   nav.click();assert(!s.getElementById('view-model').hidden);assert(!model.hidden&&developer.hidden);const input=s.getElementById('custom-model'),value=input.value;
    s.getElementById('settings-tab-model').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert(model.hidden&&!developer.hidden);assert.equal(s.activeElement.id,'settings-tab-developer');assert.equal(s.getElementById('settings-tab-developer').getAttribute('aria-selected'),'true');
    let copied;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{copied=text}},configurable:true});s.getElementById('course-copy-report').click();await delay(5);assert.equal(copied,f.api.courseReportText(f.runner.report));assert(!copied.includes('mock-preview-key'));
    s.getElementById('nav-questions').click();nav.click();assert(!developer.hidden);s.getElementById('close').click();f.api.controller.openPanel();assert(!developer.hidden);
@@ -90,7 +90,7 @@ const logs=[],failures=[];
    const w=dom.window;for(let i=0;i<100&&!w.courseDemo;i++)await delay(10);
    assert(w.courseDemo,'离线页面未初始化');const f=w.courseDemo,s=w.document.getElementById('cx-ai-study-root').shadowRoot;
    assert.equal(s.getElementById('panel').dataset.activeView,'chapters');assert(!s.getElementById('course-start').disabled);
-   assert.equal(f.requests.length,0,'预览自行开始或发起请求');s.getElementById('course-start').click();
+   assert.equal(f.requests.length,0,'预览自行开始或发起请求');assert.equal(s.getElementById('course-auto-submit').checked,false);if(scene==='normal')s.getElementById('course-auto-submit').click();s.getElementById('course-start').click();
    if(scene==='survey'){await delay(100);assert(!s.getElementById('course-skip').disabled);s.getElementById('course-skip').click();}
    for(let i=0;i<200;i++){await delay(100);if(!f.runner.busy)break;}
    assert(!f.runner.busy,'预览流程超时');const report=f.runner.report;

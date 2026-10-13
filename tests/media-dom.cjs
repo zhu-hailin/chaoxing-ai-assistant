@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { webcrypto } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
-const source = fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
+const source = fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 assert(source.includes(entry));
 const instrumented = source.replace(entry, 'globalThis.mediaAPI={extract,signature,parseQuestionDocument,prepareQuestionMedia,readMediaBytes,buildChatContent,buildSearchContent,askDeepSeek,getWebEvidence,splitQuestionBatches,buildAnswerPayload,assertRequestSize,modelSupportsImages,normalizeMediaAnalysis,initQuizAssistant,startQuizObserver,runAnswerFlow,formatResultText,get controller(){return controller}};');
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XGnQAAAAASUVORK5CYII=';

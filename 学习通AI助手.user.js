@@ -4,12 +4,13 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.11
+// @version      1.12
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
 // @match        *://*.edu.cn/mooc-ans/work/doHomeWorkNew*
 // @run-at       document-start
+// @sandbox      DOM
 // @require      https://greasyfork.org/scripts/445293/code/TyprMd5.js
 // @resource     Table https://www.forestpolice.org/ttf/2.0/table.json
 // @grant        GM_getResourceText
@@ -27,7 +28,6 @@
 // @connect      dashscope.aliyuncs.com
 // @connect      api.moonshot.cn
 // @connect      open.bigmodel.cn
-// @connect      *
 // @connect      self
 // @connect      chaoxing.com
 // ==/UserScript==
@@ -84,7 +84,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.11', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.12', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -397,25 +397,34 @@
         } catch(error) { error.prefillSummary = { ...summary, details:[...summary.details] }; throw error; }
         return summary;
     }
+    // 官方原始平台标识；来源、原始文件与校验值见 assets/provider-logos/provenance.json。
+    // 仅将 ICO 的最大帧无损编码为 PNG；无绘制、无运行时网络请求。
+    const PROVIDER_LOGOS = Object.freeze({
+        deepseek:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOEAAADhCAYAAAA+s9J6AAAY5UlEQVR42u2dT24bSdLFX2SWaO9cfQJVn0C8gbgcGO42byAvNRoB0g08voEE9OfxUroBNT0wZknfoHyCKZ3A5Z2brMz3LYqUKJmy+aeK9S9+wADTjbZJVuXLeBEZmQkoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqJsjegjUMpmeMzIB/4NKYcChARjR3f58X0v1qcDBPoIlLJxxg1AcwQgYj73R1b20uEx09EHSbr+fIwOEaXsKAixhwCihX8dCjhw4vr6hDQSNmMgnzP89g2hMQiNycK7XMJJCAC0TL0PUu+RPn+OdHQhaa2iIMzg8b8nEIm1+/p2NSesbfTIgiwSJ6FYu08iAhBCEIIMF15eOBvQKURSECmAVASJR/Y5CIK4SkEOzxm6Kd4CPH9i+F1Zh3ddt6QaCeskOi8RIZET7AttJAYhyVyAM7U9iiYL/8DF/5sKbOz+cpcARlX9rizL+gLbfzoCsO/E9wGoCJVqhecEh0IbQRAJEM3lxc3/+hDAAMbGw3OOq4iGw3OG2cQPIHhShGpJVYS1ER7AqOCPSvL/+duqam9ZlvUlL8iEP5osSPSHx4y6bElVhDuICJMJIgvXL1l4dwIU4bWHHwdZkIz+r5qc0DDYJxn9vOrAgTP+E4ArFWEHxLCswriMeaVx/s+bVByHx4yccQM3xYE1iEDTL1F4c3sXC3htMjP69webVPmss4n/VUTCFf7zCGIPh8ccdzUaSptENpkgMiYL51VF7/0vdz9UzAssqTAufyp3lcY5Kem/GmO+gEjp3VcnNllcEliMeIREImYf4AAP18fKIgUxBv21fWbHVS9R/O2Y0Z7FW4Bv1oneJjNXXRRi0GTBWbpoLjY3xYs84thwXlV8OBMTK1c7yCW6FJBMQaRiTGoFiRWkbor01Yn7ev/5pr9YXNkRMY27/M8fe+M6vB9j5pPdyn8kIuXIWZ8Oz3lVp3VOFeFTRY2ZxROa6F5sXEtnGxJCEDIXan9RoIufv2MSgDdBEMR1eVeWLn836/2xiJAjN/UYHnPUpYgYNEZ4j4salY35WpECMrJORlUVYJa6eWNfkAzXTXYE6AMSOov9V6fTm6qbDYoey864ASGRMebLYjNF7URYQTWxycSU7Gb0Ya9eUUMQ4sdLEz8u1IBvhLbvpv6mDVFxvosENEcCRCQfNFMEdfqiWZBFbur71pjDXVQTm4/EdbKhc7z3v6xYGX3a9gMDQCJncfD7KeM6tOFtI0BSjnBfpMt/n7FJbUQ4/6LCWbc9VXyrQPqvowvb5iJGBPDNvA0vm/hPL08mo6bsQ3xCgAuGIa8rBFV/SWfcwAkOQRlgN+V8peR0wk3xouCMPQQwEJG+ZXDw20l2Y72t9brizwSYT6K5ZQ8qFx/MQG1ne/j2DeGe3Tgf/LkYBUPA9J3FQV2LN6sIcJGdNhYOzxm+Op0OnMUZxMwXc1WAm2aEYvaHx52cwKJZ8eatm7jh8JxhUwW400g4PGbkpn4osK+Re+FQZbSlCGu4Fej587yBYQcfFQIYUEzopj6suoq6TWq1ExG+PJn0neAIkKFGvuIgEFGkX9V2pWWMLiR9deK+5g0Mu5iI8rVFH/hweMydtr09Xk5bN7USySeroOwv6f5yA8AczfooNfoVniPJa/eXi1Hh5t062FNSjpxxCbbcjTFv9Afy9rtlzf7iJBRjX2QT/6s15mDT5TRKPmGUJsK5/aQxR/lspZQWCcQcvTyZJB0/QnDj3RiPWyLvCkuCELTfizDvTQ5F5OebAX5sZcqLhPcdAnIkaj93ocSBxV5SlyMEjTFfSKa7dz4c+IC3q9jSlTZY88k0oKj9R+WIcJPqkFJEkYJDZwV1KNvTuVsxJuHuHdBPbelcfB5+ILSHFbZEpiJ5Qc2oAFtkx+Zl+6l/U+XSBS1TAmllz0HswbJli4XOrLezMTqobJwSaeF2VAVYl4h413NZ2U4E74PUGqTL9mXuyJ5HkwkiAPG82OL+cgNn8Lo2nVmCxEt2W1gkVAFqVFyk10MCVrd2KWRk6aL52HRT/4ambs0hkmRZUIwdVQHWPiqe+WC3QhxdSAq6z6ioiWB+lOJdgRByVrMKfUr62+fPC7CjKsBmRMX86Ai82KU9pWEieTSsYlyE9Bw4KxFYwwYRIjVi/jd/DxtHwuE5Q2f9UAXYMHu6o17LIAsSoMLlEsGgtr3JC/ngViLMsqwPyGsVYLPsKcWc7SJPHH2QRAQxqquShqhnh1ZK8tPiZuyNRPjyZNKX/L65vo7tZjHrtdxJnkjnbqXj90wsef6JkA9SgrVFODxmZGVv3owd6mNtdJ549vJkUtpEamljQmJ93IvpoMSW9sEzWUuE8zwQoAqwJXmiFVuaEEcfJAHdJ2g0nJOA7tPjlrq1RKh5YBvzRBmWKUTr7RiQsT5qACKxg/3OGawswuExI2HwWvNAFaJGw41I6f3nXu/757CSCNWGqhA1Gm6dDI493GjZGu1KIlQb2i0hvjqdDopcS+x6NCQQg/76qf2ePxWh2tDuCbGMRX3r7ViE1x0UYgryxj6zTzoBozZU+V6Is0X9AoU4+iCJycxV52zpD2zoSiJUG9pd5sdm5GOgQFvq3Q1nW4y6bkN/KsLhOUN4M1Ab2mn6QnNUZLHGPrNjQSdsaSLg9Y9s6E9FmGVZX0QO1YZqjlhk1XR0Ial1ZtTy/DAR4bV1ZrTKjhWjUVDZuRBn+WFLhbj21d9Go6CiQqxOgEtFqFFQUSHuToBLRTiZIBJjDjQKKrsUIsDLplZN8+/Ny00EuFSEli4SvaRT2bEQ7Z65Eu/fgRihuo3Aa0c/QK7E+3d2z2x8D4Y8tqLZxJ+LyJlGQuUnpABHju6yyOP3X55M+vl+VQ5R3/XpFHn0u7HObH0b1INIqAUZpcqICAAf3/di63BZ4zwxAeSK4raKfk9Gwt9PeUbynypCpeqIODxm5CzOZoc1hdULDwmQN6IXfVW3LFpRN8VbgOc6rpS1hUiMQX9tn9nC7kr8/R88IvnP/L6IisQnEoP+E8XHQRYkZVy4EzyworB9HU/KRtZUMKSYyE1cODznqBAhSiUnpj2Ieo427vVMMrqwaVkfGNwnh8EB82usFWVTW9WfHam49fXVM2cWlSzCVIAkv7xGEtLfCpjQMMmjXrCTnDTY4Q9WOiLEIq6vLtGZJYCMSX9rjPlC525pmeais0kVzywA8gV6axCBOoiUQtj66H3DYJ9kVNBlnPe5K2RkHS6rEtyTIswX6E1UsAYXQv13s2VILkRdqe1pycoWQpwdvd93E3e9Tp44W6/+VUSKHRNEKoK4DrcZfydCsTafdbYRm0gCIiH9V2B2ZfIs1H/3J5yEYuyLRRGSMzssCIWMCLXHLSBEvks/zCY+enU6Ha8SFfP1atuZ9epgy3wwAWRE7z45sUmvh42rSMNzht++ITQGoaWPxNp97/0vIuYFwD6ISCNmg/NEkQi0h27qb35WtCnJitZXhFvkg7Oucbkqooo0mx3nAo4fWJPM9Q2CfU//q4jZn90x3ldBNi8qzm4RPvjtJFu66F2aFa2zCDfPB2WcC7Bcfz0T53gxWgaBiwyCg9zCsq+CbF6uCDEDZ3H4WIxds6IAEIixL0iG64Z+0t/uusK0EC0TAOOFKKmCbLgYfz9lDCIl/QAd28saNDnPWoiSKsiGi5FECiJFbkM79c6CvPjRfP+9TJDwZjDbFdJVMc56H++r1nmhC2EN8+pwFhA6RzCrPq6fEYp5MTxnuIv7zzcV5PCccZZl4w6KMQFkfN/7eF+11ry6jnZ08wcffvuGEDXeBd1RMf6wav1UXg1vBhB5LW3Oxx7dFV+vnJAb/aDQmGYM5A6JMQVktE7VevHZuIlLIHfXoLdwkpIky3bTlL0OZuPzZMjQmKxRL2p0Iel//tgbBz1zQXHvSF7O8si0FWOMSAWbtWWNLiS1PTuiuHeAXKGdB/Omz5/X710HJMKudCY8FRnzW6dqfabJyu5km+LG3XM5ZuIDfiXlCC26h4T0X8vcF7hxJNz8fSMU1+yq6jwyWodLsHEnfS3N0+k52PZ+wZYezJsaY77U8YsFm88qeNiE3WQx5vbt6uXJJDa0nxtdoBAMhDZ0U8S/nzIBkdK7r/e9vatVs0cfJBke88oHHq2IiERa1wk22OJlt25d5+P7Xjw8Z+L+cjHEHEEwaGCBIgQwADiYL4CLMakVJG6K5LeT7POqBxW1Sog1rYxuJ0Ig9N7/0tJ8cfTyZJI0PirOFsCZW5f8N4hJnMXhb3/PblY5lKk9QqxnZXSrnLDtfHzfi4OeuWjgqdA/IwL4hsasfCV2S3LEWlZGcxFuYSlFzP7wuL1H5o8uJP3zX8HIIWtq2T6RfFtY+r07Qx/Gvp5MVotsC9ddN3FCSkVWz4cbFgkZZUHWWhEuRsWanwr93aADMQL9O3r/jnzishWyb+FWttqjD5I4Tq/BfGtZo4oyrO/EYbb5cm1YplhnAM5vD0L9F/hjGnf55/vg6s9/BaOgZy6euKI6gtiDdZYz8lO2/U2jXEGNizJbR0ICkVi735U8cX57UN5VwhrbMomDIIgXbTXFx08IZ94DvDLW23Gz8sP6FmUKsKP5AU3bLAw3MU/8zx97Y0d3WeM8McQjYYmTUJYvt6xdsFjID5tiS2tblClChIAgWjW51zxxV+6LfWfcXdfM8JgRjD3kkuWFvJVr/YLF6EN+THwDomGtizIAEIgg3eq8UTI0xoXoIHVdQyMQQcxRNvHR76f84og+wAG+j4RbtXJZb8c+8FHN1w9jj+xznceR4fZ5TSReInSUmq6hhQAGIjK76o5vlopky6phM2xpvfPBYuwoEBHdFWGNhTgXY1j2b6+xLU1Jf1vnfDAXoWzvldu+aN9wIZZObaulRGrE/K/O+WAuwkIWMbuxaN86IRbUhD/6IImHH9fuN9d8fXDRjhYxS3Q6L2ywEAtbYgqyIBFhzWzpw/XS2opwfhTetiKE2MOuW9JGCrGgJaYaRsPaL03ciXBWolZL2lUhrtk/+rNoCNTm2rHaL03cR0LnbqWYQaKW9Akh1nznQWEupl6V0mZY0VyElikLygvVki4fmPXfecCBD/ybIt4dDZMaiLAxVhQAjPdBWsQyhVrSp/n4vheD/nrpdqKaRMPZ9dZnL08mW1nTH/SoqhV9ysb3evnZI0W9TLWky7HP7NhNfQRIiHq2eEUA31ix4avT6fUm98wPjxk5g0OiajfUHCsKID9x9PdTztqbipjB5Mo6vKvbveB1YHjMyAf+Tc17LVMAMcAbRzNe5YS2XHxuALGHsx7VKn9bKiL//PcfctmYSAgAdO5WjElYwIFGAvad+D461jWyan44POaVs3gx6+cMa/g1Q8xu1LUGh9nEf351Oh3P+y/nLWCTCSJjslC8RE5wCJgBUIt6QKOs6L0ILQvb/k8gokh/eM5xUxLjXQvx1en0Rmj7+WCvLRHISEQGoD3cs/mk6qb5OMmvWLchBFFNxAcAKclPwV5zrOidCL0PUmuQgizi7wzFmIPZAnCsslvy0IMgdlN/g7zxve459Cwy8rvZtoa5VQIybtrkbwCg10MCFmgfC1wAbmU0vJDUOjPqYrN3mVAkcWIb9zzNfFCA7nOBA0LXDFewpQ0+QrCOpPT+c6+HZooQKGORlQNn3EDHxo+FSMlu1LYXQgzjG1mHuBNhCX1/Gg1XzA8BNusIwTpGQfJTk9YGl4qwnL4/jYaaH2oUXFmE5VhSjYZr5odjfRrdioLfibCcrSgaDVcVYkOOENQoWKYIRx8kEVl+gYhGw/Jp3snWGgULFyEwa2ErfBBoNFRbqlFwZRFa2piQomcWjYZqSzUKrirC8gZBcRtH1ZYqbYmCS0UIlLY7Ot84qrZUben2JABv2hAFnxThrEoao/h2KrWlaksLQMbWmVFbdumYJweAd5+klAGgtlRt6RajB4jh3U2bNo0/eRdFSQUataVqS7chBXljn9lWPQ9TkR1SW6q2dBNaU4xZSYRzO1TeLKy2VG3pmjaU/rotxZiVRVh6NKS8dqKbf9ewpSN0c+9hIuC17dlRG49M+en9hGVGQwIRjNrSVYXY0b2HKSCjNlVD1xZhydEwBDhUW7oaHd17GFOymzYfobnSTb3l5oZ5tVSFuEI07N7ew6RNi/JPIav+h7+dZG8g5i3KOx0sAXhp98xV3WzH8Jzh/Pow75E+f460yu84PGbkLN7Ozi5tbx4ovDaZuWr7QdKy5os/K/PQWgKx0F/WKQHPf7cfQszh7EumpL81Yv7nJbvd5Lj4ItjBpFh1HnhlHS67cJJ7sE5hoOxDawXoU8yZ+8ulAEZ1eEB5U4E5A++tsoikJFOBTbKJ//TqdDretRitt2Mf+KjmR+pvOhuPHabXf37odSL3NWspdgeFAQH6EHO07e1ARdlQiD1YMshnJ09jICJnQvs2m/jzV6fTQRFXT686KTboWu613BDorz++78XoCGuJcF4YKL2NSjCwsndUdaHm2zeEK1jv8LEYdzWBtK2t7S4daVlbWqEinL/4HbRRhXVYuphdfpKu/p1zMVoEb3/7ezbcRVScNdvfsPnrh61ekC9UhPN8ZAc2qLCLKzce4BeSkv7r2hOIYEhjdmZR7TM7FjTaliYivG7zgnzhItyhDYpmF1ee7TLfeuiMN9vgLEB/blHdtNyI3vD1w84sRRQqwh3boBCQodC+dRM33LUQtzxlIER+19+Zsyh1ImlooSYFZNRlAW4lwh3boBDAgGLOyo4qjynoLNYI4Juyo2LDGr1TgCPH6XXXb3WWbf+CCq6A3rl9KXhhPAFkRMluylpbfHky6VuxZ4AMUc/bgAFi5JC969JSRCmRsKLZd+e9pgX3zt5HxZLs9cf3vdjRXYIY11N/3VsLLFWEcyE6Tq93+NJ3WjktYVmmdHv98X0vBv113ZYuuroWWLoIK3rpEcA3u1qTK2NZRoB+mUUb+8yOhf6yTkIUkcTBxl1ciigtJ3yQH54zdFP/BpAz7LCfMbc3vPFwozItzssT9q3BW5DD4osUiAHeWGdGRea6w3OGbuKGFHOWi75y7nLiLAuSqnektE6EFRVq7gcyMQb9tX1mSzkMaAeTTALIyHFaaL5UQyHOJh1JSH8L48dV7UZppQgrFmLpUfHV6XQgtG9R0k4SzEr3lPxQo6IGZg2F+FiQsQgSj+xz1wQpZf3FVQqxzKhYoiUt3Z7WWIgPfjfJT12KjlLmX16xEO+iYpEvdAeR8IE9LXpNdC5EiDlCLsSwrmLsSnSUsj+gaiEWObvu4nSBHxUyihqIw3OGWZb1heao1gv6HYmOsosPqYEQt5pd52fMBMYPK7PXswXuIrf6NKKzpgNilF19UE2EuFSQIFJ695WWqfdB6j1SYxAak4XiJKRIX4w5ANmv8rsTiAWzLT8F2dNciHtHAIdoxjEZrROj7PLDaibExSJOKoKUQAqRFEQKQQgyFCBk/l3rEimKt6f1fC8rTqTFr622WoT3eZUfEnJU0wpdYwZgkdHg7lQ5yOsaF2yWT0r07/58H1ypCNcsDNS8VN5JMTasYLM4jC/sHt411ZZKVR/ckFJ5o8S4WHTapiXs5cmkb2CHEHndjElSrqYO7/7bUEsqVX74/cwbvG5QYaApgkwApIuFJyc28f5+u9ljkQ7PGc5OmIMxCK3gaMfLMRoJKxNjMwsDzRHlvPAkkoAP9nw+OMhKxLx4KDhGDXApmhMWKcSGFga6QgKRGGRYo/eTtuG4fKnTl2luYaD9AhThdebNyJgshDcDETkEEUFWOiC5nEmhhB0nnRfhYmGgYQvILc8vH67FzSdLw2Df0/8qYvYBRjsQZTITXwK6T9bbcRsOiZK6fjG1pzWwnys0BcyLOUGQRYbBPgQhudDcIAiFjMj7f/7Bu3zYOJEnqimIhPRfBUxomARZkLTphDap85ebz7jwZtCccnl77Oemuze+q7LSRWLsi7kIvfe/LPtzxpgviy2EAOB9kPZ6SNq8pUma8CWH5wzdX24AY18DHKhFLbv44j81vRVMRagWtdHFl7ZHHhVhgRZVRA5VjIXkfuM2FTpUhCrGzuR+SsdFqGLU6KciVDGq+BQVoYpxJVIBEkJiFZ+KsBIxGgQH+eIx+x0TZAKRmN5/FjK2tLGKT0VYn+hYbc9jyXbzvq3Lwca63KAirGd0fNzz2NwIObOaSOfCa2Nbl4qwxYK863mcW1ZBJGRUs4OdnhSdCGI6d0vLVIWnImyFKCcTRJYuEmv3vfe/3G9y3ckOgTuhLTn9LSH9V2PMFxWdirBT/O2YURAggveLuWRU6ocSCQQJwEQEt/RMpt6O/6uCUxRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFUZQf8/81n5n5+9v2MQAAAABJRU5ErkJggg==',
+        openai:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiBmaWxsPSJub25lIj4KICA8c3R5bGU+CiAgICA6cm9vdCB7CiAgICAgIC0tcHJpbWFyeS1maWxsOiAjZmZmOwogICAgICAtLXNlY29uZGFyeS1maWxsOiAjMDAwOwogICAgfQogICAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgICA6cm9vdCB7CiAgICAgICAgLS1wcmltYXJ5LWZpbGw6ICMwMDA7CiAgICAgICAgLS1zZWNvbmRhcnktZmlsbDogI2ZmZjsKICAgICAgfQogICAgfQogIDwvc3R5bGU+CiAgPGcgY2xpcC1wYXRoPSJ1cmwoI2EpIj4KICAgIDxyZWN0IHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiBmaWxsPSJ2YXIoLS1wcmltYXJ5LWZpbGwpIiByeD0iOTAiIC8+CiAgICA8ZyBjbGlwLXBhdGg9InVybCgjYikiPgogICAgICA8cGF0aAogICAgICAgIGZpbGw9InZhcigtLXNlY29uZGFyeS1maWxsKSIKICAgICAgICBkPSJNNzUuOTEgNzMuNjI4VjYyLjIzMmMwLS45Ni4zNi0xLjY4IDEuMTk5LTIuMTZsMjIuOTEyLTEzLjE5NGMzLjExOS0xLjggNi44MzgtMi42MzkgMTAuNjc2LTIuNjM5IDE0LjM5NCAwIDIzLjUxMSAxMS4xNTcgMjMuNTExIDIzLjAzMiAwIC44MzkgMCAxLjc5OS0uMTIgMi43NThsLTIzLjc1Mi0xMy45MTRjLTEuNDM5LS44NC0yLjg3OS0uODQtNC4zMTggMEw3NS45MSA3My42MjdabTUzLjQ5OSA0NC4zODN2LTI3LjIzYzAtMS42OC0uNzItMi44OC0yLjE1OS0zLjcxOUw5Ny4xNDIgNjkuNTVsOS44MzYtNS42MzhjLjgzOS0uNDggMS41NTktLjQ4IDIuMzk5IDBsMjIuOTEyIDEzLjE5NWM2LjU5OCAzLjgzOSAxMS4wMzUgMTEuOTk1IDExLjAzNSAxOS45MTIgMCA5LjExNi01LjM5NyAxNy41MTMtMTMuOTE1IDIwLjk5MnYuMDAxWm0tNjAuNTc3LTIzLjk5LTkuODM2LTUuNzU4Yy0uODQtLjQ4LTEuMi0xLjItMS4yLTIuMTZ2LTI2LjM5YzAtMTIuODM0IDkuODM3LTIyLjU1IDIzLjE1Mi0yMi41NSA1LjAzOSAwIDkuNzE2IDEuNjc5IDEzLjY3NiA0LjY3OEw3MC45OTMgNTUuNTE2Yy0xLjQ0Ljg0LTIuMTYgMi4wMzktMi4xNiAzLjcxOXYzNC43ODctLjAwMlptMjEuMTczIDEyLjIzNEw3NS45MSA5OC4zMzlWODEuNTQ2bDE0LjA5NS03LjkxNyAxNC4wOTQgNy45MTd2MTYuNzkzbC0xNC4wOTQgNy45MTZabTkuMDU2IDM2LjQ2N2MtNS4wMzggMC05LjcxNi0xLjY4LTEzLjY3NS00LjY3OGwyMy42MzEtMTMuNjc2YzEuNDM5LS44MzkgMi4xNTktMi4wMzggMi4xNTktMy43MThWODUuODYzbDkuOTU2IDUuNzU3Yy44NC40OCAxLjIgMS4yIDEuMiAyLjE2djI2LjM4OWMwIDEyLjgzNS05Ljk1NyAyMi41NTItMjMuMjcgMjIuNTUydi4wMDFabS0yOC40My0yNi43NUw0Ny43MiAxMDIuNzc4Yy02LjU5OS0zLjg0LTExLjAzNi0xMS45OTYtMTEuMDM2LTE5LjkxMyAwLTkuMjM2IDUuNTE4LTE3LjUxMyAxNC4wMzQtMjAuOTkydjI3LjM1YzAgMS42OC43MiAyLjg3OSAyLjE2IDMuNzE4bDI5Ljk4OSAxNy4zOTMtOS44MzcgNS42MzhjLS44NC40OC0xLjU2LjQ4LTIuMzk5IDBabS0xLjMxOCAxOS42NzNjLTEzLjU1NSAwLTIzLjUxMi0xMC4xOTYtMjMuNTEyLTIyLjc5MiAwLS45NTkuMTItMS45MTkuMjQtMi44NzlsMjMuNjMgMTMuNjc1YzEuNDQuODQgMi44OC44NCA0LjMyIDBsMzAuMTA4LTE3LjM5MnYxMS4zOTVjMCAuOTYtLjM2MSAxLjY4LTEuMiAyLjE2bC0yMi45MTIgMTMuMTk0Yy0zLjExOSAxLjgtNi44MzcgMi42MzktMTAuNjc1IDIuNjM5Wm0yOS43NDggMTQuMjc0YzE0LjUxNSAwIDI2LjYzLTEwLjMxNiAyOS4zOS0yMy45OTEgMTMuNDM0LTMuNDc5IDIyLjA3MS0xNi4wNzQgMjIuMDcxLTI4LjkxIDAtOC4zOTYtMy41OTgtMTYuNTUzLTEwLjA3Ni0yMi40My42LTIuNTIuOTYtNS4wMzkuOTYtNy41NTcgMC0xNy4xNTMtMTMuOTE1LTI5Ljk5LTI5Ljk4OS0yOS45OS0zLjIzOSAwLTYuMzU4LjQ4LTkuNDc3IDEuNTYtNS4zOTgtNS4yNzgtMTIuODM1LTguNjM3LTIwLjk5Mi04LjYzNy0xNC41MTUgMC0yNi42MyAxMC4zMTYtMjkuMzkgMjMuOTkxLTEzLjQzNCAzLjQ4LTIyLjA3IDE2LjA3NC0yMi4wNyAyOC45MSAwIDguMzk2IDMuNTk4IDE2LjU1MyAxMC4wNzUgMjIuNDMxLS42IDIuNTE5LS45NiA1LjAzOC0uOTYgNy41NTYgMCAxNy4xNTQgMTMuOTE1IDI5Ljk4OSAyOS45OSAyOS45ODkgMy4yMzggMCA2LjM1Ny0uNDc5IDkuNDc2LTEuNTU5IDUuMzk3IDUuMjc4IDEyLjgzNSA4LjYzNyAyMC45OTIgOC42MzdaIgogICAgICAvPgogICAgPC9nPgogIDwvZz4KICA8ZGVmcz4KICAgIDxjbGlwUGF0aCBpZD0iYSI+CiAgICAgIDxwYXRoIGQ9Ik0wIDBoMTgwdjE4MEgweiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgICA8Y2xpcFBhdGggaWQ9ImIiPgogICAgICA8cGF0aCBkPSJNMjkuNDg3IDI5Ljk2NGgxMjEuMDM1djExOS45NTRIMjkuNDg3eiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgPC9kZWZzPgo8L3N2Zz4K',
+        qwen:'data:image/png;base64,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',
+        kimi:'data:image/png;base64,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',
+        glm:'data:image/png;base64,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',
+    });
     // 平台能力按官方文档确认；未知模型只分析文字，不按名称猜测视觉能力。
     const KEY_PROVIDER = 'cx_provider';
     const MODEL_PROVIDERS = Object.freeze([
-        {id:'deepseek',name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
+        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
             docs:'https://api-docs.deepseek.com/quick_start/pricing/',
             models:[{id:'deepseek-flash',name:'DeepSeek Flash',images:true,thinking:true},
                 {id:'deepseek-v4-pro',name:'DeepSeek V4 Pro',images:false,thinking:true}]},
-        {id:'openai',name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
+        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
             docs:'https://developers.openai.com/api/docs/models/gpt-4.1-mini',
             models:[{id:'gpt-4.1-mini',name:'GPT-4.1 mini',images:true,thinking:false},
                 {id:'gpt-4.1',name:'GPT-4.1',images:true,thinking:false}]},
-        {id:'qwen',name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
+        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
             docs:'https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions',
             models:[{id:'qwen-plus',name:'Qwen Plus',images:false,thinking:false},
                 {id:'qwen3-vl-plus',name:'Qwen3 VL Plus',images:true,thinking:false}]},
-        {id:'kimi',name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
+        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
             docs:'https://platform.kimi.com/docs/api/chat',
             models:[{id:'kimi-k2.6',name:'Kimi K2.6',images:true,thinking:false}]},
-        {id:'glm',name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
+        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
             docs:'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
             models:[{id:'glm-5.3',name:'GLM-5.3',images:false,thinking:true,thinkingRequired:true},
                 {id:'glm-5.3-flash',name:'GLM-5.3 Flash',images:true,thinking:false}]},
@@ -457,13 +466,16 @@
     }
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
         const platform=getModelProvider(provider),id=platform.id;
-        const key=String(readProviderSetting(id,'key','') ?? '').trim();
+        const savedKey=String(readProviderSetting(id,'key','') ?? '').trim();
         const model=String(readProviderSetting(id,'model',platform.models[0]?.id || '') ?? '').trim();
         let baseURL=platform.baseURL;
         if(id==='custom') {
             try {baseURL=normalizeModelBaseURL(readProviderSetting(id,'baseURL',''));}
             catch {baseURL='';}
         }
+        // 自定义地址可在页面中编辑；旧 Key 仅能用于脚本管理器菜单明确授权的同一基础地址。
+        const credentialNeedsApproval=id==='custom' && Boolean(savedKey) && (!baseURL || readProviderSetting(id,'keyBaseURL','')!==baseURL);
+        const key=credentialNeedsApproval ? '' : savedKey;
         const capabilities=providerModelCapabilities(id,model);
         const images=id==='custom' ? readProviderSetting(id,'images',false)===true || Boolean(baseURL && typeof verifiedModelImages==='function' && verifiedModelImages(id,model,baseURL)) : capabilities.images;
         const thinking=capabilities.thinkingRequired || capabilities.thinking && Boolean(readProviderSetting(id,'thinking',false));
@@ -474,7 +486,7 @@
         const infoModel=String(readProviderSetting(id,'infoModel',defaultInfoModel) || '').trim();
         const rawInterval=Number(readProviderSetting(id,'videoInfoIntervalSeconds',30));
         const videoInfoIntervalSeconds=Number.isFinite(rawInterval)?Math.min(300,Math.max(5,rawInterval)):30;
-        return {provider:id,baseURL,key,model,images,thinking,effort,search,infoModel,videoInfoIntervalSeconds,configured:Boolean(key && model && baseURL)};
+        return {provider:id,baseURL,key,model,images,thinking,effort,search,infoModel,videoInfoIntervalSeconds,credentialNeedsApproval,configured:Boolean(key && model && baseURL)};
     }
     function saveProviderSetting(field,value,provider = get(KEY_PROVIDER,'deepseek')) {
         const id=getModelProvider(provider).id;
@@ -489,7 +501,10 @@
         set(providerSettingKey(id,field),value);
     }
     function saveProviderKey(key,provider = get(KEY_PROVIDER,'deepseek')) {
-        set(providerSettingKey(provider,'key'),String(key ?? '').trim());
+        const id=getModelProvider(provider).id,value=String(key ?? '').trim();
+        const baseURL=id==='custom' && value ? normalizeModelBaseURL(readProviderSetting(id,'baseURL','')) : '';
+        if(id==='custom')set(providerSettingKey(id,'keyBaseURL'),baseURL);
+        set(providerSettingKey(id,'key'),value);
     }
     function endpointFingerprint(value) {
         // 配置相等判断使用固定长度指纹，运行报告不保存 API 地址。
@@ -619,6 +634,93 @@
         catch {throw new Error('AI 返回内容不是合法 JSON');}
         return {parsed,usage:response.usage || null};
     }
+    // Key 编辑只从脚本管理器菜单进入，浏览器原生对话框不会把输入放入课程页面 DOM。
+    // @sandbox DOM 优先使用扩展隔离环境；不使用 unsafeWindow 或网页事件接收凭据。
+    const credentialPrompt = window.prompt.bind(window);
+    const credentialConfirm = window.confirm.bind(window);
+    const credentialAlert = window.alert.bind(window);
+    let credentialMenusRegistered = false;
+    let credentialMenuSuffix = '';
+    const credentialValueListeners = [];
+
+    function credentialSettingsBusy() {
+        return Boolean(controller?.state.busy || courseRunActive());
+    }
+    function reportCredentialSettings(message) {
+        if (controller) controller.report(message);
+        else credentialAlert(message);
+    }
+    function refreshCredentialStatus(provider, cleared = false) {
+        if (!controller || readModelConfiguration().provider !== provider) return;
+        if (cleared) controller.last = null;
+        if (!controller.state.busy && !courseRunActive()) renderModelSettings(controller);
+        renderRunState(controller.state);
+    }
+    function chooseCredentialProvider(action) {
+        const list = MODEL_PROVIDERS.map((provider,index) => `${index + 1}. ${provider.name}`).join('\n');
+        const choice = credentialPrompt(`${action} API Key：输入平台编号\n${list}`, '');
+        if (choice === null) return null;
+        const number = String(choice).trim();
+        if (!/^[1-6]$/.test(number) || !MODEL_PROVIDERS[Number(number) - 1]) {
+            reportCredentialSettings('平台编号无效，API Key 未修改');
+            return null;
+        }
+        return MODEL_PROVIDERS[Number(number) - 1];
+    }
+    function editCredentialFromMenu(clear = false) {
+        if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，请停止任务后再修改 API Key');
+        const provider = chooseCredentialProvider(clear ? '清除' : '设置 / 替换');
+        if (!provider) return;
+        if (clear) {
+            if (!credentialConfirm(`清除 ${provider.name} 已保存的 API Key？`)) return;
+            if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，API Key 未修改');
+            saveProviderKey('', provider.id);
+            refreshCredentialStatus(provider.id, true);
+            reportCredentialSettings(`${provider.name} Key 已清除`);
+            return;
+        }
+        const baseURL=readProviderConfiguration(provider.id).baseURL;
+        if (!baseURL) return reportCredentialSettings('请先在模型设置中保存有效的自定义接口地址，再从菜单设置 API Key');
+        const input = credentialPrompt(`输入 ${provider.name} API Key（不回显已保存的 Key）\n授权的 API 地址：${baseURL}\n此浏览器对话框输入可见，请注意周围环境。取消保留原配置。`, '');
+        if (input === null) return;
+        const key = String(input).trim();
+        if (!key) return reportCredentialSettings('API Key 为空，原配置已保留');
+        if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，API Key 未修改');
+        if (readProviderConfiguration(provider.id).baseURL!==baseURL) return reportCredentialSettings('API 地址已变化，API Key 未修改；请重新从菜单配置');
+        saveProviderKey(key, provider.id);
+        refreshCredentialStatus(provider.id);
+        reportCredentialSettings(`${provider.name} Key 已保存`);
+    }
+    function initCredentialValueListeners() {
+        if (credentialValueListeners.length || typeof GM_addValueChangeListener !== 'function') return;
+        for (const provider of MODEL_PROVIDERS) {
+            const listener = GM_addValueChangeListener(providerSettingKey(provider.id, 'key'), (_name, _old, value) => {
+                refreshCredentialStatus(provider.id, !value);
+            });
+            credentialValueListeners.push(listener);
+        }
+    }
+    function initCredentialSettingsMenu() {
+        initCredentialValueListeners();
+        if (credentialMenusRegistered || typeof GM_registerMenuCommand !== 'function') return;
+        if (window !== window.top) {
+            if (!hasQuestionNodes(document)) return;
+            // 顶层页面可能不匹配脚本。每份题目文档用独立名称，避免篡改猴合并菜单后重复弹出输入。
+            if (!credentialMenuSuffix) {
+                const frameId = [...crypto.getRandomValues(new Uint8Array(4))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+                credentialMenuSuffix = `（题目页 ${frameId}）`;
+            }
+        }
+        GM_registerMenuCommand(`设置 / 替换模型 API Key${credentialMenuSuffix}`, () => editCredentialFromMenu(false));
+        GM_registerMenuCommand(`清除模型 API Key${credentialMenuSuffix}`, () => editCredentialFromMenu(true));
+        credentialMenusRegistered = true;
+    }
+    window.addEventListener('pagehide', () => {
+        if (typeof GM_removeValueChangeListener !== 'function') return;
+        for (const listener of credentialValueListeners) GM_removeValueChangeListener(listener);
+        credentialValueListeners.length = 0;
+    });
+    window.addEventListener('pageshow', initCredentialValueListeners);
     // 未知型号只通过用户主动发起的图片实测确认，不根据模型名称或未经确认的列表字段推测。
     const KEY_MODEL_IMAGE_CAPABILITIES='cx_model_image_capabilities';
     const MODEL_IMAGE_CAPABILITY_CACHE_LIMIT=200;
@@ -1876,7 +1978,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.11');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.12');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -1943,6 +2045,8 @@
                 if (/验证码|人机验证/.test(text)) return '出现验证码，自动流程已停止';
                 if (/尚未解锁|未解锁|无权访问|访问受限/.test(text)) return '章节未解锁或访问受限';
                 if (/登录已过期|重新登录/.test(text)) return '登录状态已失效，请重新登录';
+                if (/异常学习|学习行为异常|异常学习行为|检测到异常|操作(?:过于)?频繁|请求(?:过于)?频繁|账号(?:已)?(?:被)?(?:受限|限制|封禁|冻结)|账户(?:已)?(?:被)?(?:受限|限制|封禁|冻结)/.test(text))
+                    return '平台提示学习或账号异常，自动流程已停止，请人工检查';
             }
         }
         return null;
@@ -2192,6 +2296,18 @@
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3 });
     let courseRunner;
+    // 仅脚本闭包持有命令入口；页面事件只传递状态，不授予操作权限。
+    const assistantConfirm = window.confirm.bind(window);
+    const assistantEventPath = Event.prototype.composedPath;
+    const assistantEventCurrentTarget = Object.getOwnPropertyDescriptor(Event.prototype,'currentTarget').get;
+    const assistantEventType = Object.getOwnPropertyDescriptor(Event.prototype,'type').get;
+    function trustedAssistantActivation(event, expectedControl, expectedType='click') {
+        /* TRUSTED_ASSISTANT_ACTIVATION */
+        try { return Boolean(expectedControl && event.isTrusted===true && assistantEventCurrentTarget.call(event)===expectedControl
+            && assistantEventType.call(event)===expectedType && assistantEventPath.call(event).includes(expectedControl)); } catch { return false; }
+    }
+    const courseRunnerControllers = new WeakMap();
+    function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
     function courseLearningSettings(value={}) {
         const minutes=(raw,min,max,fallback)=>{const n=Number(raw);return Number.isInteger(n)&&n>=min&&n<=max?n:fallback;};
         return {restEnabled:value.restEnabled===true,studyMinutes:minutes(value.studyMinutes,10,180,50),restMinutes:minutes(value.restMinutes,1,60,10)};
@@ -2404,11 +2520,11 @@
         const api = { owner, key, get busy() { return Boolean(current && !current.cancelled); },
             get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
             get canRetry() { return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
-            retryIncomplete(token) {
+            retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
                 const candidate=courseRetryCandidate(owner,key?get(key,null):null);
                 if(!candidate.allowed || token!==undefined&&token!==candidate.token){ctl.report(candidate.allowed?'运行记录已变化，请重新确认重试':candidate.reason,'error');return;}
-                return api.start({retry:true,retryToken:candidate.token,...readCourseLearningSettings()});
+                return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
             get report() { return current?.report || (key ? get(key,null)?.report : null); },
             stop(reason = '用户停止自动学习') {
@@ -2426,7 +2542,7 @@
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = true, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (!scope || studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -2439,7 +2555,7 @@
                 if(retry) {
                     retryCandidate=courseRetryCandidate(owner,previous);
                     if(!retryCandidate.allowed||retryCandidate.token!==retryToken){ctl.report(retryCandidate.allowed?'运行记录已变化，请重新确认重试':retryCandidate.reason,'error');return;}
-                    submit=get('cx_course_auto_submit',true)===true;skipLearned=get('cx_course_skip_learned',true)===true;
+                    skipLearned=get('cx_course_skip_learned',true)===true;
                     skipUnanswerable=get('cx_course_skip_unanswerable',false)===true;
                     continueOnTimeout=get('cx_course_timeout_next',true)===true;muteVideo=get('cx_course_mute_video',true)===true;fromCurrent=false;
                 }
@@ -2476,7 +2592,7 @@
                 report.protection=protection;
                 const run = {id:crypto.randomUUID(),queue,report,settings,protection,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
-                    previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? previous.submit : submit,
+                    previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? false : submit===true,
                     learning,pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
                     skipLearned:resume ? previous.skipLearned!==false : skipLearned!==false,
                     continueOnTimeout:resume ? previous.continueOnTimeout!==false : continueOnTimeout!==false,
@@ -2589,9 +2705,16 @@
                         if ((run.skipLearned||run.retrying) && courseTaskComplete(video) === true) {task.status='already';return;}
                         video.muted=run.muteVideo;
                         task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;task.rollbackCount=0;
-                        let lastPlay=-Infinity,wakeMedia=null,pendingSeek=null,fatalError=null,replay=null;
-                        let excludedForegroundMs=0,foregroundWaitingStartedAt=null;
-                        const videoBudgetNow=()=>{const at=now();return at-excludedForegroundMs-(foregroundWaitingStartedAt===null?0:Math.max(0,at-foregroundWaitingStartedAt));};
+                        let wakeMedia=null,pendingSeek=null,fatalError=null,replay=null;
+                        let excludedWaitMs=0,waitingStartedAt=null,foregroundWaitingStartedAt=null,manualWaitingStartedAt=null;
+                        let foregroundPausePending=false,policyPauseExpected=false,unknownPausePending=false;
+                        const syncVideoWaitBudget=()=>{
+                            const waiting=foregroundWaitingStartedAt!==null||manualWaitingStartedAt!==null;
+                            if(waiting&&waitingStartedAt===null)waitingStartedAt=now();
+                            else if(!waiting&&waitingStartedAt!==null){excludedWaitMs+=Math.max(0,now()-waitingStartedAt);waitingStartedAt=null;}
+                        };
+                        const videoBudgetNow=()=>{const at=now();return at-excludedWaitMs-(waitingStartedAt===null?0:Math.max(0,at-waitingStartedAt));};
+                        task.pauseState={waiting:false,waitCount:0,waitMs:0,reason:null};
                         task.foregroundState={required:false,evidence:null,waitCount:0,waitMs:0,waiting:false};
                         const playbackRate=()=>{const rate=Number(video.playbackRate);return Number.isFinite(rate)&&rate>0?rate:1;};
                         // 被动记录公开媒体事件；不修改播放器回调、页面可见性或平台上报。
@@ -2701,12 +2824,13 @@
                         const onMediaEvent=event=>{
                             if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
                             const state=snapshot(event.type);observe(state);
-                            if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused)video.pause();
+                            if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
                             // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
                             if(event.type==='timeupdate'){wakeMedia?.();return;}
                             task.playbackState=state;
-                            if(event.type==='pause'){task.pauseCount++;task.lastPause=state;}
+                            if(event.type==='pause'){task.pauseCount++;task.lastPause=state;if(!policyPauseExpected)unknownPausePending=true;policyPauseExpected=false;}
+                            if(event.type==='playing'&&!video.paused)unknownPausePending=false;
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
                             wakeMedia?.();
                         };
@@ -2723,18 +2847,18 @@
                             if(!task.foregroundState.required || state.visible&&state.focused)return false;
                             if(foregroundWaitingStartedAt===null){
                                 foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
-                                pausePacing();
+                                syncVideoWaitBudget();pausePacing();
                             }
-                            if(!video.paused&&!video.ended)video.pause();
+                            if(!video.paused&&!video.ended){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             return true;
                         };
                         const onForegroundChange=()=>{if(!run.cancelled&&!context.skipped){enterForegroundWait();wakeMedia?.();}};
                         const finishForegroundWait=()=>{
                             if(foregroundWaitingStartedAt===null)return;
                             const elapsed=Math.max(0,now()-foregroundWaitingStartedAt);
-                            excludedForegroundMs+=elapsed;task.foregroundState.waitMs+=elapsed;task.foregroundState.waiting=false;foregroundWaitingStartedAt=null;
+                            task.foregroundState.waitMs+=elapsed;task.foregroundState.waiting=false;foregroundWaitingStartedAt=null;syncVideoWaitBudget();
                             if(pendingSeek)pendingSeek.stableSince=null;
-                            resumePacing();
+                            if(manualWaitingStartedAt===null)resumePacing();
                         };
                         const waitForVideoForeground=async()=>{
                             try {
@@ -2745,6 +2869,25 @@
                                     await waitForMedia();
                                 }
                             } finally {finishForegroundWait();}
+                        };
+                        const waitForManualPlayback=async()=>{
+                            if(manualWaitingStartedAt===null){
+                                manualWaitingStartedAt=now();task.pauseState.waitCount++;task.pauseState.waiting=true;
+                                task.pauseState.reason='暂停来源未确认，请手动播放后继续';syncVideoWaitBudget();pausePacing();
+                            }
+                            try {
+                                while(video.paused&&!video.ended){
+                                    guard();await waitForVideoForeground();
+                                    if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
+                                    if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
+                                    emit('视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
+                                }
+                                unknownPausePending=false;foregroundPausePending=false;
+                            } finally {
+                                if(manualWaitingStartedAt!==null)task.pauseState.waitMs+=Math.max(0,now()-manualWaitingStartedAt);
+                                manualWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
+                                if(foregroundWaitingStartedAt===null)resumePacing();
+                            }
                         };
                         const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked','canplay','loadeddata','ratechange'];
                         for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
@@ -2765,7 +2908,6 @@
                                 guard();
                                 await waitForVideoForeground();
                                 if(recovery && task.unstableResumes>=limits.maxResumes)throw new Error('视频连续恢复后仍反复暂停，请检查播放器或页面提示');
-                                lastPlay=videoBudgetNow();
                                 try {
                                     video.muted=run.muteVideo;
                                     const button=courseVideoStartButton(video);
@@ -2792,6 +2934,7 @@
                                 }
                             };
                             if(video.paused)await startPlayback();
+                            if(video.paused&&!video.ended&&unknownPausePending)await waitForManualPlayback();
                             emit('已启动视频，正在读取时长…','course-video');
                             await videoUntil(()=>Number.isFinite(video.duration)&&video.duration>0,'视频时长无法读取或仍在加载');
                             task.durationSeconds=Number(video.duration);lastMotionAt=videoBudgetNow();
@@ -2803,13 +2946,18 @@
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
+                                if(!video.ended&&video.paused){
+                                    if(foregroundPausePending&&!unknownPausePending){foregroundPausePending=false;await startPlayback(true);}
+                                    else await waitForManualPlayback();
+                                    continue;
+                                }
+                                foregroundPausePending=false;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){await waitForMedia();continue;}
                                 if(video.ended){recordReplay(currentSample,'ended');break;}
                                 if(replay&&currentSample.budgetAt>=replay.deadline){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
-                                if(!video.ended&&video.paused && videoBudgetNow()-lastPlay>=limits.resumeMs)await startPlayback(true);
                                 // 定位位移不刷新停滞时间。先给一次普通媒体采样机会，随后必检原停滞计时；
                                 // 连续定位也不能反复续期，只有等待期间的真实普通播放进展能避免超时。
                                 if(wasPending&&!video.ended){
@@ -3240,8 +3388,7 @@
             } catch(error) {ctl.report(error.message,'error');}
             finally {starting=false;}
         };
-        owner.addEventListener('cx-ai-course-stop',()=>api.stop());
-        owner.addEventListener('cx-ai-course-skip',()=>api.skip());
+        courseRunnerControllers.set(owner,api);
         return api;
     }
     function initCourseRunControls(doc, ctl) {
@@ -3275,10 +3422,20 @@
             s.getElementById('course-learning-message').textContent=cfg[field]!==value?'请输入范围内的整数，已恢复默认值。':'学习设置已保存';
             set(key,cfg[field]);renderLearningFields();
         };
-        for(const [control,key,fallback] of [[autoSubmit,'cx_course_auto_submit',true],[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false]]) {
+        for(const [control,key,fallback] of [[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false]]) {
             control.checked=get(key,fallback)===true;
             control.onchange=()=>set(key,control.checked);
         }
+        // 自动提交权限仅属于本次明确选择，不从旧设置或网页修改恢复。
+        let submitAuthorized=false;autoSubmit.checked=false;
+        autoSubmit.onchange=event=>{
+            if(!trustedAssistantActivation(event,autoSubmit,'change') || !courseRunController(owner)||courseRunActive(doc)||ctl.state.busy){autoSubmit.checked=submitAuthorized;return;}
+            const enabling=autoSubmit.checked===true;
+            submitAuthorized=enabling&&assistantConfirm('本次运行会自动提交章节测验，AI 答案可能错误。是否允许本次运行自动提交？')===true;
+            if(courseRunActive(doc)||ctl.state.busy)submitAuthorized=false;
+            autoSubmit.checked=submitAuthorized;
+        };
+        const takeSubmitPermission=()=>{const allowed=submitAuthorized;submitAuthorized=false;autoSubmit.checked=false;return allowed;};
         skipUnanswerable.onchange=()=>{
             if(courseRunActive(doc)||ctl.state.busy){skipUnanswerable.checked=get('cx_course_skip_unanswerable',false)===true;return;}
             set('cx_course_skip_unanswerable',skipUnanswerable.checked);render();
@@ -3289,17 +3446,19 @@
         const clearRetryConfirmation=()=>{retryToken=null;retryConfirm.hidden=true;retryMessage.textContent='';};
         panelView.clearRetryConfirmation=clearRetryConfirmation;
         const retryCandidate=()=>owner&&courseScoreKey(owner)?courseRetryCandidate(owner,get(`cx_course_run:${courseScoreKey(owner)}`,null)):{allowed:false,reason:'仅课程学习页面支持重试'};
-        retryButton.onclick=()=>{
+        retryButton.onclick=event=>{
+            if(!trustedAssistantActivation(event,retryButton) || !courseRunController(owner))return;
             const candidate=retryCandidate();
             if(ctl.state.busy||!candidate.allowed){clearRetryConfirmation();return;}
             retryToken=candidate.token;retryConfirm.hidden=false;
             retryMessage.textContent=`将按原顺序重试 ${candidate.queue.length} 个待处理章节：${candidate.queue[0].number} ${candidate.queue[0].title} 起。请检查页面与设置后确认。`;
         };
         s.getElementById('course-retry-cancel').onclick=clearRetryConfirmation;
-        s.getElementById('course-retry-accept').onclick=()=>{
+        s.getElementById('course-retry-accept').onclick=event=>{
+            if(!trustedAssistantActivation(event,s.getElementById('course-retry-accept')) || !courseRunController(owner))return;
             const token=retryToken,candidate=retryCandidate();clearRetryConfirmation();
             if(token===null||ctl.state.busy||!candidate.allowed||candidate.token!==token){ctl.report(candidate.reason||'运行记录已变化，请重新确认重试','error');return;}
-            owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-course-retry',{detail:{token}}));
+            courseRunController(owner)?.retryIncomplete(token,{submit:takeSubmitPermission()});
         };
         s.getElementById('close').addEventListener('click',clearRetryConfirmation);
         const renderPending=report=>{
@@ -3313,7 +3472,7 @@
             }
             const protection=report?.protection;
             s.getElementById('course-protection-status').textContent=protection?.triggered?report.reason:protection?.consecutiveFailures?`连续超时 ${protection.consecutiveFailures}/${protection.limit}`:'';
-            const candidate=retryCandidate();retryButton.disabled=ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
+            const candidate=retryCandidate();retryButton.disabled=!courseRunController(owner)||ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
             retryButton.title=candidate.allowed?'按原队列顺序重试待处理章节':candidate.reason;
             if(retryToken && (ctl.state.busy||!candidate.allowed||candidate.token!==retryToken))clearRetryConfirmation();
         };
@@ -3331,32 +3490,35 @@
             progress.max=valid?duration:1;progress.value=valid?Math.max(0,Math.min(duration,elapsed)):0;
             progress.setAttribute('aria-valuetext',valid?`${Math.floor(progress.value)} / ${Math.floor(duration)} 秒`:'无正在播放的视频');
             s.getElementById('video-progress-text').textContent=valid?`${Math.floor(progress.value/duration*100)}%`:'';
-            s.getElementById('course-start').disabled=!owner||running||ctl.state.busy;
-            s.getElementById('course-stop').disabled=!running;
-            s.getElementById('course-skip').disabled=running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner);
-            s.getElementById('course-auto-submit').disabled=running||ctl.state.busy;
+            const hasCommands=Boolean(courseRunController(owner));
+            s.getElementById('course-start').disabled=!hasCommands||running||ctl.state.busy;
+            s.getElementById('course-stop').disabled=!hasCommands||!running;
+            s.getElementById('course-skip').disabled=!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner));
+            s.getElementById('course-auto-submit').disabled=!hasCommands||running||ctl.state.busy;
             skipLearned.disabled=running||ctl.state.busy;
             fromCurrent.disabled=running||ctl.state.busy;
             timeoutNext.disabled=running||ctl.state.busy;
             muteVideo.disabled=running||ctl.state.busy;
             skipUnanswerable.disabled=running||ctl.state.busy;
             for(const control of [restEnabled,studyMinutes,restMinutes])control.disabled=running||ctl.state.busy;
-            s.getElementById('course-run-note').textContent=owner?(skipUnanswerable.checked?'自动播放视频、阅读资料；无法自动答题的测验保留答案、不提交并继续，仍需人工完成。遇到验证或运行异常时沿用原保护规则。':'自动播放视频、阅读资料、完成章节测验；遇到人脸识别或无法可靠作答时停止。'):'仅课程学习页面支持；独立作业页无法刷课。';
+            s.getElementById('course-run-note').textContent=owner&&!hasCommands?'请通过课程主页面的学习通AI助手操作自动学习。':owner?(skipUnanswerable.checked?'自动播放视频、阅读资料；无法自动答题的测验保留答案、不提交并继续，仍需人工完成。遇到验证或运行异常时沿用原保护规则。':'自动播放视频、阅读资料、完成章节测验；遇到人脸识别或无法可靠作答时停止。'):'仅课程学习页面支持；独立作业页无法刷课。';
             s.getElementById('course-report').textContent=courseReportText(report);
         };
         panelView.renderCourseRunControls=render;
         if(owner===doc) {
             courseRunner=createCourseRunner(owner,ctl);
-            owner.addEventListener('cx-ai-course-retry',event=>{if(typeof event.detail?.token==='string')courseRunner?.retryIncomplete(event.detail.token);});
-            owner.addEventListener('cx-ai-course-start',event=>courseRunner?.start({submit:event.detail?.submit!==false,skipLearned:event.detail?.skipLearned!==false,fromCurrent:event.detail?.fromCurrent===true,continueOnTimeout:event.detail?.continueOnTimeout!==false,muteVideo:event.detail?.muteVideo!==false,skipUnanswerable:event.detail?.skipUnanswerable===true,...readCourseLearningSettings()}));
         }
-        s.getElementById('course-start').onclick=()=>owner?.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-course-start',{detail:{submit:s.getElementById('course-auto-submit').checked,skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked}}));
-        s.getElementById('course-skip').onclick=()=>owner?.dispatchEvent(new owner.defaultView.Event('cx-ai-course-skip'));
-        stopButton.onclick=()=>{
+        s.getElementById('course-start').onclick=event=>{
+            if(!trustedAssistantActivation(event,s.getElementById('course-start')) || !courseRunController(owner))return;
+            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,...readCourseLearningSettings()});
+        };
+        s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
+        stopButton.onclick=event=>{
+            if(!trustedAssistantActivation(event,stopButton) || !courseRunController(owner))return;
             const runId=owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id');
             if(!runId){clearStopConfirmation();return;}
             if(stopRunId===runId && Date.now()<stopUntil){
-                clearStopConfirmation();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-stop'));return;
+                clearStopConfirmation();courseRunController(owner)?.stop();return;
             }
             clearStopConfirmation();stopRunId=runId;stopUntil=Date.now()+5000;
             updateStopCountdown();stopButton.classList.add('stop-confirm');
@@ -3394,6 +3556,139 @@
         doc.defaultView.addEventListener('pagehide',disconnect,{once:true});
         render();
         if(owner===doc) courseRunner?.resumeIfNeeded();
+    }
+    // 原生 select 仍负责值、禁用状态与 change 通知；可见列表使用官方标识。
+    const brandedModelPickers = new WeakMap();
+    function refreshBrandedModelPickers(shadow) {
+        const provider = getModelProvider(shadow.getElementById('provider').value);
+        for (const id of ['provider', 'model', 'info-model']) {
+            const select = shadow.getElementById(id);
+            let picker = brandedModelPickers.get(select);
+            if (!picker) {
+                picker = createBrandedModelPicker(select, shadow);
+                brandedModelPickers.set(select, picker);
+            }
+            picker.refresh(provider);
+        }
+    }
+    function createBrandedModelPicker(select, shadow) {
+        const doc = select.ownerDocument, id = select.id;
+        const label = shadow.querySelector(`label[for="${id}"]`);
+        const wrapper = doc.createElement('div'); wrapper.className = 'model-picker';
+        const button = doc.createElement('button'); button.type = 'button'; button.id = `${id}-picker`;
+        button.className = 'model-picker-trigger'; button.setAttribute('role', 'combobox');
+        button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-expanded', 'false');
+        button.setAttribute('aria-controls', `${id}-listbox`);
+        const value = doc.createElement('span'); value.id = `${id}-picker-value`; value.className = 'model-picker-value';
+        const arrow = doc.createElement('span'); arrow.textContent = '⌄'; arrow.setAttribute('aria-hidden', 'true');
+        button.append(value, arrow);
+        if (label) {
+            label.id ||= `${id}-picker-label`; label.htmlFor = button.id;
+            button.setAttribute('aria-labelledby', `${label.id} ${value.id}`);
+        } else button.setAttribute('aria-label', select.getAttribute('aria-label') || '选择模型');
+        const list = doc.createElement('div'); list.id = `${id}-listbox`; list.className = 'model-picker-list';
+        list.hidden = true; list.setAttribute('role', 'listbox');
+        if (label) list.setAttribute('aria-labelledby', label.id);
+        select.before(wrapper); wrapper.append(select, button, list); select.hidden = true;
+        let entries = [], active = -1, provider = getModelProvider(), prefix = '', prefixTime = 0;
+        const opened = () => !list.hidden;
+        const close = () => {
+            list.hidden = true; button.setAttribute('aria-expanded', 'false');
+            button.removeAttribute('aria-activedescendant'); prefix = '';
+        };
+        const paintActive = () => {
+            for (let index = 0; index < entries.length; index++) {
+                const row = list.children[index], selected = entries[index].value === select.value;
+                row.setAttribute('aria-selected', String(selected)); row.classList.toggle('is-active', index === active);
+            }
+            if (opened() && entries[active]) {
+                button.setAttribute('aria-activedescendant', list.children[active].id);
+                list.children[active].scrollIntoView?.({block:'nearest'});
+            }
+        };
+        const available = () => entries.map((entry,index) => entry.disabled ? -1 : index).filter(index => index >= 0);
+        const open = () => {
+            if (select.disabled || !available().length) return;
+            // 一个面板内同时只展开一个模型列表。
+            for (const other of shadow.querySelectorAll('.model-picker-trigger[aria-expanded="true"]')) {
+                if (other !== button) other.dispatchEvent(new doc.defaultView.Event('model-picker-close'));
+            }
+            list.hidden = false; button.setAttribute('aria-expanded', 'true');
+            active = entries.findIndex(entry => entry.value === select.value && !entry.disabled);
+            if (active < 0) active = available()[0];
+            paintActive();
+        };
+        const commit = () => {
+            const entry = entries[active];
+            if (select.disabled || !entry || entry.disabled) return;
+            const changed = select.value !== entry.value;
+            select.value = entry.value; close();
+            if (changed) select.dispatchEvent(new doc.defaultView.Event('change', {bubbles:true}));
+            refresh(provider); button.focus();
+        };
+        const move = step => {
+            const indices = available(), location = indices.indexOf(active);
+            active = indices[Math.min(indices.length-1, Math.max(0, location + step))]; paintActive();
+        };
+        const content = (node, entry) => {
+            node.replaceChildren();
+            const platform = id === 'provider' ? getModelProvider(entry.value) : provider;
+            if (platform.id !== 'custom' && platform.logo && entry.value) {
+                const image = doc.createElement('img'); image.className = 'provider-logo';
+                image.src = platform.logo; image.alt = ''; image.setAttribute('aria-hidden','true');
+                image.width = 24; image.height = 24; image.draggable = false; node.append(image);
+            }
+            const text = doc.createElement('span'); text.className = 'model-picker-text'; text.textContent = entry.label;
+            node.append(text);
+        };
+        function refresh(currentProvider = provider) {
+            provider = currentProvider;
+            entries = [...select.options].filter(option => !option.hidden).map(option => ({
+                value:option.value, label:option.label || option.textContent, disabled:option.disabled
+            }));
+            list.replaceChildren();
+            for (const [index, entry] of entries.entries()) {
+                const row = doc.createElement('div'); row.id = `${id}-option-${index}`;
+                row.className = 'model-picker-option'; row.setAttribute('role', 'option');
+                row.setAttribute('aria-disabled', String(entry.disabled)); content(row,entry);
+                row.addEventListener('pointerdown', event => event.preventDefault());
+                row.addEventListener('pointermove', () => {if (!entry.disabled) {active = index; paintActive();}});
+                row.addEventListener('click', () => {active = index; commit();}); list.append(row);
+            }
+            content(value, entries.find(entry => entry.value === select.value) || {value:'',label:'请选择模型'});
+            button.disabled = select.disabled;
+            if (select.disabled) close();
+            if (active >= entries.length) active = entries.length - 1;
+            paintActive();
+        }
+        button.addEventListener('model-picker-close', close);
+        button.addEventListener('click', () => opened() ? close() : open());
+        button.addEventListener('keydown', event => {
+            if (select.disabled) return;
+            if (['ArrowDown','ArrowUp','Home','End','Enter',' '].includes(event.key)) {
+                event.preventDefault(); event.stopPropagation();
+                if (!opened()) {open(); if (event.key === 'Home') active = available()[0]; else if (event.key === 'End') active = available().at(-1); paintActive();}
+                else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') move(event.key === 'ArrowDown' ? 1 : -1);
+                else if (event.key === 'Home' || event.key === 'End') {active = event.key === 'Home' ? available()[0] : available().at(-1); paintActive();}
+                else commit();
+            } else if (event.key === 'Escape' && opened()) {event.preventDefault(); event.stopPropagation(); close();}
+            else if (event.key === 'Tab') close();
+            else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                if (!opened()) open();
+                const now = Date.now(); prefix = now - prefixTime > 700 ? event.key : prefix + event.key; prefixTime = now;
+                const found = entries.findIndex(entry => !entry.disabled && entry.label.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase()));
+                if (found >= 0) {active = found; paintActive();}
+            }
+        });
+        button.addEventListener('blur', event => {if (!wrapper.contains(event.relatedTarget)) close();});
+        select.addEventListener('change', () => refresh(getModelProvider(shadow.getElementById('provider').value)));
+        const outside = event => {if (!event.composedPath().includes(wrapper)) close();};
+        doc.addEventListener('pointerdown', outside);
+        const observer = new doc.defaultView.MutationObserver(() => refresh(getModelProvider(shadow.getElementById('provider').value)));
+        observer.observe(select, {childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','label','hidden']});
+        doc.defaultView.addEventListener('pagehide', () => {observer.disconnect(); doc.removeEventListener('pointerdown',outside);}, {once:true});
+        return {refresh};
     }
     // 字体解密部分源自 wyn665817 的 MIT 脚本；改为文本节点转换和可重入模块。
     const fontCache = new Map();
@@ -3817,7 +4112,7 @@
         registerAssistantUiHost(host);
         placeQuizToolbar(doc, host, resolveToolbarTarget(doc));
         toolbarView = { host, shadow };
-        shadow.getElementById('generate').onclick = () => ctl.runAnswerFlow({ autoPrefill: true });
+        shadow.getElementById('generate').onclick = event => { if (trustedAssistantActivation(event, shadow.getElementById('generate'))) ctl.runAnswerFlow({ autoPrefill: true }); };
         shadow.getElementById('settings').hidden = Boolean(studyOwnerDocument(doc));
         shadow.getElementById('settings').onclick = () => ctl.togglePanel();
     }
@@ -3965,14 +4260,14 @@
         shadow.getElementById('info-model').disabled = busy || !cfg.videoInfoEnabled || cfg.provider === 'custom';
         shadow.getElementById('info-interval').disabled = busy || !cfg.videoInfoEnabled;
         shadow.getElementById('model-capability').textContent = label + (caps.thinkingRequired ? '；此模型始终开启深度思考。' : '。');
+        refreshBrandedModelPickers(shadow);
     }
     function renderModelSettings(ctl, fetchedModels = []) {
         if (!panelView) return;
         const shadow = panelView.shadow, cfg = readModelConfiguration(), provider = getModelProvider(cfg.provider);
         const el = id => shadow.getElementById(id), doc = panelView.host.ownerDocument;
         el('provider').value = cfg.provider;
-        el('ds-key').value = '';
-        el('ds-key').placeholder = cfg.key ? `${provider.name} Key 已保存；输入可替换` : `${provider.name} API Key`;
+        el('api-key-status').textContent = cfg.credentialNeedsApproval ? '自定义接口地址尚未授权，请从篡改猴菜单重新设置 API Key' : cfg.key ? `${provider.name} Key 已保存` : `${provider.name} 尚未配置 API Key`;
         el('preset-model-block').hidden = cfg.provider === 'custom';
         el('custom-model-block').hidden = cfg.provider !== 'custom';
         el('custom-base').value = readProviderSetting('custom', 'baseURL', '');
@@ -4014,6 +4309,7 @@
           .head{flex:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px 9px 16px;border-bottom:1px solid var(--line);background:#fbfcfe;cursor:grab;touch-action:none;user-select:none}.head strong{font-size:14px;letter-spacing:.1px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.head:active{cursor:grabbing}.head-actions{display:flex;align-items:center;gap:5px;flex:none}.head-actions button{padding:5px 9px;font-size:12px;min-height:28px}#github,#about-toggle,#minimize,#close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0}#about-toggle{border-radius:50%;font-weight:700;font-size:16px}#minimize svg,#close svg{width:16px;height:16px}#github svg{width:18px;height:18px}
           .panel-body{flex:1;display:grid;grid-template-columns:54px minmax(0,1fr);min-height:0;max-height:var(--content-height,none);overflow:hidden}.nav-rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0;background:#f7f9fc;border-right:1px solid var(--line)}.nav-button{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:8px;border-radius:7px;background:transparent;color:#78889d}.nav-model-bottom{margin-top:auto;flex-shrink:0}.nav-button svg{width:20px;height:20px;flex:none}.nav-button[aria-selected=true]{background:#e7effc;color:var(--accent)}.nav-button[aria-selected=true]::before{content:"";position:absolute;left:-9px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}.assistant-main{min-width:0;min-height:0;overflow:hidden}.view-page{height:100%;min-height:0;min-width:0;padding:18px;overflow:auto;overscroll-behavior:contain}.view-heading{flex:none;margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;gap:8px}.view-heading h2{font-size:17px;line-height:1.4;letter-spacing:.3px;margin:0;font-weight:700}.view-tag{font-size:11px;color:var(--muted);padding:2px 7px;background:#f3f6fa;border-radius:4px}
           .settings-block{border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:17px}.settings-block:last-child{border:0;margin:0}.field-caption{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{max-width:100%}.row>label{min-width:65px}input,select{background:#fff;color:var(--ink);border:1px solid #cbd5e3;border-radius:6px;padding:8px;min-width:0}input[type=password]{min-width:120px;flex:1;width:180px}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent);flex:none}.check-label{display:inline-flex;align-items:center;gap:7px}.row select{max-width:100%}.setting-label{font-size:13px;color:var(--muted)}
+          .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
           #view-chapters{overflow:hidden}#course-nav{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}.catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}.catalog-heading h2{font-size:17px;margin:0;line-height:1.4}#catalog-refresh{font-size:12px;padding:5px 9px}#catalog-search{flex:none;width:100%;min-width:0;font-size:13px;padding:8px 10px}#catalog-status{flex:none;font-size:12px;color:var(--muted);margin:10px 0}#catalog-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}#catalog-list,.catalog-children{list-style:none;margin:0;padding:0}.catalog-children{margin-left:10px;padding-left:9px;border-left:1px solid #e0e7f0}.catalog-row{display:flex;align-items:flex-start;gap:4px;border-radius:6px}.catalog-row.is-active{background:#edf3fc}.catalog-row.is-group{margin-top:8px}.catalog-link{min-width:0;flex:1;text-align:left;background:transparent;color:#263951;border-radius:6px;padding:8px 5px;font-size:13px;line-height:1.6}.catalog-link:hover{background:#f3f6fb}.catalog-link[aria-current=page] .catalog-title{color:var(--accent);font-weight:700}.is-group .catalog-title{font-weight:700}.catalog-title{display:block;overflow-wrap:anywhere}.catalog-meta{display:flex;gap:4px 9px;flex-wrap:wrap;margin-top:3px;font-size:11px;color:#758197}.catalog-state.is-complete{color:#268459}.catalog-score{color:#aa5725}.catalog-fold{flex:none;width:18px;height:25px;padding:0;margin-top:6px;background:transparent;color:#71809a}.catalog-fold-space{width:18px;flex:none}.catalog-empty{padding:14px 2px;font-size:13px;color:var(--muted)}
@@ -4029,7 +4325,7 @@
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.11</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.12</strong><div class="head-actions">
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
@@ -4051,15 +4347,16 @@
                 </div>
                 <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model">
                 <div class="settings-block"><div class="row"><label for="provider">平台</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="kimi">Kimi</option><option value="glm">智谱</option><option value="custom">自定义</option></select></div></div>
-                <div class="settings-block"><label class="field-caption" for="ds-key">API Key</label>
-                  <div class="row"><input id="ds-key" type="password" placeholder="DeepSeek API Key" autocomplete="off" /><button type="button" id="save-ds">保存</button><button type="button" id="clear-ds" class="secondary">清除</button></div>
+                <div class="settings-block"><p class="field-caption">API Key</p>
+                  <p id="api-key-status" class="note" role="status"></p>
+                  <p class="note">点击浏览器中的篡改猴图标，在本脚本菜单选择「设置 / 替换模型 API Key」或「清除模型 API Key」。</p>
                 </div>
                 <div class="settings-block" id="preset-model-block"><div class="row"><label for="model">模型</label><select id="model"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select><button type="button" id="models" class="secondary">获取模型列表</button></div></div>
                 <div class="settings-block" id="custom-model-block" hidden>
                   <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
                   <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
                   <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
-                  <p class="note">地址填写到 API 前缀；图片选项请按接口文档确认。</p>
+                  <p class="note">地址填写到 API 前缀；图片选项请按接口文档确认。自定义接口首次访问时，在篡改猴中仅授权该域名；若被拦截，请在本脚本设置的用户域名白名单中添加该域名。</p>
                 </div>
                 <p id="model-capability" class="note" role="status"></p>
                 <div class="row"><button type="button" id="detect-images" class="secondary">检测图片能力</button><button type="button" id="cancel-images" class="secondary" hidden>取消检测</button><span class="note">使用当前模型识别测试图片，消耗一次调用；通过后保存能力。</span></div>
@@ -4153,7 +4450,7 @@
         el('model-setup-open').onclick = () => {
             switchSettingsView('model');
             switchPanelView('model');
-            el(readModelConfiguration().key ? 'model' : 'ds-key').focus();
+            el('provider-picker').focus();
         };
         const setAboutVisible = visible => {
             el('about').hidden = !visible;
@@ -4203,19 +4500,8 @@
             set(KEY_PROVIDER, getModelProvider(el('provider').value).id);
             renderModelSettings(ctl); changedModelSettings();
         };
-        el('save-ds').onclick = () => {
-            if (ctl.state.busy || courseRunActive()) return;
-            const key = clean(el('ds-key').value);
-            if (!key) return ctl.report('请输入 API Key');
-            saveProviderKey(key); renderModelSettings(ctl);
-            ctl.report(readModelConfiguration().configured ? '模型配置已保存' : 'Key 已保存，请配置接口与模型');
-        };
-        el('clear-ds').onclick = () => {
-            if (ctl.state.busy || courseRunActive()) return;
-            saveProviderKey(''); renderModelSettings(ctl); ctl.last = null;
-            ctl.report(`${getModelProvider(readModelConfiguration().provider).name} Key 已清除`);
-        };
-        el('save-custom').onclick = () => {
+        el('save-custom').onclick = event => {
+            if (!trustedAssistantActivation(event, el('save-custom'))) return;
             if (ctl.state.busy || courseRunActive() || readModelConfiguration().provider !== 'custom') return;
             try {
                 const baseURL = normalizeModelBaseURL(el('custom-base').value), model = clean(el('custom-model').value);
@@ -4242,7 +4528,8 @@
             catch(error){renderModelSettings(ctl);ctl.report(error.message,'error');}
         };
         renderModelSettings(ctl);
-        el('detect-images').onclick=async()=>{
+        el('detect-images').onclick=async event=>{
+            if (!trustedAssistantActivation(event, el('detect-images'))) return;
             if(ctl.state.busy || courseRunActive())return;
             const cfg=readModelConfiguration();
             if(!cfg.configured)return ctl.report('请先保存当前平台的 Key、接口与模型','error');
@@ -4265,13 +4552,13 @@
                 if(abort.signal.aborted)ctl.report('图片能力检测已取消','idle');
             }
         };
-        el('cancel-images').onclick=()=>ctl.capabilityTest?.abort();
-        el('models').onclick = () => ctl.loadModels();
+        el('cancel-images').onclick=event=>{ if (trustedAssistantActivation(event, el('cancel-images'))) ctl.capabilityTest?.abort(); };
+        el('models').onclick = event => { if (trustedAssistantActivation(event, el('models'))) ctl.loadModels(); };
         el('extract').onclick = () => ctl.extractOnly();
-        el('solve').onclick = () => ctl.runAnswerFlow({ autoPrefill: false });
-        el('prefill').onclick = () => ctl.prefillLast();
-        el('analysis-stop').onclick = stopAnalysisTask;
-        el('analysis-resume').onclick = resumeAnalysisTask;
+        el('solve').onclick = event => { if (trustedAssistantActivation(event, el('solve'))) ctl.runAnswerFlow({ autoPrefill: false }); };
+        el('prefill').onclick = event => { if (trustedAssistantActivation(event, el('prefill'))) ctl.prefillLast(); };
+        el('analysis-stop').onclick = event => { if (trustedAssistantActivation(event, el('analysis-stop'))) stopAnalysisTask(); };
+        el('analysis-resume').onclick = event => { if (trustedAssistantActivation(event, el('analysis-resume'))) resumeAnalysisTask(); };
         el('copy').onclick = async () => {
             const text = formatResultText(ctl.result);
             if (!text) return ctl.report('尚无题目列表');
@@ -4561,7 +4848,7 @@
             launcher.dataset.phase = state.phase;
             launcher.setAttribute('aria-busy', String(busy));
             launcher.title = busy ? '任务运行中，点击恢复助手；拖动调整位置' : '恢复学习通AI助手；拖动调整位置';
-            for (const id of ['extract', 'solve', 'models', 'detect-images', 'save-ds', 'clear-ds', 'ds-key', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
+            for (const id of ['extract', 'solve', 'models', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
             s.getElementById('cancel-images').hidden=!controller?.capabilityTest;
             s.getElementById('cancel-images').disabled=controller?.capabilityTest?.signal.aborted===true;
             refreshModelCapabilities(s, busy);
@@ -4703,7 +4990,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.11',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.12',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -4932,6 +5219,7 @@
 
     function initQuizAssistant(doc = document) {
         if (!doc.body || !hasQuestionNodes(doc)) return;
+        initCredentialSettingsMenu();
         if (!controller) controller = createController();
         createAssistantPanel(doc, controller);
         mountQuizToolbar(doc, controller);
@@ -4962,8 +5250,9 @@
             host.style.cssText = 'display:flex;justify-content:flex-end;width:100%;max-width:100%;box-sizing:border-box;margin:8px 0 12px;clear:both';
             registerAssistantUiHost(host);
             const shadow = host.attachShadow({ mode: 'open' });
-            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
+            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button+button{margin-left:8px}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="course-controls">课程控制</button><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
             studyToolbarView = { host, shadow };
+            shadow.getElementById('course-controls').onclick = () => controller.openPanel('chapters');
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findQuizPanel(doc.querySelector('#mainid #iframe')?.contentDocument);
                 if (quizDoc) {
@@ -5002,6 +5291,7 @@
         refresh();
         window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
     }
+    initCredentialSettingsMenu();
     initCourseDocumentBridge();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();
