@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=path.join(__dirname,'..');
 const core=fs.readFileSync(path.join(root,'sources/assistant-core.js'),'utf8');
@@ -5,6 +6,7 @@ const source=core.slice(core.indexOf('    const ROOT_ID'))+
  fs.readFileSync(path.join(root,'sources/provider-logos.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/model-providers.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/question-media.js'),'utf8')+
+ fs.readFileSync(path.join(root,'sources/model-capability.js'),'utf8')+
  fs.readFileSync(path.join(root,'sources/course-video-info.js'),'utf8')+
  ';({captureCourseVideoFrame,createCourseVideoInfo,readProviderConfiguration})';
 const logs=[],failures=[];
@@ -13,7 +15,7 @@ async function until(test){for(let i=0;i<150;i++){if(test())return;await delay(2
 async function test(name,action){try{await action();logs.push('PASS '+name);}catch(error){failures.push({name,error:error.stack});}}
 function fixture(options={}) {
  const storage=new Map([['deepseek_api_key','mock-info-key'],['cx_model','deepseek-flash']]),requests=[],items=[],statuses=[];
- const context={URL,Blob,AbortController,console,setTimeout,clearTimeout,GM_getValue:(key,fallback)=>storage.has(key)?storage.get(key):fallback,
+ const context={URL,Blob,AbortController,console,setTimeout,clearTimeout,GM_getValue:withModelFixture((key,fallback)=>storage.has(key)?storage.get(key):fallback),
   GM_setValue:(key,value)=>storage.set(key,value),GM_xmlhttpRequest:request=>{
    const record={request,aborted:false};requests.push(record);return{abort(){record.aborted=true;request.onabort?.();}};
   }};
@@ -66,7 +68,7 @@ function fixture(options={}) {
   ['kimi','kimi-k2.6','kimi-k2.6','https://api.moonshot.cn/v1/chat/completions'],
   ['glm','glm-5.3','glm-5.3-flash','https://open.bigmodel.cn/api/paas/v4/chat/completions']
  ])await test(`${provider}识别只用同平台Key/已确认视觉模型，保留对应图片detail`,async()=>{
-  const f=fixture({settings:{provider,model:quizModel,key:'mock-'+provider}});try{f.at(0);f.at(5);const flush=f.controller.flush();await until(()=>f.requests.length===1);const record=f.requests[0],body=JSON.parse(record.request.data),image=body.messages[1].content.find(part=>part.type==='image_url');assert.equal(record.request.url,endpoint);assert.equal(record.request.headers.Authorization,'Bearer mock-'+provider);assert.equal(body.model,infoModel);assert.equal(body.thinking?.type,provider==='deepseek'||provider==='kimi'?'disabled':undefined);assert.equal(image.image_url.detail,provider==='deepseek'?'original':provider==='openai'?'high':undefined);assert.match(body.messages[0].content,/不执行/);assert(!JSON.stringify(f.controller.state).includes('mock-'+provider));f.respond();await flush;assert.equal(f.items[0].kind,'video-frame');}finally{f.close();}
+  const f=fixture({settings:{provider,model:quizModel,infoModel,key:'mock-'+provider}});try{f.at(0);f.at(5);const flush=f.controller.flush();await until(()=>f.requests.length===1);const record=f.requests[0],body=JSON.parse(record.request.data),image=body.messages[1].content.find(part=>part.type==='image_url');assert.equal(record.request.url,endpoint);assert.equal(record.request.headers.Authorization,'Bearer mock-'+provider);assert.equal(body.model,infoModel);assert.equal(body.thinking?.type,provider==='deepseek'?'disabled':undefined);assert.equal(image.image_url.detail,provider==='deepseek'?'original':provider==='openai'?'high':undefined);assert.match(body.messages[0].content,/不执行/);assert(!JSON.stringify(f.controller.state).includes('mock-'+provider));f.respond();await flush;assert.equal(f.items[0].kind,'video-frame');}finally{f.close();}
  });
  await test('自定义仅声明图片能力后启用，infoModel不能偷换自定义模型',async()=>{
   const off=fixture({settings:{provider:'custom',baseURL:'https://mock.example/v1',model:'custom',images:false}});try{off.at(0);off.at(5,{force:true});await off.controller.flush();assert.equal(off.requests.length,0);assert.equal(off.controller.state.enabled,false);}finally{off.close();}

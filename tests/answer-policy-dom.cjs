@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createRequire}=require('node:module'),{webcrypto}=require('node:crypto');
 const root=path.resolve(__dirname,'..');
@@ -19,7 +20,7 @@ function defaultReply(request){const d=input(request);jsonReply(request,d.task==
 function fixture(html,opts={}){
  const dom=new JSDOM(html,{url:'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,requests=[];
  const storage=new Map([['deepseek_api_key','mock-key'],['cx_model',opts.model||'deepseek-flash'],['cx_search',!!opts.search]]);
- w.GM_getValue=(k,v)=>storage.has(k)?storage.get(k):v;w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_getResourceText=()=>'{}';
+ w.GM_getValue=withModelFixture((k,v)=>storage.has(k)?storage.get(k):v);w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_getResourceText=()=>'{}';
  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
  w.Image=class{set src(v){if(v)queueMicrotask(()=>{this.naturalWidth=this.naturalHeight=1;this.onload?.();});}};
  const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===2000?5:ms,...args);
@@ -98,7 +99,7 @@ async function until(fn){for(let i=0;i<200;i++){if(fn())return;await delay(5);}t
   ['kimi','kimi-k2.6','https://api.moonshot.cn/v1/chat/completions'],
   ['glm','glm-5.3-flash','https://open.bigmodel.cn/api/paas/v4/chat/completions'],
   ['custom','text-model','https://gateway.example/v1/chat/completions']])await test('分类请求复用平台适配：'+provider,async()=>{
-  const f=fixture(text('q','解释概念'));try{const qs=f.api.extract().questions;const result=await f.api.classifyQuestionAnswerPolicies({provider,model,key:'mock-key',thinking:false,baseURL:'https://gateway.example/v1',courseContext:[{text:'不应进入分类的课程资料'}]},qs,new Map());assert.equal(result.get('q').status,'auto');assert.equal(f.requests[0].url,url);assert(!JSON.stringify(input(f.requests[0])).includes('courseContext'));const p=JSON.parse(f.requests[0].data);if(provider==='qwen')assert.equal(p.enable_thinking,false);if(provider==='openai')assert.equal(p.thinking,undefined);}finally{f.close();}
+  const f=fixture(text('q','解释概念'));try{const qs=f.api.extract().questions;const result=await f.api.classifyQuestionAnswerPolicies({provider,model,key:'mock-key',thinking:false,baseURL:'https://gateway.example/v1',courseContext:[{text:'不应进入分类的课程资料'}]},qs,new Map());assert.equal(result.get('q').status,'auto');assert.equal(f.requests[0].url,url);assert(!JSON.stringify(input(f.requests[0])).includes('courseContext'));const p=JSON.parse(f.requests[0].data);if(provider==='qwen')assert.equal(p.enable_thinking,undefined);if(provider==='openai')assert.equal(p.thinking,undefined);}finally{f.close();}
  });
  await test('新鲜作答要求阻止旧快照直接预填',async()=>{
   const f=fixture(choice('q'));try{const qs=f.api.extract().questions;f.d.querySelector('.stem').textContent='【单选题】请手写后拍照上传';const summary=await f.api.prefill(qs,[{id:'q',number:1,answer:['A'],answerPolicy:{status:'auto',reason:'旧的白名单'}}]);assert.equal(summary.skipped,1);assert(!f.d.querySelector('input:checked'));}finally{f.close();}

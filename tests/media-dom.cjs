@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const classificationRequests=[];
 const fs = require('node:fs');
@@ -18,7 +19,7 @@ async function test(name,run) {try {await run();logs.push(`PASS ${name}`);}catch
 function fixture(html, options={}) {
  const dom=new JSDOM(html,{url:options.url||'https://mooc1.chaoxing.com/mooc-ans/mooc2/work/view',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,requests=[],writes=[];
- w.GM_getValue=(key,fallback)=>({deepseek_api_key:'mock-key',cx_model:options.model||'deepseek-flash',cx_search:options.search||false}[key]??fallback);
+ w.GM_getValue=withModelFixture((key,fallback)=>({deepseek_api_key:'mock-key',cx_model:options.model||'deepseek-flash',cx_search:options.search||false}[key]??fallback));
  w.GM_setValue=(key,value)=>writes.push({key,value});w.GM_getResourceText=()=>'{}';
  w.GM_xmlhttpRequest=request=>{
     const policy=policyInput(request);if(policy){classificationRequests.push(request);queueMicrotask(()=>respondPolicy(request,policy));return {abort(){request.onabort?.();}};}

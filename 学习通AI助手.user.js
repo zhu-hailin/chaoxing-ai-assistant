@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.12
+// @version      1.13
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -28,6 +28,7 @@
 // @connect      dashscope.aliyuncs.com
 // @connect      api.moonshot.cn
 // @connect      open.bigmodel.cn
+// @connect      raw.githubusercontent.com
 // @connect      self
 // @connect      chaoxing.com
 // ==/UserScript==
@@ -37,6 +38,7 @@
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
+    const ASSISTANT_VERSION = '1.13';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -84,7 +86,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.12', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.13', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -406,45 +408,37 @@
         kimi:'data:image/png;base64,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',
         glm:'data:image/png;base64,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',
     });
-    // 平台能力按官方文档确认；未知模型只分析文字，不按名称猜测视觉能力。
+    // 只预置平台地址和标识；具体型号由接口返回或用户保存，不内置型号与型号能力。
     const KEY_PROVIDER = 'cx_provider';
     const MODEL_PROVIDERS = Object.freeze([
-        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
-            docs:'https://api-docs.deepseek.com/quick_start/pricing/',
-            models:[{id:'deepseek-flash',name:'DeepSeek Flash',images:true,thinking:true},
-                {id:'deepseek-v4-pro',name:'DeepSeek V4 Pro',images:false,thinking:true}]},
-        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
-            docs:'https://developers.openai.com/api/docs/models/gpt-4.1-mini',
-            models:[{id:'gpt-4.1-mini',name:'GPT-4.1 mini',images:true,thinking:false},
-                {id:'gpt-4.1',name:'GPT-4.1',images:true,thinking:false}]},
-        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
-            docs:'https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions',
-            models:[{id:'qwen-plus',name:'Qwen Plus',images:false,thinking:false},
-                {id:'qwen3-vl-plus',name:'Qwen3 VL Plus',images:true,thinking:false}]},
-        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
-            docs:'https://platform.kimi.com/docs/api/chat',
-            models:[{id:'kimi-k2.6',name:'Kimi K2.6',images:true,thinking:false}]},
-        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
-            docs:'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
-            models:[{id:'glm-5.3',name:'GLM-5.3',images:false,thinking:true,thinkingRequired:true},
-                {id:'glm-5.3-flash',name:'GLM-5.3 Flash',images:true,thinking:false}]},
-        {id:'custom',name:'自定义',baseURL:'',verifiedAt:'2026-10-11',models:[]}
+        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,models:[]},
+        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',models:[]},
+        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',models:[]},
+        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',models:[]},
+        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',models:[]},
+        {id:'custom',name:'自定义',baseURL:'',models:[]}
     ]);
-    const DEEPSEEK_IMAGE_ALIASES = new Set(['deepseek-v4-flash','deepseek-v4-flash-vision-exp']);
+    const fetchedProviderModelLists = new Map();
+    function currentProviderModelList(settings) {
+        const record=fetchedProviderModelLists.get(settings.provider);
+        return record && record.baseURL===settings.baseURL && record.key===settings.key ? record.models : null;
+    }
+    function rememberProviderModelList(settings,models) {
+        fetchedProviderModelLists.set(settings.provider,{baseURL:settings.baseURL,key:settings.key,models});
+        if(settings.model && !models.some(item=>item.id===settings.model))saveProviderSetting('model','',settings.provider);
+        if(settings.infoModel && !models.some(item=>item.id===settings.infoModel))saveProviderSetting('infoModel','',settings.provider);
+    }
     function getModelProvider(id = get(KEY_PROVIDER,'deepseek')) {
         return MODEL_PROVIDERS.find(item=>item.id===id) || MODEL_PROVIDERS[0];
     }
     function providerModelCapabilities(provider, model) {
         const platform=getModelProvider(typeof provider==='object'?provider.id:provider);
-        const preset=platform.models.find(item=>item.id===model);
-        const legacyVision=platform.id==='deepseek' && DEEPSEEK_IMAGE_ALIASES.has(model);
-        const known=Boolean(preset || legacyVision);
-        const tested=!known && typeof verifiedModelImages==='function' && verifiedModelImages(platform.id,model);
-        return {known,images:known?Boolean(preset?.images || legacyVision):Boolean(tested),imageEvidence:known?'official':tested?'image-test':'unknown',
-            thinking:Boolean(preset?.thinking || legacyVision),thinkingRequired:preset?.thinkingRequired===true,
-            effort:platform.id==='deepseek' && known || platform.id==='glm' && preset?.thinkingRequired===true,
-            search:platform.id==='deepseek',jsonMode:platform.id==='deepseek' || known && ['openai','qwen','kimi'].includes(platform.id)};
+        const tested=typeof verifiedModelImages==='function' && verifiedModelImages(platform.id,model);
+        return {known:false,images:Boolean(tested),imageEvidence:tested?'image-test':'unknown',
+            thinking:platform.id==='deepseek',thinkingRequired:false,effort:platform.id==='deepseek',
+            search:platform.id==='deepseek',jsonMode:platform.id==='deepseek'};
     }
+
     function providerSettingKey(provider, field) {
         const id=getModelProvider(provider).id;
         const legacy={key:KEY_DS,model:KEY_MODEL,thinking:KEY_THINKING,effort:KEY_EFFORT,search:KEY_SEARCH};
@@ -467,13 +461,13 @@
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
         const platform=getModelProvider(provider),id=platform.id;
         const savedKey=String(readProviderSetting(id,'key','') ?? '').trim();
-        const model=String(readProviderSetting(id,'model',platform.models[0]?.id || '') ?? '').trim();
+        const model=String(readProviderSetting(id,'model','') ?? '').trim();
         let baseURL=platform.baseURL;
         if(id==='custom') {
             try {baseURL=normalizeModelBaseURL(readProviderSetting(id,'baseURL',''));}
             catch {baseURL='';}
         }
-        // 自定义地址可在页面中编辑；旧 Key 仅能用于脚本管理器菜单明确授权的同一基础地址。
+        // 自定义地址可在页面中编辑；旧 Key 仅能用于Key 输入控件明确授权的同一基础地址。
         const credentialNeedsApproval=id==='custom' && Boolean(savedKey) && (!baseURL || readProviderSetting(id,'keyBaseURL','')!==baseURL);
         const key=credentialNeedsApproval ? '' : savedKey;
         const capabilities=providerModelCapabilities(id,model);
@@ -482,7 +476,7 @@
         const effortRaw=readProviderSetting(id,'effort','high');
         const effort=['low','high','max'].includes(effortRaw) ? effortRaw : 'high';
         const search=capabilities.search && Boolean(readProviderSetting(id,'search',false));
-        const defaultInfoModel=platform.models.find(item=>item.images)?.id || (id==='custom' && images?model:'');
+        const defaultInfoModel=images ? model : '';
         const infoModel=String(readProviderSetting(id,'infoModel',defaultInfoModel) || '').trim();
         const rawInterval=Number(readProviderSetting(id,'videoInfoIntervalSeconds',30));
         const videoInfoIntervalSeconds=Number.isFinite(rawInterval)?Math.min(300,Math.max(5,rawInterval)):30;
@@ -605,10 +599,14 @@
         if(!settings.key)throw new Error('请先保存 API Key');
         const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000});
         if(!Array.isArray(data.data) || !data.data.length)throw new Error('模型列表为空');
-        return data.data.filter(item=>item && typeof item.id==='string' && item.id.trim()).map(item=>({
-            id:item.id.trim(),name:typeof item.name==='string'?item.name:item.id.trim(),
-            effort:Array.isArray(item.effort?.supported_levels)?item.effort.supported_levels:[]
-        }));
+        const models=new Map();
+        for(const item of data.data) {
+            if(!item || typeof item.id!=='string' || !item.id.trim() || item.id.trim().length>200)continue;
+            const id=item.id.trim();if(models.has(id))continue;
+            models.set(id,{id,name:typeof item.name==='string' && item.name.trim()?item.name.trim().slice(0,500):id});
+        }
+        if(!models.size)throw new Error('模型列表没有有效条目');
+        return [...models.values()];
     }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
         if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
@@ -634,14 +632,12 @@
         catch {throw new Error('AI 返回内容不是合法 JSON');}
         return {parsed,usage:response.usage || null};
     }
-    // Key 编辑只从脚本管理器菜单进入，浏览器原生对话框不会把输入放入课程页面 DOM。
-    // @sandbox DOM 优先使用扩展隔离环境；不使用 unsafeWindow 或网页事件接收凭据。
-    const credentialPrompt = window.prompt.bind(window);
+    // Key 输入就地显示；闭合 Shadow DOM 不向课程页面暴露输入节点。
+    // 已保存 Key 不回填；凭据仅从真实控件操作写入脚本存储。
     const credentialConfirm = window.confirm.bind(window);
     const credentialAlert = window.alert.bind(window);
-    let credentialMenusRegistered = false;
-    let credentialMenuSuffix = '';
     const credentialValueListeners = [];
+    let credentialView = null;
 
     function credentialSettingsBusy() {
         return Boolean(controller?.state.busy || courseRunActive());
@@ -650,77 +646,211 @@
         if (controller) controller.report(message);
         else credentialAlert(message);
     }
+    function clearCredentialInput() {
+        if (credentialView) credentialView.input.value = '';
+    }
+    function refreshCredentialEditor(configuration, busy = credentialSettingsBusy()) {
+        if (!credentialView) return;
+        const cfg = configuration || readModelConfiguration();
+        if (cfg.provider !== credentialView.provider || cfg.baseURL !== credentialView.baseURL || busy) clearCredentialInput();
+        credentialView.provider = cfg.provider; credentialView.baseURL = cfg.baseURL;
+        credentialView.input.disabled = busy; credentialView.save.disabled = busy;
+        credentialView.clear.disabled = busy || !readProviderSetting(cfg.provider, 'key', '');
+        credentialView.input.placeholder = cfg.key ? '输入新 Key 替换，留空保留已保存值' : '输入当前平台 API Key';
+        credentialView.input.setAttribute('aria-label', `${getModelProvider(cfg.provider).name} API Key`);
+    }
     function refreshCredentialStatus(provider, cleared = false) {
         if (!controller || readModelConfiguration().provider !== provider) return;
+        clearCredentialInput();
         if (cleared) controller.last = null;
         if (!controller.state.busy && !courseRunActive()) renderModelSettings(controller);
         renderRunState(controller.state);
     }
-    function chooseCredentialProvider(action) {
-        const list = MODEL_PROVIDERS.map((provider,index) => `${index + 1}. ${provider.name}`).join('\n');
-        const choice = credentialPrompt(`${action} API Key：输入平台编号\n${list}`, '');
-        if (choice === null) return null;
-        const number = String(choice).trim();
-        if (!/^[1-6]$/.test(number) || !MODEL_PROVIDERS[Number(number) - 1]) {
-            reportCredentialSettings('平台编号无效，API Key 未修改');
-            return null;
-        }
-        return MODEL_PROVIDERS[Number(number) - 1];
+    function initCredentialEditor(host) {
+        if (credentialView) return;
+        const shadow = host.attachShadow({mode:'closed'});
+        shadow.innerHTML = `<style>*{box-sizing:border-box}label,input,button{font:inherit}div{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}label{min-width:65px;font-size:13px;color:var(--muted,#6c7b90)}input{flex:1;min-width:120px;width:180px;padding:8px;border:1px solid #cbd5e3;border-radius:6px;background:#fff;color:var(--ink,#26354a)}button{padding:7px 11px;border:1px solid transparent;border-radius:6px;background:var(--accent,#315fbd);color:#fff;cursor:pointer}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
+        const input = shadow.getElementById('credential-key'), save = shadow.getElementById('credential-save'), clear = shadow.getElementById('credential-clear');
+        credentialView = {host,shadow,input,save,clear,provider:null,baseURL:''};
+        const current = () => {
+            if (credentialSettingsBusy()) { reportCredentialSettings('正在运行，请停止任务后再修改 API Key'); return null; }
+            const cfg = readModelConfiguration();
+            if (cfg.provider !== credentialView.provider || cfg.baseURL !== credentialView.baseURL) {
+                clearCredentialInput(); refreshCredentialEditor(); reportCredentialSettings('平台或接口地址已变化，请重新输入 API Key'); return null;
+            }
+            return cfg;
+        };
+        const saveInput = () => {
+            const cfg = current(); if (!cfg) return;
+            const key = input.value.trim();
+            if (!key || key.length > 4096 || /[\s\x00-\x1f\x7f]/.test(key)) return reportCredentialSettings('API Key 为空或包含空白字符，原配置已保留');
+            if (!cfg.baseURL) return reportCredentialSettings('请先保存有效的自定义接口地址，再保存 API Key');
+            saveProviderKey(key, cfg.provider); clearCredentialInput();
+            refreshCredentialStatus(cfg.provider); reportCredentialSettings(`${getModelProvider(cfg.provider).name} Key 已保存`);
+        };
+        save.addEventListener('click', event => { if (trustedAssistantActivation(event, save)) saveInput(); });
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter' && trustedAssistantActivation(event, input, 'keydown')) { event.preventDefault(); saveInput(); }
+        });
+        clear.addEventListener('click', event => {
+            if (!trustedAssistantActivation(event, clear)) return;
+            const cfg = current(); if (!cfg || !credentialConfirm(`清除 ${getModelProvider(cfg.provider).name} 已保存的 API Key？`)) return;
+            const after = current(); if (!after || after.provider !== cfg.provider || after.baseURL !== cfg.baseURL) return;
+            saveProviderKey('', cfg.provider); clearCredentialInput();
+            refreshCredentialStatus(cfg.provider, true); reportCredentialSettings(`${getModelProvider(cfg.provider).name} Key 已清除`);
+        });
+        refreshCredentialEditor();
     }
-    function editCredentialFromMenu(clear = false) {
-        if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，请停止任务后再修改 API Key');
-        const provider = chooseCredentialProvider(clear ? '清除' : '设置 / 替换');
-        if (!provider) return;
-        if (clear) {
-            if (!credentialConfirm(`清除 ${provider.name} 已保存的 API Key？`)) return;
-            if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，API Key 未修改');
-            saveProviderKey('', provider.id);
-            refreshCredentialStatus(provider.id, true);
-            reportCredentialSettings(`${provider.name} Key 已清除`);
-            return;
-        }
-        const baseURL=readProviderConfiguration(provider.id).baseURL;
-        if (!baseURL) return reportCredentialSettings('请先在模型设置中保存有效的自定义接口地址，再从菜单设置 API Key');
-        const input = credentialPrompt(`输入 ${provider.name} API Key（不回显已保存的 Key）\n授权的 API 地址：${baseURL}\n此浏览器对话框输入可见，请注意周围环境。取消保留原配置。`, '');
-        if (input === null) return;
-        const key = String(input).trim();
-        if (!key) return reportCredentialSettings('API Key 为空，原配置已保留');
-        if (credentialSettingsBusy()) return reportCredentialSettings('正在运行，API Key 未修改');
-        if (readProviderConfiguration(provider.id).baseURL!==baseURL) return reportCredentialSettings('API 地址已变化，API Key 未修改；请重新从菜单配置');
-        saveProviderKey(key, provider.id);
-        refreshCredentialStatus(provider.id);
-        reportCredentialSettings(`${provider.name} Key 已保存`);
-    }
-    function initCredentialValueListeners() {
+    function initCredentialSettings() {
         if (credentialValueListeners.length || typeof GM_addValueChangeListener !== 'function') return;
         for (const provider of MODEL_PROVIDERS) {
-            const listener = GM_addValueChangeListener(providerSettingKey(provider.id, 'key'), (_name, _old, value) => {
+            credentialValueListeners.push(GM_addValueChangeListener(providerSettingKey(provider.id, 'key'), (_name, _old, value) => {
                 refreshCredentialStatus(provider.id, !value);
-            });
-            credentialValueListeners.push(listener);
+            }));
         }
-    }
-    function initCredentialSettingsMenu() {
-        initCredentialValueListeners();
-        if (credentialMenusRegistered || typeof GM_registerMenuCommand !== 'function') return;
-        if (window !== window.top) {
-            if (!hasQuestionNodes(document)) return;
-            // 顶层页面可能不匹配脚本。每份题目文档用独立名称，避免篡改猴合并菜单后重复弹出输入。
-            if (!credentialMenuSuffix) {
-                const frameId = [...crypto.getRandomValues(new Uint8Array(4))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
-                credentialMenuSuffix = `（题目页 ${frameId}）`;
-            }
-        }
-        GM_registerMenuCommand(`设置 / 替换模型 API Key${credentialMenuSuffix}`, () => editCredentialFromMenu(false));
-        GM_registerMenuCommand(`清除模型 API Key${credentialMenuSuffix}`, () => editCredentialFromMenu(true));
-        credentialMenusRegistered = true;
     }
     window.addEventListener('pagehide', () => {
+        clearCredentialInput();
         if (typeof GM_removeValueChangeListener !== 'function') return;
         for (const listener of credentialValueListeners) GM_removeValueChangeListener(listener);
         credentialValueListeners.length = 0;
     });
-    window.addEventListener('pageshow', initCredentialValueListeners);
+    window.addEventListener('pageshow', initCredentialSettings);
+    const ASSISTANT_UPDATE_KEY = 'cx_assistant_update';
+    const ASSISTANT_UPDATE_SOURCE = 'https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js';
+    const assistantUpdateOpen = window.open.bind(window);
+    let assistantUpdatePending = null, assistantUpdateAbort = null, assistantUpdateTimer = null;
+    let assistantUpdateListener = null, assistantUpdateGeneration = 0, assistantUpdateMessage = '';
+
+    function assistantVersionParts(value) {
+        const match = /^v?(\d{1,4})\.(\d{2})$/.exec(String(value ?? ''));
+        return match ? [Number(match[1]), Number(match[2])] : null;
+    }
+    function assistantVersionIsNewer(value) {
+        const a = assistantVersionParts(value), b = assistantVersionParts(ASSISTANT_VERSION);
+        return Boolean(a && b && (a[0] > b[0] || a[0] === b[0] && a[1] > b[1]));
+    }
+    function assistantUpdateCache() {
+        const value = get(ASSISTANT_UPDATE_KEY, {}), now = Date.now();
+        const timestamp = raw => Number.isFinite(raw) && raw >= 0 && raw <= now + 60000 ? raw : 0;
+        return {checkedAt:timestamp(value?.checkedAt), attemptedAt:timestamp(value?.attemptedAt),
+            version:value?.status === 'verified' && assistantVersionParts(value.version) ? String(value.version).replace(/^v/,'') : '',
+            status:['verified','none'].includes(value?.status) ? value.status : ''};
+    }
+    function assistantUpdateDownloadURL(version) {
+        if (!assistantVersionParts(version)) return '';
+        return `https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/v${String(version).replace(/^v/,'')}/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js`;
+    }
+    function assistantUpdateScriptVersion(script) {
+        const header = typeof script === 'string' && /^\/\/ ==UserScript==\r?\n([\s\S]{1,16000}?)^\/\/ ==\/UserScript==/m.exec(script);
+        const version = header && /^\/\/ @version\s+([^\s]+)\s*$/m.exec(header[1]);
+        if (!header || header.index !== 0 || !version || !assistantVersionParts(version[1]) || !/^\/\/ @namespace\s+local\.chaoxing\.quiz\s*$/m.test(header[1]) || !script.trimEnd().endsWith('})();'))
+            throw new Error('更新脚本信息无效，请稍后重试');
+        return version[1].replace(/^v/,'');
+    }
+    function renderAssistantUpdates() {
+        if (!panelView) return;
+        const s = panelView.shadow, cache = assistantUpdateCache(), newer = assistantVersionIsNewer(cache.version);
+        const download = s.getElementById('download-update'), install = s.getElementById('install-update');
+        download.hidden = !newer; install.hidden = !newer;
+        download.title = newer ? `下载更新 v${cache.version}` : '下载更新';
+        download.setAttribute('aria-label', download.title);
+        install.textContent = newer ? `下载更新 v${cache.version}` : '下载更新';
+        s.getElementById('check-update').disabled = Boolean(assistantUpdatePending);
+        s.getElementById('check-update').textContent = assistantUpdatePending ? '正在检查…' : '检查更新';
+        s.getElementById('update-status').textContent = assistantUpdateMessage || (newer ? `发现新版本 v${cache.version}` : cache.status === 'verified' ? `当前版本 v${ASSISTANT_VERSION}，暂无新版` : cache.status === 'none' ? '尚未找到公开脚本' : `当前版本 v${ASSISTANT_VERSION}`);
+    }
+    function requestPublicUpdateText(url, signal) {
+        return new Promise((resolve, reject) => {
+            let handle, settled = false;
+            const finish = (callback, value) => { if (settled) return; settled = true; signal.removeEventListener('abort', abort); callback(value); };
+            const abort = () => { finish(reject, cancelledError()); handle?.abort?.(); };
+            if (signal.aborted) { abort(); return; }
+            signal.addEventListener('abort', abort, {once:true});
+            try {
+                handle = GM_xmlhttpRequest({method:'GET',url,anonymous:true,timeout:20000,
+                    headers:{Accept:'text/plain'},
+                    onload(response) {
+                        if (response.finalUrl && response.finalUrl !== url) return finish(reject, new Error('更新地址发生变化，请前往 GitHub 核对'));
+                        if (response.status === 404 && url === ASSISTANT_UPDATE_SOURCE) return finish(resolve, null);
+                        if ([403,429].includes(response.status)) return finish(reject, new Error('检查暂时受限，请稍后重试'));
+                        if (response.status !== 200 || typeof response.responseText !== 'string' || response.responseText.length > 8 * 1024 * 1024)
+                            return finish(reject, new Error('无法获取有效更新信息，请重试'));
+                        finish(resolve, response.responseText);
+                    },
+                    onerror:() => finish(reject, new Error('更新检查失败，请检查网络后重试')),
+                    ontimeout:() => finish(reject, new Error('更新检查超时，请重试')),
+                    onabort:() => finish(reject, cancelledError())});
+            } catch { finish(reject, new Error('更新检查失败，请检查脚本的 GitHub 域名授权')); }
+            if (signal.aborted) handle?.abort?.();
+        });
+    }
+    function checkAssistantUpdates(force = false) {
+        if (assistantUpdatePending) return assistantUpdatePending;
+        const cache = assistantUpdateCache(), now = Date.now();
+        if (!force && now - Math.max(cache.checkedAt, cache.attemptedAt) < 24 * 60 * 60 * 1000) return Promise.resolve(cache);
+        const generation = ++assistantUpdateGeneration, abort = new AbortController(); assistantUpdateAbort = abort;
+        set(ASSISTANT_UPDATE_KEY, {...cache, attemptedAt:now});
+        assistantUpdateMessage = '正在检查公开更新…';
+        const run = async () => {
+            try {
+                const text = await requestPublicUpdateText(ASSISTANT_UPDATE_SOURCE, abort.signal);
+                let version = '', status = 'none';
+                if (text !== null) {
+                    version = assistantUpdateScriptVersion(text); status = 'verified';
+                    if (assistantVersionIsNewer(version)) {
+                        assistantUpdateMessage = `发现 v${version}，正在核对下载…`; renderAssistantUpdates();
+                        const script = await requestPublicUpdateText(assistantUpdateDownloadURL(version), abort.signal);
+                        let installedVersion;
+                        try { installedVersion = assistantUpdateScriptVersion(script); } catch {}
+                        if (installedVersion !== version) throw new Error('新版脚本尚未就绪，请稍后检查更新');
+                    }
+                }
+                if (generation !== assistantUpdateGeneration || abort.signal.aborted) return null;
+                const result = {status,version,checkedAt:Date.now(),attemptedAt:now};
+                set(ASSISTANT_UPDATE_KEY, result); assistantUpdateMessage = ''; return result;
+            } catch (error) {
+                if (generation === assistantUpdateGeneration && !abort.signal.aborted) assistantUpdateMessage = error.message;
+                return null;
+            } finally {
+                if (generation === assistantUpdateGeneration) { assistantUpdatePending = null; assistantUpdateAbort = null; renderAssistantUpdates(); }
+            }
+        };
+        assistantUpdatePending = run(); renderAssistantUpdates(); return assistantUpdatePending;
+    }
+    function openAssistantUpdate() {
+        const cache = assistantUpdateCache();
+        if (!assistantVersionIsNewer(cache.version)) return;
+        assistantUpdateOpen(assistantUpdateDownloadURL(cache.version), '_blank', 'noopener,noreferrer');
+    }
+    function initAssistantUpdates(shadow) {
+        if (assistantUpdateListener === null && typeof GM_addValueChangeListener === 'function') {
+            assistantUpdateListener = GM_addValueChangeListener(ASSISTANT_UPDATE_KEY, () => renderAssistantUpdates());
+        }
+        const check = shadow.getElementById('check-update');
+        check.onclick = event => { if (trustedAssistantActivation(event, check)) checkAssistantUpdates(true); };
+        for (const id of ['download-update','install-update']) {
+            const button = shadow.getElementById(id);
+            button.onclick = event => { if (trustedAssistantActivation(event, button)) openAssistantUpdate(); };
+        }
+        // 真正点击助手时进行低频检查；网页派发的点击不会触发后台请求。
+        shadow.addEventListener('click', event => {
+            if (!event.isTrusted || !trustedAssistantActivation(event, shadow) || assistantUpdateTimer !== null) return;
+            assistantUpdateTimer = setTimeout(() => { assistantUpdateTimer = null; if (!assistantUiHidden) checkAssistantUpdates(); }, 400);
+        });
+        renderAssistantUpdates();
+    }
+    window.addEventListener('pagehide', () => {
+        assistantUpdateGeneration++;
+        assistantUpdateAbort?.abort(); assistantUpdateAbort = null; assistantUpdatePending = null;
+        clearTimeout(assistantUpdateTimer); assistantUpdateTimer = null;
+        if (assistantUpdateListener !== null && typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(assistantUpdateListener);
+        assistantUpdateListener = null;
+    });
+    window.addEventListener('pageshow', () => {
+        if (panelView && assistantUpdateListener === null && typeof GM_addValueChangeListener === 'function') assistantUpdateListener = GM_addValueChangeListener(ASSISTANT_UPDATE_KEY, () => renderAssistantUpdates());
+        renderAssistantUpdates();
+    });
     // 未知型号只通过用户主动发起的图片实测确认，不根据模型名称或未经确认的列表字段推测。
     const KEY_MODEL_IMAGE_CAPABILITIES='cx_model_image_capabilities';
     const MODEL_IMAGE_CAPABILITY_CACHE_LIMIT=200;
@@ -1470,7 +1600,7 @@
     function createCourseVideoInfo(settings,{signal,now=Date.now,guard=()=>{},onItems=()=>{},onStatus=()=>{},capture=captureCourseVideoFrame}={}) {
         const provider=getModelProvider(settings.provider || 'deepseek');
         const model=provider.id==='custom' ? settings.model : settings.infoModel ||
-            (modelSupportsImages(settings.model,settings) ? settings.model : provider.models.find(item=>item.images)?.id || '');
+            (modelSupportsImages(settings.model,settings) ? settings.model : '');
         const infoSettings={...settings,provider:provider.id,model,thinking:false,search:false,courseContext:[]};
         const intervalRaw=Number(settings.videoInfoIntervalSeconds);
         const interval=Number.isFinite(intervalRaw)?Math.min(300,Math.max(5,intervalRaw)):30;
@@ -1978,7 +2108,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.12');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.13');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -3870,6 +4000,7 @@
         return host;
     }
     function applyAssistantVisibility() {
+        if (assistantUiHidden) clearCredentialInput();
         if (assistantUiHidden) {
             panelView?.cancelFloatingDrag?.();
             panelView?.clearStopConfirmation?.();
@@ -4163,8 +4294,17 @@
     }
     function initPanelNavigation() {
         const buttons = [...panelView.shadow.querySelectorAll('[data-panel-view]')];
+        const activate=(view,options={})=>{
+            const owner=studyOwnerDocument(panelView.sourceDoc);
+            if(view==='chapters' && owner && owner!==panelView.sourceDoc && owner.getElementById('cx-ai-study-toolbar')) {
+                owner.dispatchEvent(new owner.defaultView.Event('cx-ai-show-study-panel'));
+                return;
+            }
+            switchPanelView(view,options);
+        };
+
         buttons.forEach((button, index) => {
-            button.onclick = () => switchPanelView(button.dataset.panelView);
+            button.onclick = () => activate(button.dataset.panelView);
             button.addEventListener('keydown', event => {
                 let next;
                 if (event.key === 'ArrowDown') next = (index + 1) % buttons.length;
@@ -4173,7 +4313,7 @@
                 else if (event.key === 'End') next = buttons.length - 1;
                 else return;
                 event.preventDefault(); event.stopPropagation();
-                switchPanelView(buttons[next].dataset.panelView, {focus:true});
+                activate(buttons[next].dataset.panelView, {focus:true});
             });
         });
         const chapterButtons = [...panelView.shadow.querySelectorAll('[data-chapter-view]')];
@@ -4262,29 +4402,31 @@
         shadow.getElementById('model-capability').textContent = label + (caps.thinkingRequired ? '；此模型始终开启深度思考。' : '。');
         refreshBrandedModelPickers(shadow);
     }
-    function renderModelSettings(ctl, fetchedModels = []) {
+    function renderModelSettings(ctl, fetchedModels) {
         if (!panelView) return;
-        const shadow = panelView.shadow, cfg = readModelConfiguration(), provider = getModelProvider(cfg.provider);
+        const shadow = panelView.shadow;let cfg = readModelConfiguration();
+        refreshCredentialEditor(cfg);
+        if(fetchedModels){rememberProviderModelList(cfg,fetchedModels);cfg=readModelConfiguration();}
+        const provider = getModelProvider(cfg.provider);
         const el = id => shadow.getElementById(id), doc = panelView.host.ownerDocument;
         el('provider').value = cfg.provider;
-        el('api-key-status').textContent = cfg.credentialNeedsApproval ? '自定义接口地址尚未授权，请从篡改猴菜单重新设置 API Key' : cfg.key ? `${provider.name} Key 已保存` : `${provider.name} 尚未配置 API Key`;
+        el('api-key-status').textContent = cfg.credentialNeedsApproval ? '自定义接口地址尚未授权，请重新输入并保存 API Key' : cfg.key ? `${provider.name} Key 已保存` : `${provider.name} 尚未配置 API Key`;
         el('preset-model-block').hidden = cfg.provider === 'custom';
         el('custom-model-block').hidden = cfg.provider !== 'custom';
         el('custom-base').value = readProviderSetting('custom', 'baseURL', '');
         el('custom-model').value = readProviderSetting('custom', 'model', '');
         el('custom-images').checked = Boolean(readProviderSetting('custom', 'images', false));
-        const models = [...provider.models];
-        const remembered=typeof rememberedImageModels==='function'?rememberedImageModels(cfg.provider,cfg.baseURL):[];
-        for(const id of remembered)if(!models.some(m=>m.id===id))models.push({id,name:id});
-        for (const item of fetchedModels) if (!models.some(m => m.id === item.id)) models.push(item);
-        if (cfg.model && !models.some(m => m.id === cfg.model)) models.push({id:cfg.model, name:cfg.model});
+        const available=currentProviderModelList(cfg),models=available || [];
         el('model').replaceChildren();
+        const placeholder=doc.createElement('option');placeholder.value=available?'':cfg.model;placeholder.disabled=true;
+        placeholder.textContent=available?'请选择模型':cfg.model?modelOptionLabel(cfg.provider,cfg.model)+'（已保存，待获取列表校验）':'请先获取模型列表';
+        el('model').append(placeholder);
         for (const model of models) {
             const option = doc.createElement('option'); option.value = model.id;
             option.textContent = modelOptionLabel(cfg.provider, model.id, model.name); el('model').append(option);
         }
         el('model').value = cfg.model;
-        const visionModels = cfg.provider==='custom' ? (cfg.images && cfg.model ? [{id:cfg.model,name:cfg.model}] : []) : models.filter(item=>providerModelCapabilities(cfg.provider,item.id).images);
+        const visionModels = cfg.provider==='custom' || !available ? (cfg.images && cfg.model ? [{id:cfg.model,name:cfg.model}] : []) : models.filter(item=>providerModelCapabilities(cfg.provider,item.id).images);
         el('info-model').replaceChildren();
         for (const model of visionModels) { const option=doc.createElement('option');option.value=model.id;option.textContent=model.name;el('info-model').append(option); }
         if (!visionModels.length) { const option=doc.createElement('option');option.value='';option.textContent='当前接口未确认图片能力';el('info-model').append(option); }
@@ -4306,7 +4448,7 @@
           #panel{--accent:#315fbd;--ink:#26354a;--muted:#6c7b90;--line:#e3e8ef;font:14px/1.6 "Microsoft YaHei","PingFang SC",sans-serif;color:var(--ink);width:min(640px,calc(100vw - 26px));height:min(540px,78vh);max-height:78vh;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#fff;border:1px solid #d7dfe9;border-radius:12px;box-shadow:0 16px 48px #172b4a30;margin-bottom:8px}
           button,input,select{font:inherit}button{border:1px solid transparent;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer;padding:7px 11px;line-height:1.5}button.secondary{background:#f0f3f7;color:var(--ink)}button:hover:not(:disabled){filter:brightness(.96)}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #729adc;outline-offset:2px}
           button.stop-confirm{background:#dc2626;color:#fff}
-          .head{flex:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px 9px 16px;border-bottom:1px solid var(--line);background:#fbfcfe;cursor:grab;touch-action:none;user-select:none}.head strong{font-size:14px;letter-spacing:.1px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.head:active{cursor:grabbing}.head-actions{display:flex;align-items:center;gap:5px;flex:none}.head-actions button{padding:5px 9px;font-size:12px;min-height:28px}#github,#about-toggle,#minimize,#close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0}#about-toggle{border-radius:50%;font-weight:700;font-size:16px}#minimize svg,#close svg{width:16px;height:16px}#github svg{width:18px;height:18px}
+          .head{flex:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px 9px 16px;border-bottom:1px solid var(--line);background:#fbfcfe;cursor:grab;touch-action:none;user-select:none}.head strong{font-size:14px;letter-spacing:.1px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.head:active{cursor:grabbing}.head-actions{display:flex;align-items:center;gap:5px;flex:none}.head-actions button{padding:5px 9px;font-size:12px;min-height:28px}#download-update,#github,#about-toggle,#minimize,#close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0}#about-toggle{border-radius:50%;font-weight:700;font-size:16px}#minimize svg,#close svg{width:16px;height:16px}#github svg{width:18px;height:18px}#download-update{background:#e7effc;color:var(--accent)}#download-update svg{width:18px;height:18px}#update-status{font-size:12px;color:var(--muted)}
           .panel-body{flex:1;display:grid;grid-template-columns:54px minmax(0,1fr);min-height:0;max-height:var(--content-height,none);overflow:hidden}.nav-rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0;background:#f7f9fc;border-right:1px solid var(--line)}.nav-button{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:8px;border-radius:7px;background:transparent;color:#78889d}.nav-model-bottom{margin-top:auto;flex-shrink:0}.nav-button svg{width:20px;height:20px;flex:none}.nav-button[aria-selected=true]{background:#e7effc;color:var(--accent)}.nav-button[aria-selected=true]::before{content:"";position:absolute;left:-9px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}.assistant-main{min-width:0;min-height:0;overflow:hidden}.view-page{height:100%;min-height:0;min-width:0;padding:18px;overflow:auto;overscroll-behavior:contain}.view-heading{flex:none;margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;gap:8px}.view-heading h2{font-size:17px;line-height:1.4;letter-spacing:.3px;margin:0;font-weight:700}.view-tag{font-size:11px;color:var(--muted);padding:2px 7px;background:#f3f6fa;border-radius:4px}
           .settings-block{border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:17px}.settings-block:last-child{border:0;margin:0}.field-caption{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{max-width:100%}.row>label{min-width:65px}input,select{background:#fff;color:var(--ink);border:1px solid #cbd5e3;border-radius:6px;padding:8px;min-width:0}input[type=password]{min-width:120px;flex:1;width:180px}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent);flex:none}.check-label{display:inline-flex;align-items:center;gap:7px}.row select{max-width:100%}.setting-label{font-size:13px;color:var(--muted)}
           .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
@@ -4325,7 +4467,8 @@
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.12</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.13</strong><div class="head-actions">
+            <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
@@ -4347,17 +4490,14 @@
                 </div>
                 <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model">
                 <div class="settings-block"><div class="row"><label for="provider">平台</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="kimi">Kimi</option><option value="glm">智谱</option><option value="custom">自定义</option></select></div></div>
-                <div class="settings-block"><p class="field-caption">API Key</p>
-                  <p id="api-key-status" class="note" role="status"></p>
-                  <p class="note">点击浏览器中的篡改猴图标，在本脚本菜单选择「设置 / 替换模型 API Key」或「清除模型 API Key」。</p>
-                </div>
-                <div class="settings-block" id="preset-model-block"><div class="row"><label for="model">模型</label><select id="model"><option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select><button type="button" id="models" class="secondary">获取模型列表</button></div></div>
+                <div class="settings-block" id="preset-model-block"><div class="row"><label for="model">模型</label><select id="model"><option value="" disabled>请先获取模型列表</option></select><button type="button" id="models" class="secondary">获取模型列表</button></div></div>
                 <div class="settings-block" id="custom-model-block" hidden>
                   <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
                   <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
                   <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
                   <p class="note">地址填写到 API 前缀；图片选项请按接口文档确认。自定义接口首次访问时，在篡改猴中仅授权该域名；若被拦截，请在本脚本设置的用户域名白名单中添加该域名。</p>
                 </div>
+                <div class="settings-block"><div id="api-key-editor"></div><p id="api-key-status" class="note" role="status"></p></div>
                 <p id="model-capability" class="note" role="status"></p>
                 <div class="row"><button type="button" id="detect-images" class="secondary">检测图片能力</button><button type="button" id="cancel-images" class="secondary" hidden>取消检测</button><span class="note">使用当前模型识别测试图片，消耗一次调用；通过后保存能力。</span></div>
                 <div class="settings-block">
@@ -4368,6 +4508,7 @@
                 </div>
                 <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="thinking" /> 深度思考</label><label for="effort" class="setting-label">强度</label><select id="effort"><option value="low">Low</option><option value="high">High</option><option value="max">Max</option></select></div></div>
                 <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="search" /> 网络检索</label></div></div>
+                <div class="settings-block"><div class="row"><button type="button" id="check-update" class="secondary">检查更新</button><span id="update-status" role="status" aria-live="polite"></span></div><button type="button" id="install-update" hidden>下载更新</button></div>
                 </section>
                 <section id="settings-learning-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-learning" hidden>
                   <div class="settings-block"><label class="check-label"><input id="course-rest-enabled" type="checkbox" /> 启用学习休息</label></div>
@@ -4447,6 +4588,8 @@
         initPanelNavigation();
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
+        initAssistantUpdates(shadow);
+        initCredentialEditor(el('api-key-editor'));
         el('model-setup-open').onclick = () => {
             switchSettingsView('model');
             switchPanelView('model');
@@ -4534,7 +4677,7 @@
             const cfg=readModelConfiguration();
             if(!cfg.configured)return ctl.report('请先保存当前平台的 Key、接口与模型','error');
             const caps=providerModelCapabilities(cfg.provider,cfg.model);
-            if(cfg.provider!=='custom' && caps.known)return ctl.report(caps.images?'此预置模型的图片能力已由官方文档确认':'此预置模型经官方文档确认为文字模型','idle');
+
             const abort=new AbortController();ctl.capabilityTest=abort;
             const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
             ctl.report('正在测试当前模型的图片识别能力…','capability-check',true);
@@ -4614,20 +4757,24 @@
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
         if(mode!=='open')panelView.clearRetryConfirmation?.();
+        if(mode==='closed')clearCredentialInput();
         panelView.cancelFloatingDrag?.();
         const {host} = panelView;
         if (mode === 'minimized' && panelView.windowMode !== 'minimized') {
-            // 隐藏面板和重置 host 原点前，记录缩小按钮在所属视口中的中心。
-            // 每次缩小重新取锚点，悬浮入口上次的拖动位置不影响本次出现位置。
-            const buttonRect = panelView.shadow.getElementById('minimize').getBoundingClientRect();
-            const launcherRect = panelView.shadow.getElementById('floating-launcher').getBoundingClientRect();
-            const width = launcherRect.width || 44, height = launcherRect.height || 44;
-            if ([buttonRect.left, buttonRect.top, buttonRect.width, buttonRect.height].every(Number.isFinite) && buttonRect.width > 0 && buttonRect.height > 0) {
-                panelView.floatingPosition = {left:buttonRect.left + (buttonRect.width - width) / 2, top:buttonRect.top + (buttonRect.height - height) / 2};
-            } else {
-                const panelRect = panelView.shadow.getElementById('panel').getBoundingClientRect();
-                panelView.floatingPosition = [panelRect.left, panelRect.top, panelRect.width, panelRect.height].every(Number.isFinite) && panelRect.width > 0 && panelRect.height > 0
-                    ? {left:panelRect.left + panelRect.width - width, top:panelRect.top} : null;
+            if(panelView.launcherRestorePosition)panelView.floatingPosition={...panelView.launcherRestorePosition};
+            else {
+                // 隐藏面板和重置 host 原点前，记录缩小按钮在所属视口中的中心。
+                // 首次缩小使用按钮位置；展开过悬浮球后只使用保存的展开前位置。
+                const buttonRect = panelView.shadow.getElementById('minimize').getBoundingClientRect();
+                const launcherRect = panelView.shadow.getElementById('floating-launcher').getBoundingClientRect();
+                const width = launcherRect.width || 44, height = launcherRect.height || 44;
+                if ([buttonRect.left, buttonRect.top, buttonRect.width, buttonRect.height].every(Number.isFinite) && buttonRect.width > 0 && buttonRect.height > 0) {
+                    panelView.floatingPosition = {left:buttonRect.left + (buttonRect.width - width) / 2, top:buttonRect.top + (buttonRect.height - height) / 2};
+                } else {
+                    const panelRect = panelView.shadow.getElementById('panel').getBoundingClientRect();
+                    panelView.floatingPosition = [panelRect.left, panelRect.top, panelRect.width, panelRect.height].every(Number.isFinite) && panelRect.width > 0 && panelRect.height > 0
+                        ? {left:panelRect.left + panelRect.width - width, top:panelRect.top} : null;
+                }
             }
             panelView.windowPlacement = {left:host.style.left, top:host.style.top, transform:host.style.transform};
             // transform 会成为 fixed 子元素的包含块；悬浮入口以真实视口为坐标原点。
@@ -4705,7 +4852,10 @@
             if (suppressClick && event.detail !== 0) { suppressClick = false; event.preventDefault(); return; }
             suppressClick = false;
             if (panelView.windowMode !== 'minimized') return;
+            panelView.launcherRestorePosition={...positionFloatingLauncher()};
             ctl.openPanel();
+            if(event.detail>0 && Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+                panelView.userPosition=setPanelPosition(event.clientX,event.clientY);
             panelView.shadow.getElementById('minimize').focus();
         });
         launcher.addEventListener('keydown', event => {
@@ -4835,6 +4985,7 @@
         if (panelView) {
             const s = panelView.shadow;
             const configuration = readModelConfiguration();
+            refreshCredentialEditor(configuration, busy);
             s.getElementById('model-setup-notice').hidden = configuration.configured;
             s.getElementById('model-setup-message').textContent = !configuration.key
                 ? '请先配置模型：保存 API Key 并选择模型后即可分析。'
@@ -4891,8 +5042,8 @@
             if (batch.length && (batch.length >= MAX_BATCH_QUESTIONS || size + weight > MAX_BATCH_CHARACTERS)) {
                 batches.push(batch); batch = []; size = 2;
             }
-            const model = resolveQuestionModel(settings.model || 'deepseek-flash', question);
-            if (batch.length && model !== resolveQuestionModel(settings.model || 'deepseek-flash', batch[0])) { batches.push(batch); batch = []; size = 2; }
+            const model = resolveQuestionModel(settings.model, question);
+            if (batch.length && model !== resolveQuestionModel(settings.model, batch[0])) { batches.push(batch); batch = []; size = 2; }
             const fits = candidate => {
                 const placeholderEvidence = settings.search ? Object.fromEntries(candidate.map(q => [q.id, Array.from({length:3}, () => ({title:'占'.repeat(120),url:'u'.repeat(500),excerpt:'摘'.repeat(650)}))])) : {};
                 assertConfiguredRequestSize(settings, buildConfiguredAnswerPayload({...settings,model},candidate,placeholderEvidence,preparedMedia));
@@ -4990,7 +5141,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.12',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.13',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -5204,6 +5355,9 @@
                 try {
                     const models = await fetchConfiguredModels(configuration);
                     if (!models.length) throw new Error('模型列表没有有效条目');
+                    const current=readModelConfiguration();
+                    if(current.provider!==configuration.provider || current.baseURL!==configuration.baseURL || current.key!==configuration.key)
+                        throw new Error('配置已变化，请重新获取模型列表');
                     renderModelSettings(ctl, models);
                     invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
                     ctl.report(`获取成功：${models.length} 个模型`, 'done');
@@ -5219,7 +5373,7 @@
 
     function initQuizAssistant(doc = document) {
         if (!doc.body || !hasQuestionNodes(doc)) return;
-        initCredentialSettingsMenu();
+        initCredentialSettings();
         if (!controller) controller = createController();
         createAssistantPanel(doc, controller);
         mountQuizToolbar(doc, controller);
@@ -5250,9 +5404,12 @@
             host.style.cssText = 'display:flex;justify-content:flex-end;width:100%;max-width:100%;box-sizing:border-box;margin:8px 0 12px;clear:both';
             registerAssistantUiHost(host);
             const shadow = host.attachShadow({ mode: 'open' });
-            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button+button{margin-left:8px}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="course-controls">课程控制</button><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
+            shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button+button{margin-left:8px}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
             studyToolbarView = { host, shadow };
-            shadow.getElementById('course-controls').onclick = () => controller.openPanel('chapters');
+            // 只有统一助手入口；测验侧边“自动刷课”导航打开顶层课程面板，不执行课程动作。
+            const showCoursePanel=()=>controller.openPanel('chapters');
+            doc.addEventListener('cx-ai-show-study-panel',showCoursePanel);
+            view.addEventListener('pagehide',()=>doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel),{once:true});
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findQuizPanel(doc.querySelector('#mainid #iframe')?.contentDocument);
                 if (quizDoc) {
@@ -5291,7 +5448,7 @@
         refresh();
         window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
     }
-    initCredentialSettingsMenu();
+    initCredentialSettings();
     initCourseDocumentBridge();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();

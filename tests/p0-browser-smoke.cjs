@@ -141,7 +141,7 @@ async function test(name, action) { await action(); checks.push(name); console.l
       await page.locator('#cx-ai-study-toolbar').locator('#settings').click();
       assert.equal(await page.locator('#cx-ai-quiz-panel').locator('#panel').isVisible(),true);
       assert.equal(await page.locator('#cx-ai-quiz-panel').locator('#course-start').isDisabled(),true);
-      await page.locator('#cx-ai-study-toolbar').locator('#course-controls').click();
+      await page.locator('#cx-ai-quiz-panel').locator('#nav-chapters').click();
       assert.equal(await page.locator('#cx-ai-study-root').locator('#panel').isVisible(),true);
       assert.equal(await page.locator('#cx-ai-study-root').locator('#course-start').isDisabled(),false);
     });

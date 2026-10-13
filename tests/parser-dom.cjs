@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -11,7 +12,7 @@ async function test(name, run) { try { await run(); logs.push(`PASS ${name}`); }
 function fixture(html) {
  const dom = new JSDOM(html, {url:'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true});
  const w = dom.window, requests=[];
- w.GM_getValue=(key,fallback)=>key==='deepseek_api_key'?'mock-key':fallback;
+ w.GM_getValue=withModelFixture((key,fallback)=>key==='deepseek_api_key'?'mock-key':fallback);
  w.GM_setValue=()=>{};w.GM_getResourceText=()=> '{}';w.GM_xmlhttpRequest=request=>requests.push(request);
  w.eval(instrumented);
  return {w,d:w.document,api:w.parserAPI,requests,close(){w.dispatchEvent(new w.Event('pagehide'));w.close();}};

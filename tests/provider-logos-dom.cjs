@@ -1,3 +1,4 @@
+const {fixtureImageCapabilities}=require('./model-fixture.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -8,7 +9,7 @@ const source = fs.readFileSync(path.join(root, '学习通AI助手.user.js'), 'ut
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
 assert(source.includes('function createBrandedModelPicker'), '必须测试带官方标识列表的新构建');
-const instrumented = source.replace(entry, 'globalThis.logoAPI={getModelProvider,initQuizAssistant,refreshBrandedModelPickers,readProviderConfiguration};');
+const instrumented = source.replace(entry, 'globalThis.logoAPI={getModelProvider,initQuizAssistant,refreshBrandedModelPickers,readProviderConfiguration,renderModelSettings,get controller(){return controller}};');
 const hash = data => createHash('sha256').update(data).digest('hex');
 const logs = [], failures = [];
 async function test(name, run) {
@@ -29,11 +30,19 @@ function fixture() {
   return {w,s,storage,requests,api:w.logoAPI,close(){w.dispatchEvent(new w.Event('pagehide'));w.close();}};
 }
 function key(f,id,value) {f.s.getElementById(`${id}-picker`).dispatchEvent(new f.w.KeyboardEvent('keydown',{key:value,bubbles:true}));}
+function seedModels(f,provider=f.api.readProviderConfiguration().provider) {
+  const models=[{id:provider+'-live-a',name:'Live A'},{id:provider+'-live-b',name:'Live B'}];
+  f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities(models.map(item=>[provider,item.id])));
+  f.api.renderModelSettings(f.api.controller,models);
+  const select=f.s.getElementById('model');select.value=models[0].id;select.dispatchEvent(new f.w.Event('change'));
+  f.api.renderModelSettings(f.api.controller);
+}
 function choose(f,provider) {
   f.s.getElementById('provider-picker').click();
   const rows = [...f.s.getElementById('provider-listbox').children];
   const options = [...f.s.getElementById('provider').options];
   rows[options.findIndex(option => option.value === provider)].click();
+  if(provider!=='custom')seedModels(f,provider);
 }
 async function main() {
   await test('五个官方标识与原始文件校验一致，内嵌资源无需请求网络', () => {
@@ -66,7 +75,7 @@ async function main() {
         for (const id of ['provider','model','info-model']) {
           assert.equal(f.s.getElementById(`${id}-picker`).querySelector('img').src,f.api.getModelProvider(provider).logo);
           if (id === 'provider') continue;
-          for (const row of f.s.getElementById(`${id}-listbox`).children) {
+          for (const row of [...f.s.getElementById(`${id}-listbox`).children].filter(row=>row.getAttribute('aria-disabled')!=='true')) {
             assert.equal(row.querySelector('img').src,f.api.getModelProvider(provider).logo);
             assert.equal(row.querySelector('img').alt,'');
           }
@@ -97,15 +106,15 @@ async function main() {
       assert.equal(f.api.readProviderConfiguration().provider,'openai');
       assert.equal(button.getAttribute('aria-expanded'),'false');
       assert.equal(f.s.activeElement,button);
-      key(f,'model','End'); key(f,'model','Enter'); assert.equal(f.storage.get('cx_provider_openai_model'),'gpt-4.1');
-      key(f,'model','Home'); key(f,'model','Enter'); assert.equal(f.storage.get('cx_provider_openai_model'),'gpt-4.1-mini');
-      key(f,'info-model','End'); key(f,'info-model','Enter'); assert.equal(f.storage.get('cx_provider_openai_infoModel'),'gpt-4.1');
+      seedModels(f,'openai');key(f,'model','End'); key(f,'model','Enter'); assert.equal(f.storage.get('cx_provider_openai_model'),'openai-live-b');
+      key(f,'model','Home'); key(f,'model','Enter'); assert.equal(f.storage.get('cx_provider_openai_model'),'openai-live-a');
+      key(f,'info-model','End'); key(f,'info-model','Enter'); assert.equal(f.storage.get('cx_provider_openai_infoModel'),'openai-live-b');
     } finally {f.close();}
   });
   await test('禁用状态、动态模型列表及菜单互斥保持同步', async () => {
     const f = fixture();
     try {
-      f.s.getElementById('provider-picker').click(); f.s.getElementById('model-picker').click();
+      seedModels(f);f.s.getElementById('provider-picker').click(); f.s.getElementById('model-picker').click();
       assert.equal(f.s.getElementById('provider-listbox').hidden,true);
       const select = f.s.getElementById('model'); select.disabled = true;
       await Promise.resolve();

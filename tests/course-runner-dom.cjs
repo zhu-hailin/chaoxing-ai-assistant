@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const classificationRequests=[];
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
@@ -23,11 +24,11 @@ function fixture(chapters,opts={}){
  if(opts.session)w.sessionStorage.setItem('cx-ai-course-session',opts.session);
  const events=[],requests=[],timers=new Set(),videos=[],values=new Map();let active=0,tab=0,submitClicks=0,lastDoc;
  w.confirm=message=>{events.push('confirm-auto-submit:'+message);return opts.confirmSubmit!==false;};
- w.GM_getValue=(key,fallback)=>storage.has(key)?storage.get(key):fallback;
+ w.GM_getValue=withModelFixture((key,fallback)=>storage.has(key)?storage.get(key):fallback);
  w.GM_setValue=(key,value)=>storage.set(key,JSON.parse(JSON.stringify(value)));w.GM_getResourceText=()=> '{}';
  const uiListeners=new Map(),menus=new Map();let uiListenerId=0;
  const attachUiStorage=view=>{
-  view.GM_getValue=(key,fallback)=>storage.has(key)?storage.get(key):fallback;
+  view.GM_getValue=withModelFixture((key,fallback)=>storage.has(key)?storage.get(key):fallback);
   view.GM_setValue=(key,value)=>{const old=storage.get(key);storage.set(key,JSON.parse(JSON.stringify(value)));for(const record of uiListeners.values())if(record.key===key)record.fn(key,old,value,record.view!==view);};
   view.GM_addValueChangeListener=(key,fn)=>{const id=++uiListenerId;uiListeners.set(id,{key,fn,view});return id;};
   view.GM_removeValueChangeListener=id=>uiListeners.delete(id);
@@ -280,7 +281,7 @@ function foregroundFixture(f,visible=true,focused=true){
  await test('失败保护：独立子测验重试入口禁用，主页面确认重试保持有效',async()=>{
   const f=fixture([{tabs:[quiz()]}],{requestMs:100});let first,second;
   try{first=f.runner.start();await waitForTest(()=>f.requests.length===1);f.runner.stop();await first;
-   const child=f.doc.defaultView;child.GM_getValue=(k,b)=>f.storage.has(k)?f.storage.get(k):b;child.GM_setValue=(k,v)=>f.storage.set(k,v);child.GM_getResourceText=()=> '{}';
+   const child=f.doc.defaultView;child.GM_getValue=withModelFixture((k,b)=>f.storage.has(k)?f.storage.get(k):b);child.GM_setValue=(k,v)=>f.storage.set(k,v);child.GM_getResourceText=()=> '{}';
    child.eval(code);child.courseAPI.initQuizAssistant();child.courseAPI.controller.openPanel('chapters');
    const s=f.d.getElementById('cx-ai-quiz-panel').shadowRoot;assert(s.getElementById('course-retry').disabled);const before=f.requests.length;
    s.getElementById('course-retry').click();s.getElementById('course-retry-accept').click();assert.equal(f.requests.length,before);assert(!f.runner.busy);assert.match(s.getElementById('course-run-note').textContent,/主页面/);
@@ -317,7 +318,7 @@ function foregroundFixture(f,visible=true,focused=true){
   finally{f.runner.stop();await pending;f.close();}
  });
  await test('失败保护：同章先完成视频再超时仅计一章，不能按任务完成清零',async()=>{
-  const f=fixture([{tabs:[video({stall:true})]},{tabs:[{title:'混合视频',tasks:[{kind:'video'},{kind:'video',stall:true}]}]},{tabs:[video({stall:true})]},{tabs:[video()]}],{limits:{stallMs:60}});
+  const f=fixture([{tabs:[video({stall:true})]},{tabs:[{title:'混合视频',tasks:[{kind:'video'},{kind:'video',stall:true}]}]},{tabs:[video({stall:true})]},{tabs:[video()]}],{limits:{stallMs:250}});
   try{const r=await f.runner.start({continueOnTimeout:true});assert(r.protection.triggered);assert.equal(r.protection.consecutiveFailures,3);assert.equal(r.videos,1);assert.equal(r.chapters[1].tasks[0].status,'done');assert(!f.events.includes('chapter:3'));}
   finally{f.close();}
  });
@@ -372,7 +373,7 @@ function foregroundFixture(f,visible=true,focused=true){
  });
  await test('失败保护：重试保留原顺序，排除主动跳过，当前开关即使关闭已学跳过也不重复播放已完成任务',async()=>{
   const chapters=[{tabs:[video()]},{tabs:[video({manual:true})]},{tabs:[{title:'多视频',tasks:[{kind:'video'},{kind:'video',stall:true}]}]},{tabs:[video()]}];
-  const f=fixture(chapters,{limits:{stallMs:70}}),p=f.runner.start();try{await waitForTest(()=>f.events.includes('play:1:0:0'));f.runner.skip();await p;assert.equal(f.runner.report.chapters[0].status,'done');assert.equal(f.runner.report.chapters[1].status,'skipped');
+  const f=fixture(chapters,{limits:{stallMs:250}}),p=f.runner.start();try{await waitForTest(()=>f.events.includes('play:1:0:0'));f.runner.skip();await p;assert.equal(f.runner.report.chapters[0].status,'done');assert.equal(f.runner.report.chapters[1].status,'skipped');
    chapters[2].tabs[0].tasks[1].stall=false;f.storage.set('cx_course_skip_learned',false);f.storage.set('cx_course_auto_submit',false);const before=f.events.length;
    const r=await f.runner.retryIncomplete();assert.equal(r.status,'done',r.reason);assert.deepEqual(Array.from(r.chapters,c=>c.id),['cur3','cur4']);assert.equal(r.videos,2);assert(!f.events.slice(before).includes('play:2:0:0'));assert(!f.events.slice(before).includes('chapter:0'));assert(!f.events.slice(before).includes('chapter:1'));assert.equal(f.storage.get(f.runner.key).submit,false);assert.equal(f.storage.get(f.runner.key).previousReport.videos,2);
   }finally{f.runner.stop();await p;f.close();}
@@ -580,7 +581,7 @@ function foregroundFixture(f,visible=true,focused=true){
  });
 
  await test('超时继续默认开启：停滞视频暂停后下一章，不计完成且报告单独标记',async()=>{
-  const f=fixture([{tabs:[video({stall:true})]},{tabs:[video()]}],{limits:{stallMs:65}});try{const r=await f.startWithDefaults();assert.equal(r.status,'done');assert.equal(r.chapters[0].status,'timed-out');assert.equal(r.chapters[0].tasks[0].status,'timed-out');assert.equal(r.videos,1);assert(f.videos[0].paused);assert(f.events.includes('chapter:1'));assert.match(f.api.courseReportText(r),/超时跳过 1 个章节（不计为完成）/);assert.match(f.api.courseReportText(r),/遍历结束，仍有待处理章节/);assert.equal(f.storage.get(f.runner.key).continueOnTimeout,true);}finally{f.close();}
+  const f=fixture([{tabs:[video({stall:true})]},{tabs:[video()]}],{limits:{stallMs:250}});try{const r=await f.startWithDefaults();assert.equal(r.status,'done');assert.equal(r.chapters[0].status,'timed-out');assert.equal(r.chapters[0].tasks[0].status,'timed-out');assert.equal(r.videos,1);assert(f.videos[0].paused);assert(f.events.includes('chapter:1'));assert.match(f.api.courseReportText(r),/超时跳过 1 个章节（不计为完成）/);assert.match(f.api.courseReportText(r),/遍历结束，仍有待处理章节/);assert.equal(f.storage.get(f.runner.key).continueOnTimeout,true);}finally{f.close();}
  });
  await test('关闭超时继续：保留原停止行为，不进入下一章',async()=>{
   const f=fixture([{tabs:[video({stall:true})]},{tabs:[video()]}],{limits:{stallMs:65}});try{const r=await f.runner.start({continueOnTimeout:false});assert.equal(r.status,'stopped');assert.equal(r.chapters[0].status,'stopped');assert(!f.events.includes('chapter:1'));}finally{f.close();}
@@ -1049,7 +1050,7 @@ function foregroundFixture(f,visible=true,focused=true){
  });
  await test('独立题目 iframe 无课程命令权限，主页面操作仍完成到视频',async()=>{
   const f=fixture([{tabs:[quiz({essay:true}),video()]}]);try{
-   const child=f.doc.defaultView;child.GM_getValue=f.w.GM_getValue;child.GM_setValue=f.w.GM_setValue;child.GM_xmlhttpRequest=f.w.GM_xmlhttpRequest;child.GM_getResourceText=f.w.GM_getResourceText;
+   const child=f.doc.defaultView;child.GM_getValue=withModelFixture(f.w.GM_getValue);child.GM_setValue=f.w.GM_setValue;child.GM_xmlhttpRequest=f.w.GM_xmlhttpRequest;child.GM_getResourceText=f.w.GM_getResourceText;
    child.eval(code);child.courseAPI.initQuizAssistant();child.courseAPI.controller.openPanel('chapters');
    const portal=f.d.getElementById('cx-ai-quiz-panel');assert(portal);assert(portal.shadowRoot.getElementById('course-start').disabled);portal.shadowRoot.getElementById('course-start').click();
    await delay(10);assert(!f.runner.busy);assert.equal(f.requests.length,0);const p=f.runner.start();await delay(10);assert(f.runner.busy);assert(portal.shadowRoot.getElementById('status-spinner').hidden===false);
@@ -1115,7 +1116,7 @@ function foregroundFixture(f,visible=true,focused=true){
  });
  await test('独立子测验跳过入口禁用，主页面取消测验后继续下一章',async()=>{
   const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{requestMs:80});try{
-   const child=f.doc.defaultView;child.GM_getValue=f.w.GM_getValue;child.GM_setValue=f.w.GM_setValue;child.GM_xmlhttpRequest=f.w.GM_xmlhttpRequest;child.GM_getResourceText=f.w.GM_getResourceText;
+   const child=f.doc.defaultView;child.GM_getValue=withModelFixture(f.w.GM_getValue);child.GM_setValue=f.w.GM_setValue;child.GM_xmlhttpRequest=f.w.GM_xmlhttpRequest;child.GM_getResourceText=f.w.GM_getResourceText;
    child.eval(code);child.courseAPI.initQuizAssistant();child.courseAPI.controller.openPanel('chapters');
    const p=f.runner.start();await delay(10);const button=f.d.getElementById('cx-ai-quiz-panel').shadowRoot.getElementById('course-skip');assert(button.disabled);button.click();assert.equal(f.runner.report.chapters[0].status,'running');f.runner.skip();
    const r=await p;assert.equal(r.status,'done');assert.equal(r.chapters[0].status,'skipped');assert.equal(f.submits,0);assert.equal(r.videos,1);
@@ -1291,7 +1292,7 @@ function foregroundFixture(f,visible=true,focused=true){
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.12');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.13');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{
@@ -1524,7 +1525,7 @@ function foregroundFixture(f,visible=true,focused=true){
    const r=await f.runner.start();assert.equal(r.status,'stopped');assert.match(r.reason,/控件未适配或仍未加载/);assert.equal(r.videos,0);assert(!r.chapters[0].tasks.some(t=>t.type==='non-task'));
   }finally{f.close();}
  });
- const shareStorage=(a,b)=>{b.w.GM_getValue=(key,fallback)=>a.storage.has(key)?a.storage.get(key):fallback;b.w.GM_setValue=(key,value)=>a.storage.set(key,JSON.parse(JSON.stringify(value)));};
+ const shareStorage=(a,b)=>{b.w.GM_getValue=withModelFixture((key,fallback)=>a.storage.has(key)?a.storage.get(key):fallback);b.w.GM_setValue=(key,value)=>a.storage.set(key,JSON.parse(JSON.stringify(value)));};
  const makePair=()=>{
   const a=fixture([{tabs:[video({duration:300})]}],{limits:{stallMs:10000}});
   const b=fixture([{tabs:[video({duration:300})]}],{session:a.w.sessionStorage.getItem('cx-ai-course-session'),noAutoResume:true,limits:{stallMs:10000}});

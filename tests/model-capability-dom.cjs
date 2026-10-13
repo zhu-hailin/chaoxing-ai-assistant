@@ -103,9 +103,10 @@ function fixture(options={}) {
    const f=fixture({settings:{provider},image:'data:image/png;base64,'+'A'.repeat(bytes)});assert.equal((await f.run()).images,null);assert.equal(f.requests.length,0);assert.equal(f.writes.length,0);
   }
  });
- await test('未知型号实测结果进入实际图片能力判断，但不启用未经确认的思考参数',async()=>{
+ await test('未知型号图片实测不改变平台参数与已保存的思考选项',async()=>{
   const f=fixture();assert.equal(f.api.providerModelCapabilities('deepseek','new-model').images,false);assert.equal(f.api.modelSupportsImages('new-model',f.settings),false);
-  const pending=f.run();f.respond();await pending;const cap=f.api.providerModelCapabilities('deepseek','new-model');assert.equal(cap.images,true);assert.equal(cap.known,false);assert.equal(cap.thinking,false);assert.equal(cap.imageEvidence,'image-test');
+  const before=f.api.providerModelCapabilities('deepseek','new-model'),thinking=f.api.readProviderConfiguration().thinking;
+  const pending=f.run();f.respond();await pending;const cap=f.api.providerModelCapabilities('deepseek','new-model');assert.equal(cap.images,true);assert.equal(cap.known,false);assert.equal(cap.thinking,before.thinking);assert.equal(f.api.readProviderConfiguration().thinking,thinking);assert.equal(cap.imageEvidence,'image-test');
   assert.equal(f.api.modelSupportsImages('new-model',f.settings),true);assert.match(f.api.modelOptionLabel('deepseek','new-model'),/已实测|已通过图片识别测试/);
  });
  await test('损坏、negative和未经验证metadata缓存不被信任；公开读取返回白名单副本',async()=>{

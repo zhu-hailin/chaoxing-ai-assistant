@@ -1,3 +1,4 @@
+const {fixtureImageCapabilities}=require('./model-fixture.cjs');
 const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const classificationRequests=[];
 const fs = require('node:fs');
@@ -12,7 +13,7 @@ const source = fs.readFileSync(candidatePath, 'utf8').replace(/\r\n/g, '\n');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry), '仅执行已构建候选脚本，入口定位必须成功');
 assert(source.includes('function getModelProvider'), '候选脚本尚未包含多模型升级，禁止测试旧源');
-const instrumented = source.replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */').replace(entry, `globalThis.providersAPI={getModelProvider,providerModelCapabilities,readProviderConfiguration,readModelConfiguration,readProviderSetting,saveProviderSetting,saveProviderKey,normalizeModelBaseURL,modelConfigurationSignature,modelOptionLabel,modelSupportsImages,buildConfiguredAnswerPayload,assertConfiguredRequestSize,askConfiguredModel,fetchConfiguredModels,createCourseVideoInfo,extract,prepareQuestionMedia,initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,get controller(){return controller}};`);
+const instrumented = source.replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */').replace(entry, `globalThis.providersAPI={getModelProvider,providerModelCapabilities,readProviderConfiguration,readModelConfiguration,readProviderSetting,saveProviderSetting,saveProviderKey,normalizeModelBaseURL,modelConfigurationSignature,modelOptionLabel,modelSupportsImages,buildConfiguredAnswerPayload,assertConfiguredRequestSize,askConfiguredModel,fetchConfiguredModels,createCourseVideoInfo,extract,prepareQuestionMedia,initQuizAssistant,runAnswerFlow,resumeAnalysisTask,stopAnalysisTask,get controller(){return controller},get credentialEditor(){return credentialView}};`);
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XGnQAAAAASUVORK5CYII=';
 const DATA = `data:image/png;base64,${PNG}`;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -122,14 +123,14 @@ async function main() {
       assert.equal(f.api.readProviderConfiguration('openai').key,'new-openai');
     } finally {f.close();}
   });
-  await test('预置模型视觉能力来自白名单，未知 ID 不按名称猜测',async()=>{
+  await test('具体型号不内置能力，未经实测的旧型号与新 ID 均未知',async()=>{
     const f=fixture();
     try {
       const cases=[['deepseek','deepseek-flash',true],['deepseek','deepseek-v4-pro',false],['openai','gpt-4.1-mini',true],['qwen','qwen-plus',false],['qwen','qwen3-vl-plus',true],['kimi','kimi-k2.6',true],['glm','glm-5.3',false],['glm','glm-5.3-flash',true]];
       for(const [provider,model,images] of cases) {
         const caps=f.api.providerModelCapabilities(provider,model);
-        assert.equal(caps.known,true);assert.equal(caps.images,images);
-        assert.match(f.api.modelOptionLabel(provider,model),images?/支持图片/:/仅文字/);
+        assert.equal(caps.known,false);assert.equal(caps.images,false);
+        assert.match(f.api.modelOptionLabel(provider,model),/未确认/);
       }
       for(const provider of ['deepseek','openai','qwen','kimi','glm']) {
         const caps=f.api.providerModelCapabilities(provider,'unverified-vision-super-model');
@@ -138,11 +139,11 @@ async function main() {
       }
     } finally {f.close();}
   });
-  await test('DeepSeek 历史视觉别名仍可用且平台能力不串用',async()=>{
+  await test('DeepSeek 历史视觉别名不再自动放行且平台能力不串用',async()=>{
     const f=fixture();
     try {
-      assert.equal(f.api.providerModelCapabilities('deepseek','deepseek-v4-flash').images,true);
-      assert.equal(f.api.providerModelCapabilities('deepseek','deepseek-v4-flash-vision-exp').images,true);
+      assert.equal(f.api.providerModelCapabilities('deepseek','deepseek-v4-flash').images,false);
+      assert.equal(f.api.providerModelCapabilities('deepseek','deepseek-v4-flash-vision-exp').images,false);
       assert.equal(f.api.providerModelCapabilities('openai','deepseek-flash').images,false);
     } finally {f.close();}
   });
@@ -154,7 +155,7 @@ async function main() {
         assert.equal(cfg.thinking,false);assert.equal(cfg.search,false);
         assert.equal(f.api.readProviderSetting(id,'thinking'),true);assert.equal(f.api.readProviderSetting(id,'search'),true);
       }
-      assert.equal(config(f,'glm','glm-5.3',{thinking:false}).thinking,true);
+      assert.equal(config(f,'glm','glm-5.3',{thinking:false}).thinking,false);
     } finally {f.close();}
   });
   await test('自定义只保存一个配置，图片能力默认关闭并需明确开启',async()=>{
@@ -205,11 +206,11 @@ async function main() {
     const f=fixture();
     try {
       for(const [id,model] of [['deepseek','deepseek-flash'],['openai','gpt-4.1-mini'],['qwen','qwen3-vl-plus'],['kimi','kimi-k2.6'],['glm','glm-5.3-flash']]) {
-        assert.equal(f.api.readProviderConfiguration(id).infoModel,model);assert.equal(f.api.readProviderConfiguration(id).videoInfoIntervalSeconds,30);
+        assert.equal(f.api.readProviderConfiguration(id).infoModel,'');assert.equal(f.api.readProviderConfiguration(id).videoInfoIntervalSeconds,30);
       }
       f.api.saveProviderSetting('infoModel','gpt-4.1','openai');f.api.saveProviderSetting('videoInfoIntervalSeconds',45,'openai');
       assert.equal(f.api.readProviderConfiguration('openai').infoModel,'gpt-4.1');assert.equal(f.api.readProviderConfiguration('openai').videoInfoIntervalSeconds,45);
-      assert.equal(f.api.readProviderConfiguration('deepseek').infoModel,'deepseek-flash');assert.equal(f.api.readProviderConfiguration('deepseek').videoInfoIntervalSeconds,30);
+      assert.equal(f.api.readProviderConfiguration('deepseek').infoModel,'');assert.equal(f.api.readProviderConfiguration('deepseek').videoInfoIntervalSeconds,30);
     } finally {f.close();}
   });
   await test('截图间隔严格保存 5–300 秒边界，非法输入不覆盖原值',async()=>{
@@ -237,7 +238,7 @@ async function main() {
     const restored=fixture(essay('q1'),{storage:saved});
     try {restored.api.initQuizAssistant();assert.equal(panel(restored).getElementById('auto-context').checked,false);}finally{restored.close();}
   });
-  await test('识别模型列表只显示所选平台已确认视觉预置，不混入文字或未知模型',async()=>{
+  await test('没有接口列表和视觉实测时不预置任何识别模型',async()=>{
     const f=fixture(essay('q1'));
     try {
       f.api.initQuizAssistant();const s=panel(f);
@@ -246,7 +247,7 @@ async function main() {
         const values=[...s.getElementById('info-model').options].map(o=>o.value);
         const expected=f.api.getModelProvider(id).models.filter(m=>m.images).map(m=>m.id);
         assert.equal(values.join(','),expected.join(','));assert.equal(s.getElementById('info-model').disabled,false);
-        for(const model of values)assert.equal(f.api.providerModelCapabilities(id,model).images,true);
+        for(const model of values.filter(Boolean))assert.equal(f.api.providerModelCapabilities(id,model).images,true);
       }
       assert.equal(f.requests.length,0);
     } finally {f.close();}
@@ -300,18 +301,18 @@ async function main() {
       assert.equal(request.url,url);assert.equal(request.headers.Authorization,`Bearer ${cfg.key}`);
       const {payload}=respondAnswers(request);
       assert.equal(payload.model,model);assert.notEqual(payload.stream,true);
-      if(provider==='qwen'){assert.equal(payload.enable_thinking,false);assert.equal(payload.thinking,undefined);}
-      if(provider==='kimi'){assert.deepEqual(payload.thinking,{type:'disabled'});assert.equal(payload.temperature,undefined);}
-      if(['glm','custom'].includes(provider))assert.equal(payload.response_format,undefined);
+      if(provider==='qwen'){assert.equal(payload.enable_thinking,undefined);assert.equal(payload.thinking,undefined);}
+      if(provider==='kimi'){assert.equal(payload.thinking,undefined);assert.equal(payload.temperature,undefined);}
+      if(provider!=='deepseek')assert.equal(payload.response_format,undefined);
       else assert.deepEqual(payload.response_format,{type:'json_object'});
-      if(provider==='glm' && model==='glm-5.3')assert.equal(payload.reasoning_effort,'high');
-      else if(provider!=='deepseek')assert.equal(payload.reasoning_effort,undefined);
+      if(provider!=='deepseek')assert.equal(payload.reasoning_effort,undefined);
       const result=await flow;assert.equal(result.answers.length,1);assert.equal(result.answers[0].answer[0],'模拟答案');
     } finally {f.close();}
   });
   for(const [provider,model,detail] of [['deepseek','deepseek-flash','original'],['openai','gpt-4.1-mini','high'],['qwen','qwen3-vl-plus',undefined],['kimi','kimi-k2.6',undefined],['glm','glm-5.3-flash',undefined],['custom','my-model',undefined]])await test(`${provider} 图文内容携带 Base64，不携带资源地址或其他平台 detail`,async()=>{
     const f=fixture(imageEssay('q1'));
     try {
+      f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities());
       const cfg=config(f,provider,model,provider==='custom'?{baseURL:'https://gateway.example/v1',images:true}:{});
       const extracted=f.api.extract(),prepared=await f.api.prepareQuestionMedia(extracted.media,()=>{},()=>{});
       const payload=plain(f.api.buildConfiguredAnswerPayload(cfg,extracted.questions,{},prepared));
@@ -398,11 +399,13 @@ async function main() {
       assert.match(f.api.controller.state.message,/已取消/);assert.equal(f.requests.length,1);
     } finally {f.close();}
   });
-  await test('官方预置文字或视觉模型无需图片实测，不生成测试图或请求',async()=>{
+  await test('旧型号也必须通过图片实测，不能凭内置名字免测',async()=>{
     for(const model of ['qwen-plus','qwen3-vl-plus']) {
       const f=fixture(essay('q1'));
-      try {config(f,'qwen',model);f.api.initQuizAssistant();const codes=mockChallengeCanvas(f);panel(f).getElementById('detect-images').click();await pause(1);
-        assert.equal(codes.length,0);assert.equal(f.requests.length,0);assert.match(f.api.controller.state.message,/官方文档/);assert.equal(f.api.controller.state.busy,false);
+      try {config(f,'qwen',model);f.api.initQuizAssistant();const codes=mockChallengeCanvas(f);panel(f).getElementById('detect-images').click();
+        const request=await pending(f);assert.equal(codes.length,1);assert.equal(f.requests.length,1);
+        response(request,JSON.stringify({code:codes[0]}));await waitIdle(f);
+        assert.equal(f.api.readProviderConfiguration().images,true);assert.equal(f.api.controller.state.busy,false);
       }finally{f.close();}
     }
   });
@@ -410,7 +413,7 @@ async function main() {
     const html=`<div class="TiMu" questionid="choice"><h3 class="stem">【单选题】选择图中的答案</h3><label><input type="radio" value="A" name="choice"><img src="${DATA}" alt="A图"></label><label><input type="radio" value="B" name="choice">B 另一项</label></div>`;
     const f=fixture(html);
     try {
-      config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false}),request=await pending(f);
+      f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities());config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false}),request=await pending(f);
       const payload=JSON.parse(request.data),content=payload.messages.find(m=>m.role==='user').content;
       assert(Array.isArray(content));assert.equal(content.filter(p=>p.type==='image_url').length,1);
       response(request,JSON.stringify({answers:[{id:'choice',answer:['A'],reason:'模拟识图'}]}));await flow;
@@ -421,7 +424,7 @@ async function main() {
   await test('视觉平台读取超星图片的 GET 不携带模型 Key，POST 才用本平台 Key',async()=>{
     const f=fixture(essay('q1','解释表格<img src="https://p.ananas.chaoxing.com/test-table.png">'));
     try {
-      config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});
+      f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities());config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});
       const media=await requestAt(f,0);assert.equal(media.method,'GET');assert.equal(media.responseType,'arraybuffer');
       assert.equal(media.headers?.Authorization,undefined);assert.equal(media.headers?.['x-api-key'],undefined);
       assert(!JSON.stringify(media).includes('openai-mock-key'));
@@ -508,10 +511,10 @@ async function main() {
   await test('分析期间平台、Key 和自定义配置锁定，程序触发 change 也不会串 Key',async()=>{
     const f=fixture(essay('q1'));
     try {
-      config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});
+      f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities());config(f,'openai','gpt-4.1-mini');f.api.initQuizAssistant();const flow=f.api.runAnswerFlow({autoPrefill:false});
       const request=await pending(f),s=panel(f);
       for(const id of ['provider','model','custom-base','custom-model','custom-images','save-custom','auto-context','info-model','info-interval'])assert.equal(s.getElementById(id).disabled,true);
-      f.promptAnswers.push('2','busy-replacement-key');f.menus.get('设置 / 替换模型 API Key')();
+      assert(f.api.credentialEditor.input.disabled);f.api.credentialEditor.input.value='busy-replacement-key';f.api.credentialEditor.save.click();
       assert.equal(f.prompts.length,0);assert.equal(f.api.readProviderConfiguration().key,'openai-mock-key');
       s.getElementById('provider').value='glm';s.getElementById('provider').dispatchEvent(new f.w.Event('change'));
       assert.equal(f.api.readProviderConfiguration().provider,'openai');assert.equal(request.headers.Authorization,'Bearer openai-mock-key');
@@ -522,7 +525,7 @@ async function main() {
   await test('课程运行锁定自动识别、识别模型和间隔，程序 change 也不能写入配置',async()=>{
     const f=fixture('<div id="mainid"><iframe id="iframe"></iframe></div>'+essay('q1'),{url:'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
     try {
-      config(f,'openai','gpt-4.1-mini');const lease=f.d.createElement('div');lease.id='cx-ai-course-lease';lease.setAttribute('data-run-id','mock-active-run');f.d.body.append(lease);
+      f.storage.set('cx_model_image_capabilities',fixtureImageCapabilities());config(f,'openai','gpt-4.1-mini');const lease=f.d.createElement('div');lease.id='cx-ai-course-lease';lease.setAttribute('data-run-id','mock-active-run');f.d.body.append(lease);
       f.api.initQuizAssistant();const s=panel(f),before=f.writes.length;
       for(const id of ['auto-context','info-model','info-interval','detect-images'])assert.equal(s.getElementById(id).disabled,true);
       s.getElementById('auto-context').checked=false;s.getElementById('info-model').value='gpt-4.1';s.getElementById('info-interval').value='45';
@@ -561,7 +564,7 @@ async function main() {
       respondAnswers(await requestAt(f,0));const failed=await requestAt(f,1);
       failed.onload({status:401,responseText:JSON.stringify({error:{message:'invalid mock key'}})});await firstFlow;
       assert.equal(f.api.controller.task.status,'failed');assert.equal(f.api.controller.result.analyzedCount,10);assert.equal(f.api.controller.last,null);
-      f.promptAnswers.push('2','corrected-key');f.menus.get('设置 / 替换模型 API Key')();
+      f.api.credentialEditor.input.value='corrected-key';f.api.credentialEditor.save.click();
       assert.equal(f.api.controller.task.status,'failed');assert.equal(f.api.readProviderConfiguration().key,'corrected-key');
       const resumed=f.api.resumeAnalysisTask(),request=await requestAt(f,2);assert.equal(request.headers.Authorization,'Bearer corrected-key');
       const {sent}=respondAnswers(request);assert.equal(sent.questions.length,1);assert.equal(sent.questions[0].id,'q11');await resumed;

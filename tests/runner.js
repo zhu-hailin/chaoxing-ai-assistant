@@ -478,7 +478,7 @@
         const f=await fixture({stored:[['cx_model','']]}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
         assert(!s.getElementById('model-setup-notice').hidden && s.getElementById('model-setup-message').textContent.includes('选择模型'),'未选择模型没有提示');
         await f.api.runAnswerFlow({autoPrefill:false});assert(!f.requests.length && !s.getElementById('view-model').hidden,'空模型被发送给服务商');
-        const select=s.getElementById('model');select.value='deepseek-flash';select.dispatchEvent(new f.w.Event('change'));assert(s.getElementById('model-setup-notice').hidden,'选择模型后仍提示缺少配置');
+        const select=s.getElementById('model');const option=f.d.createElement('option');option.value='deepseek-flash';option.textContent='模拟接口返回型号';select.append(option);select.value='deepseek-flash';select.dispatchEvent(new f.w.Event('change'));assert(s.getElementById('model-setup-notice').hidden,'选择模型后仍提示缺少配置');
         const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);f.respond();await flow;
         assert(f.api.controller.state.phase==='done' && s.querySelectorAll('.ai-answer').length===4,'完成配置后未恢复分析');f.remove();
     });

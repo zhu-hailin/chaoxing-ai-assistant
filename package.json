@@ -1,11 +1,11 @@
 {
   "name": "chaoxing-ai-assistant",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "private": true,
   "description": "学习通AI助手的本地 DOM 模拟验证",
   "scripts": {
     "build": "python build_script.py",
-    "test": "python tests/build_offline.py && node tests/run-dom.cjs && node tests/study-dom.cjs && node tests/parser-dom.cjs && node tests/media-dom.cjs && node tests/course-runner-dom.cjs && python tests/build_course_preview.py && node tests/course-preview-dom.cjs && node tests/analysis-task-dom.cjs && node tests/model-providers-dom.cjs && node tests/course-context-dom.cjs && node tests/course-video-info-dom.cjs && node tests/model-capability-dom.cjs && node tests/course-info-integration-dom.cjs && node tests/panel-window-dom.cjs && node tests/answer-policy-dom.cjs && node tests/credential-settings-dom.cjs && node tests/provider-logos-dom.cjs && node tests/p0-page-actions-dom.cjs"
+    "test": "python tests/build_offline.py && node tests/run-dom.cjs && node tests/study-dom.cjs && node tests/parser-dom.cjs && node tests/media-dom.cjs && node tests/course-runner-dom.cjs && python tests/build_course_preview.py && node tests/course-preview-dom.cjs && node tests/analysis-task-dom.cjs && node tests/model-providers-dom.cjs && node tests/course-context-dom.cjs && node tests/course-video-info-dom.cjs && node tests/model-capability-dom.cjs && node tests/course-info-integration-dom.cjs && node tests/panel-window-dom.cjs && node tests/answer-policy-dom.cjs && node tests/credential-settings-dom.cjs && node tests/provider-logos-dom.cjs && node tests/p0-page-actions-dom.cjs && node tests/ui-model-fixes-dom.cjs && node tests/assistant-updates-dom.cjs"
   },
   "engines": {
     "node": ">=22.13.0"

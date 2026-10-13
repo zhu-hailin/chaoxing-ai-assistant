@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const {policyInput,respondPolicy}=require('./answer-policy-mock.cjs');
 const classificationRequests=[];
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
@@ -21,7 +22,7 @@ function evidence(request){request.onload({status:200,responseText:JSON.stringif
 function fixture(html=choices(),options={}) {
  const dom=new JSDOM(html,{url:'https://mooc1.chaoxing.com/mooc-ans/mooc2/work/view',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,requests=[],storage=new Map([['deepseek_api_key','mock-key'],['cx_model','deepseek-flash'],['cx_search',Boolean(options.search)]]),images=[];
- w.GM_getValue=(k,f)=>storage.has(k)?storage.get(k):f;w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_getResourceText=()=>'{}';
+ w.GM_getValue=withModelFixture((k,f)=>storage.has(k)?storage.get(k):f);w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_getResourceText=()=>'{}';
  w.Image=class{constructor(){images.push(this);}set src(value){this.value=value;if(value&&!options.hangImage)queueMicrotask(()=>{this.naturalWidth=this.naturalHeight=1;this.onload?.();});}};
  const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===2000?8:ms,...args);
  w.GM_xmlhttpRequest=request=>{

@@ -1,42 +1,34 @@
-    // 平台能力按官方文档确认；未知模型只分析文字，不按名称猜测视觉能力。
+    // 只预置平台地址和标识；具体型号由接口返回或用户保存，不内置型号与型号能力。
     const KEY_PROVIDER = 'cx_provider';
     const MODEL_PROVIDERS = Object.freeze([
-        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,verifiedAt:'2026-10-11',
-            docs:'https://api-docs.deepseek.com/quick_start/pricing/',
-            models:[{id:'deepseek-flash',name:'DeepSeek Flash',images:true,thinking:true},
-                {id:'deepseek-v4-pro',name:'DeepSeek V4 Pro',images:false,thinking:true}]},
-        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',verifiedAt:'2026-10-11',
-            docs:'https://developers.openai.com/api/docs/models/gpt-4.1-mini',
-            models:[{id:'gpt-4.1-mini',name:'GPT-4.1 mini',images:true,thinking:false},
-                {id:'gpt-4.1',name:'GPT-4.1',images:true,thinking:false}]},
-        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',verifiedAt:'2026-10-11',
-            docs:'https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions',
-            models:[{id:'qwen-plus',name:'Qwen Plus',images:false,thinking:false},
-                {id:'qwen3-vl-plus',name:'Qwen3 VL Plus',images:true,thinking:false}]},
-        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',verifiedAt:'2026-10-11',
-            docs:'https://platform.kimi.com/docs/api/chat',
-            models:[{id:'kimi-k2.6',name:'Kimi K2.6',images:true,thinking:false}]},
-        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',verifiedAt:'2026-10-11',
-            docs:'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
-            models:[{id:'glm-5.3',name:'GLM-5.3',images:false,thinking:true,thinkingRequired:true},
-                {id:'glm-5.3-flash',name:'GLM-5.3 Flash',images:true,thinking:false}]},
-        {id:'custom',name:'自定义',baseURL:'',verifiedAt:'2026-10-11',models:[]}
+        {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,models:[]},
+        {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',models:[]},
+        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',models:[]},
+        {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',models:[]},
+        {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',models:[]},
+        {id:'custom',name:'自定义',baseURL:'',models:[]}
     ]);
-    const DEEPSEEK_IMAGE_ALIASES = new Set(['deepseek-v4-flash','deepseek-v4-flash-vision-exp']);
+    const fetchedProviderModelLists = new Map();
+    function currentProviderModelList(settings) {
+        const record=fetchedProviderModelLists.get(settings.provider);
+        return record && record.baseURL===settings.baseURL && record.key===settings.key ? record.models : null;
+    }
+    function rememberProviderModelList(settings,models) {
+        fetchedProviderModelLists.set(settings.provider,{baseURL:settings.baseURL,key:settings.key,models});
+        if(settings.model && !models.some(item=>item.id===settings.model))saveProviderSetting('model','',settings.provider);
+        if(settings.infoModel && !models.some(item=>item.id===settings.infoModel))saveProviderSetting('infoModel','',settings.provider);
+    }
     function getModelProvider(id = get(KEY_PROVIDER,'deepseek')) {
         return MODEL_PROVIDERS.find(item=>item.id===id) || MODEL_PROVIDERS[0];
     }
     function providerModelCapabilities(provider, model) {
         const platform=getModelProvider(typeof provider==='object'?provider.id:provider);
-        const preset=platform.models.find(item=>item.id===model);
-        const legacyVision=platform.id==='deepseek' && DEEPSEEK_IMAGE_ALIASES.has(model);
-        const known=Boolean(preset || legacyVision);
-        const tested=!known && typeof verifiedModelImages==='function' && verifiedModelImages(platform.id,model);
-        return {known,images:known?Boolean(preset?.images || legacyVision):Boolean(tested),imageEvidence:known?'official':tested?'image-test':'unknown',
-            thinking:Boolean(preset?.thinking || legacyVision),thinkingRequired:preset?.thinkingRequired===true,
-            effort:platform.id==='deepseek' && known || platform.id==='glm' && preset?.thinkingRequired===true,
-            search:platform.id==='deepseek',jsonMode:platform.id==='deepseek' || known && ['openai','qwen','kimi'].includes(platform.id)};
+        const tested=typeof verifiedModelImages==='function' && verifiedModelImages(platform.id,model);
+        return {known:false,images:Boolean(tested),imageEvidence:tested?'image-test':'unknown',
+            thinking:platform.id==='deepseek',thinkingRequired:false,effort:platform.id==='deepseek',
+            search:platform.id==='deepseek',jsonMode:platform.id==='deepseek'};
     }
+
     function providerSettingKey(provider, field) {
         const id=getModelProvider(provider).id;
         const legacy={key:KEY_DS,model:KEY_MODEL,thinking:KEY_THINKING,effort:KEY_EFFORT,search:KEY_SEARCH};
@@ -59,13 +51,13 @@
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
         const platform=getModelProvider(provider),id=platform.id;
         const savedKey=String(readProviderSetting(id,'key','') ?? '').trim();
-        const model=String(readProviderSetting(id,'model',platform.models[0]?.id || '') ?? '').trim();
+        const model=String(readProviderSetting(id,'model','') ?? '').trim();
         let baseURL=platform.baseURL;
         if(id==='custom') {
             try {baseURL=normalizeModelBaseURL(readProviderSetting(id,'baseURL',''));}
             catch {baseURL='';}
         }
-        // 自定义地址可在页面中编辑；旧 Key 仅能用于脚本管理器菜单明确授权的同一基础地址。
+        // 自定义地址可在页面中编辑；旧 Key 仅能用于Key 输入控件明确授权的同一基础地址。
         const credentialNeedsApproval=id==='custom' && Boolean(savedKey) && (!baseURL || readProviderSetting(id,'keyBaseURL','')!==baseURL);
         const key=credentialNeedsApproval ? '' : savedKey;
         const capabilities=providerModelCapabilities(id,model);
@@ -74,7 +66,7 @@
         const effortRaw=readProviderSetting(id,'effort','high');
         const effort=['low','high','max'].includes(effortRaw) ? effortRaw : 'high';
         const search=capabilities.search && Boolean(readProviderSetting(id,'search',false));
-        const defaultInfoModel=platform.models.find(item=>item.images)?.id || (id==='custom' && images?model:'');
+        const defaultInfoModel=images ? model : '';
         const infoModel=String(readProviderSetting(id,'infoModel',defaultInfoModel) || '').trim();
         const rawInterval=Number(readProviderSetting(id,'videoInfoIntervalSeconds',30));
         const videoInfoIntervalSeconds=Number.isFinite(rawInterval)?Math.min(300,Math.max(5,rawInterval)):30;
@@ -197,10 +189,14 @@
         if(!settings.key)throw new Error('请先保存 API Key');
         const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000});
         if(!Array.isArray(data.data) || !data.data.length)throw new Error('模型列表为空');
-        return data.data.filter(item=>item && typeof item.id==='string' && item.id.trim()).map(item=>({
-            id:item.id.trim(),name:typeof item.name==='string'?item.name:item.id.trim(),
-            effort:Array.isArray(item.effort?.supported_levels)?item.effort.supported_levels:[]
-        }));
+        const models=new Map();
+        for(const item of data.data) {
+            if(!item || typeof item.id!=='string' || !item.id.trim() || item.id.trim().length>200)continue;
+            const id=item.id.trim();if(models.has(id))continue;
+            models.set(id,{id,name:typeof item.name==='string' && item.name.trim()?item.name.trim().slice(0,500):id});
+        }
+        if(!models.size)throw new Error('模型列表没有有效条目');
+        return [...models.values()];
     }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
         if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');

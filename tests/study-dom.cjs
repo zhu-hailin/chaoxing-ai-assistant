@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -7,13 +8,13 @@ const delay = () => new Promise(resolve => setTimeout(resolve, 140));
 const logs = [], failures = [];
 async function test(name, run) {
     try { await run(); logs.push(`PASS ${name}`); }
-    catch (error) { failures.push(`${name}: ${error.message}`); }
+    catch (error) { failures.push(`${name}: ${error.stack}`); }
 }
 function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account') {
     const dom = new JSDOM(`<div id="mainid"><h1>章节</h1><div id="prev_tab" style="padding:0 100px"><div id="dct1">${type}</div></div><iframe id="iframe"></iframe></div>`, { url, runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
     const requests = [];
-    w.GM_getValue = (_, fallback) => fallback;
+    w.GM_getValue = withModelFixture((_, fallback) => fallback);
     w.GM_setValue = () => {};
     w.GM_getResourceText = () => '{}';
     w.GM_xmlhttpRequest = request => { requests.push(request); };
@@ -38,6 +39,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(d.getElementById('cx-ai-toolbar'), null);
             const button = entry.shadowRoot.getElementById('settings');
             assert.equal(button.textContent, '学习通AI助手');
+            assert.equal(entry.shadowRoot.getElementById('course-controls'),null);
             button.click();
             const s = d.getElementById('cx-ai-study-root').shadowRoot;
             assert.equal(s.getElementById('panel').hidden, false);
@@ -75,7 +77,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(f.w.document.getElementById('cx-ai-study-toolbar'), null);
             const embedded = f.w.document.getElementById('iframe').contentWindow;
             embedded.document.body.innerHTML = '<div id="mainid"><iframe id="iframe"></iframe></div>';
-            embedded.GM_getValue = (_, fallback) => fallback;
+            embedded.GM_getValue = withModelFixture((_, fallback) => fallback);
             embedded.GM_setValue = () => {};
             embedded.eval(source);
             await delay();
@@ -93,7 +95,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             const quiz = card.document.getElementById('quiz-frame').contentWindow;
             quiz.document.body.innerHTML = `<div class="CeYan"><div class="ceyan_name"><h3>测验</h3></div><div class="singleQuesId" data="1"><div class="Zy_TItle"><div class="fontLabel">【单选题】请选择甲</div></div><ul class="Zy_ulTop"><li><span class="num_option" data="A">A</span><a class="after">甲</a></li><li><span class="num_option" data="B">B</span><a class="after">乙</a></li></ul><input type="hidden" name="answer1"></div></div>`;
             const requests = [];
-            quiz.GM_getValue = (key, fallback) => key === 'deepseek_api_key' ? 'mock-key' : fallback;
+            quiz.GM_getValue = withModelFixture((key, fallback) => key === 'deepseek_api_key' ? 'mock-key' : fallback);
             quiz.GM_setValue = () => {};
             quiz.GM_getResourceText = () => '{}';
             quiz.GM_xmlhttpRequest = request => requests.push(request);
@@ -125,7 +127,11 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             const smallHeight = parseFloat(panel.getElementById('panel').style.getPropertyValue('--content-height'));
             assert(smallHeight < fullHeight && smallHeight > 0, '目录高度未随可用视口缩小');
             panel.getElementById('nav-chapters').click();
-            assert.equal(panel.getElementById('course-nav').hidden, false);
+            const coursePanel=d.getElementById('cx-ai-study-root').shadowRoot;
+            assert.equal(coursePanel.getElementById('view-chapters').hidden, false);
+            assert.equal(coursePanel.getElementById('panel').hidden, false);
+            assert.equal(panel.getElementById('panel').hidden, true);
+            upper.click();
             panel.getElementById('nav-model').click();
 
             f.w.dispatchEvent(new f.w.Event('resize'));
@@ -152,12 +158,12 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(panel.getElementById('panel').hidden, false);
             upper.click();
             assert(panel.getElementById('panel').hidden);
-            d.getElementById('cx-ai-study-toolbar').shadowRoot.getElementById('course-controls').click();
+            panel.getElementById('nav-chapters').click();
             const mainPanel = d.getElementById('cx-ai-study-root').shadowRoot;
             assert.equal(mainPanel.getElementById('panel').hidden, false, '测验存在时仍能打开主课程面板');
             assert.equal(mainPanel.getElementById('view-chapters').hidden, false);
             assert.equal(mainPanel.getElementById('course-start').disabled, false, '主页面课程操作入口可用');
-            assert.equal(panel.getElementById('panel').hidden, true, '打开课程控制时收起子测验窗口');
+            assert.equal(panel.getElementById('panel').hidden, true, '侧边自动刷课导航打开主窗口并收起子测验窗口');
             quiz.dispatchEvent(new quiz.Event('pagehide'));
         } finally { f.close(); }
     });

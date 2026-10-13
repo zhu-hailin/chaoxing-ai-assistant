@@ -1,3 +1,4 @@
+const {withModelFixture}=require('./model-fixture.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -31,7 +32,7 @@ function fixture(opts={}) {
   const w=dom.window, requests=[], storage=opts.hub?.storage || new Map([['deepseek_api_key','mock-window-key'],['cx_model','deepseek-flash'],...(opts.storage||[])]);
   const hub=opts.hub || {storage,listeners:new Map(),writes:0,nextId:0},menus=new Map();
   let aborts=0;
-  w.GM_getValue=(key,fallback)=>storage.has(key)?storage.get(key):fallback;
+  w.GM_getValue=withModelFixture((key,fallback)=>storage.has(key)?storage.get(key):fallback);
   w.GM_setValue=(key,value)=>{const old=storage.get(key);storage.set(key,value);hub.writes++;for(const record of hub.listeners.values())if(record.key===key)record.fn(key,old,value,record.w!==w);};
   w.GM_registerMenuCommand=(name,fn)=>{assert(!menus.has(name),'菜单重复注册');menus.set(name,fn);};
   w.GM_addValueChangeListener=(key,fn)=>{const id=++hub.nextId;hub.listeners.set(id,{key,fn,w});return id;};
@@ -83,7 +84,7 @@ async function nestedFixture() {
     const doc=f.doc,w=doc.defaultView,node=doc.createElement('div');node.className='TiMu';node.setAttribute('questionid','nested-window-q1');
     node.innerHTML='<h3 class="stem">【简答题】解释嵌套测验的数据库概念</h3><textarea></textarea>';doc.body.append(node);
     const requests=[];let aborts=0;
-    w.GM_getValue=(key,fallback)=>f.storage.has(key)?f.storage.get(key):fallback;
+    w.GM_getValue=withModelFixture((key,fallback)=>f.storage.has(key)?f.storage.get(key):fallback);
     w.GM_setValue=(key,value)=>f.storage.set(key,value);w.GM_deleteValue=key=>f.storage.delete(key);w.GM_getResourceText=()=> '{}';
     f.attachUiStorage(w);
     w.GM_xmlhttpRequest=request=>{const input=policyInput(request);if(input){classificationRequests.push(request);queueMicrotask(()=>respondPolicy(request,input));return {abort(){aborts++;request.onabort?.();}};}requests.push(request);return {abort(){aborts++;request.onabort?.();}};};
@@ -123,12 +124,12 @@ async function main() {
   });
   await check('跨实例隐藏同步无写入循环，刷新沿用隐藏状态，pagehide 清理监听且菜单不重复',async()=>{
     const a=fixture(),b=fixture({hub:a.hub});let c;try {
-      a.api.initAssistantVisibility();assert.equal(a.menus.size,4);const writes=a.hub.writes;
+      a.api.initAssistantVisibility();assert.equal(a.menus.size,2);const writes=a.hub.writes;
       a.menus.get('隐藏助手全部界面')();assert.equal(a.hub.writes,writes+1);assert.equal(b.host.style.display,'none');
       c=fixture({hub:a.hub});assert.equal(c.host.style.display,'none');
       b.menus.get('显示助手界面')();assert.equal(a.host.style.display,'');assert.equal(c.host.style.display,'');
       a.w.dispatchEvent(new a.w.Event('pagehide'));assert(![...a.hub.listeners.values()].some(r=>r.w===a.w&&r.key==='cx_ui_hidden'));
-      a.w.dispatchEvent(new a.w.Event('pageshow'));assert.equal(a.menus.size,4);assert.equal([...a.hub.listeners.values()].filter(r=>r.w===a.w&&r.key==='cx_ui_hidden').length,1);assertNoErrors(a);assertNoErrors(b);
+      a.w.dispatchEvent(new a.w.Event('pageshow'));assert.equal(a.menus.size,2);assert.equal([...a.hub.listeners.values()].filter(r=>r.w===a.w&&r.key==='cx_ui_hidden').length,1);assertNoErrors(a);assertNoErrors(b);
     }finally{a.close();b.close();c?.close();}
   });
   await check('隐藏期间分析继续且不会自动弹出，完成后仍隐藏，恢复可查看答案',async()=>{
@@ -184,23 +185,23 @@ async function main() {
       f.launcher.click();assert.deepEqual({left:f.host.style.left,top:f.host.style.top,transform:f.host.style.transform},before);assertNoErrors(f);
     }finally{f.close();}
   });
-  await check('恢复并移动主窗口后再次缩小重新取按钮位置，不继承上次悬浮拖动坐标',async()=>{
+  await check('恢复并移动主窗口后再次缩小返回展开前的悬浮位置',async()=>{
     const f=fixture();try {
       f.open();f.setMinimizeRect({left:400,top:220,width:28,height:28});f.s.getElementById('minimize').click();assert.deepEqual(position(f),{left:392,top:212});
       drag(f,f.launcher,150,90);const dragged=position(f);mouseClick(f,f.launcher);visible(f,false,true);f.launcher.click();visible(f,true,false);
       drag(f,f.s.querySelector('.head'),60,40);f.setMinimizeRect({left:650,top:250,width:28,height:28});f.s.getElementById('minimize').click();
-      assert.deepEqual(position(f),{left:642,top:242});assert.notDeepEqual(position(f),dragged);assertNoErrors(f);
+      assert.deepEqual(position(f),dragged);assertNoErrors(f);
     }finally{f.close();}
   });
   await check('最小化按钮位于视口四角时，44 像素悬浮圆仍被钳制在当前视口',async()=>{
-    const f=fixture();try {
+    let f=fixture();try {
       const cases=[
         [{left:-10,top:-20,width:28,height:28},{left:0,top:0}],
         [{left:f.w.innerWidth-10,top:10,width:28,height:28},{left:f.w.innerWidth-44,top:2}],
         [{left:10,top:f.w.innerHeight-10,width:28,height:28},{left:2,top:f.w.innerHeight-44}],
         [{left:f.w.innerWidth-10,top:f.w.innerHeight-10,width:28,height:28},{left:f.w.innerWidth-44,top:f.w.innerHeight-44}]
       ];
-      for(const [rect,expected]of cases){f.open();f.setMinimizeRect(rect);f.s.getElementById('minimize').click();assert.deepEqual(position(f),expected);visible(f,false,true);f.launcher.click();}
+      for(const [rect,expected]of cases){f.close();f=fixture();f.open();f.setMinimizeRect(rect);f.s.getElementById('minimize').click();assert.deepEqual(position(f),expected);visible(f,false,true);f.launcher.click();}
       assertNoErrors(f);
     }finally{f.close();}
   });
@@ -306,7 +307,7 @@ async function main() {
 
   await check('跨iframe全隐藏同步：父子宿主与新建测验均隐藏，菜单恢复当前子面板',async()=>{
     const n=await nestedFixture();try {
-      n.f.menus.get('隐藏助手全部界面')();const child=n.initializeChild();assert.equal(n.f.menus.size,4);
+      n.f.menus.get('隐藏助手全部界面')();const child=n.initializeChild();assert.equal(n.f.menus.size,2);
       for(const host of [n.f.d.getElementById('cx-ai-study-root'),n.f.d.getElementById('cx-ai-study-toolbar'),child.host,child.doc.getElementById('cx-ai-toolbar')])assert.equal(host.style.display,'none');
       child.api.controller.openPanel('questions');assert.equal(child.host.ownerDocument,child.doc);assert(child.s.getElementById('panel').hidden);
       n.f.menus.get('显示助手界面')();assert.equal(child.host.ownerDocument,n.f.d);assertSingleWindow(n,child.host,'panel');assert.equal(child.host.style.display,'');assert.equal(n.f.d.getElementById('cx-ai-study-toolbar').style.display,'flex');assert.deepEqual(n.errors,[]);

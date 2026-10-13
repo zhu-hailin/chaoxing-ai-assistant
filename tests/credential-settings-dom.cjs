@@ -1,153 +1,35 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const assert = require('node:assert/strict');
-const { JSDOM } = require('jsdom');
-
-const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace(/\r\n/g, '\n');
-const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
-assert(source.includes(entry));
-assert(source.includes('function initCredentialSettingsMenu'), '必须验证包含凭据菜单的当前构建产物');
-const instrumented = source.replace(entry, 'globalThis.credentialTestAPI={initQuizAssistant,initCredentialSettingsMenu,readProviderConfiguration,saveProviderSetting,fetchConfiguredModels,renderModelSettings,get controller(){return controller}};');
-const names = {save:'设置 / 替换模型 API Key',clear:'清除模型 API Key'};
-let count = 0;
-async function test(name, run) {await run(); count++; console.log(`PASS ${name}`);}
-function fixture(initial = {}, options = {}) {
-  const questions='<div class="TiMu" questionid="q1"><h3 class="stem">【简答题】模拟题目</h3><textarea></textarea></div>';
-  const dom = new JSDOM(options.iframe?'<iframe id="quiz" src="https://mooc1.chaoxing.com/work/doHomeWorkNew"></iframe>':questions, {
-    url:options.iframe?'https://external-lms.example/course':'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true
-  });
-  const w=options.iframe?dom.window.document.getElementById('quiz').contentWindow:dom.window;
-  if(options.iframe){w.document.open();w.document.write(questions);w.document.close();}
-  const storage=new Map(Object.entries(initial)),menus=new Map(),answers=[],prompts=[],alerts=[],requests=[],listeners=new Map();
-  let confirmation=true;
-  w.GM_getValue=(key,fallback)=>storage.has(key)?storage.get(key):fallback;
-  w.GM_setValue=(key,value)=>storage.set(key,value);
-  w.GM_deleteValue=key=>storage.delete(key);
-  w.GM_getResourceText=()=> '{}';
-  w.GM_registerMenuCommand=(name,callback)=>{menus.set(name,callback);return menus.size;};
-  w.GM_addValueChangeListener=(key,callback)=>{listeners.set(key,callback);return key;};
-  w.GM_removeValueChangeListener=key=>listeners.delete(key);
-  w.GM_xmlhttpRequest=request=>{requests.push(request);return {abort(){request.onabort?.();}};};
-  w.prompt=(message,value)=>{prompts.push({message,value});return answers.length?answers.shift():null;};
-  w.confirm=()=>confirmation;
-  w.alert=message=>alerts.push(message);
-  w.eval(instrumented);
-  const api=w.credentialTestAPI;
-  api.initQuizAssistant();
-  return {w,storage,menus,answers,prompts,alerts,requests,listeners,api,
-    get shadow(){return w.document.getElementById('cx-ai-study-root').shadowRoot;},
-    denyConfirmation(){confirmation=false;},
-    close(){w.dispatchEvent(new w.Event('pagehide'));dom.window.close();}};
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {JSDOM,VirtualConsole}=require('jsdom');
+const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8').replace(/\r\n/g,'\n');
+const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
+assert(source.includes(entry));let count=0;
+async function test(name,fn){await fn();count++;console.log('PASS '+name);}
+function fixture(initial={},strict=false){
+ const errors=[],vconsole=new VirtualConsole();vconsole.on('jsdomError',e=>errors.push(e.message));
+ const dom=new JSDOM('<div class="TiMu" questionid="q1"><h3 class="stem">【简答题】模拟题目</h3><textarea></textarea></div>',{url:'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:vconsole});
+ const w=dom.window,storage=new Map(Object.entries(initial)),menus=new Map(),listeners=new Map(),requests=[],opened=[];let confirmed=true,confirmHook=null;
+ w.GM_getValue=(k,f)=>storage.has(k)?storage.get(k):f;w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_deleteValue=k=>storage.delete(k);w.GM_getResourceText=()=> '{}';
+ w.GM_registerMenuCommand=(n,fn)=>{assert(!menus.has(n));menus.set(n,fn);};w.GM_addValueChangeListener=(k,fn)=>{listeners.set(k,fn);return k;};w.GM_removeValueChangeListener=k=>listeners.delete(k);
+ w.GM_xmlhttpRequest=r=>{requests.push(r);return{abort(){r.onabort?.();}};};w.open=(...args)=>{opened.push(args);return null;};w.confirm=()=>{confirmHook?.();return confirmed;};w.alert=()=>{};
+ let code=source.replace(entry,'globalThis.credentialTestAPI={initQuizAssistant,initCredentialSettings,readProviderConfiguration,saveProviderSetting,fetchConfiguredModels,renderModelSettings,setAssistantUiHidden,get controller(){return controller},get editor(){return credentialView}};');
+ if(!strict)code=code.replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* fixture only */');
+ w.eval(code);w.credentialTestAPI.initQuizAssistant();const api=w.credentialTestAPI;
+ return{w,api,storage,menus,listeners,requests,opened,errors,get s(){return w.document.getElementById('cx-ai-study-root').shadowRoot;},get input(){return api.editor.input;},
+  provider(id){storage.set('cx_provider',id);api.renderModelSettings(api.controller);},save(value){this.input.value=value;api.editor.save.click();},deny(){confirmed=false;},duringConfirm(fn){confirmHook=fn;},
+  close(){w.dispatchEvent(new w.Event('pagehide'));dom.window.close();}};
 }
-async function main() {
-  await test('元数据收紧到已知域名并请求 DOM 隔离环境', async()=>{
-    assert.match(source,/^\/\/ @sandbox\s+DOM$/m);
-    assert(!/^\/\/ @connect\s+\*$/m.test(source));
-    for(const domain of ['api.deepseek.com','api.openai.com','dashscope.aliyuncs.com','api.moonshot.cn','open.bigmodel.cn','self','chaoxing.com']) {
-      assert(source.includes(`// @connect      ${domain}\n`));
-    }
-  });
-  await test('课程页面只有凭据状态，没有 Key 编辑控件或保存的 mock Key', async()=>{
-    const f=fixture({deepseek_api_key:'mock-page-hidden-key'});
-    try {
-      for(const id of ['ds-key','save-ds','clear-ds'])assert.equal(f.shadow.getElementById(id),null);
-      assert.equal(f.shadow.querySelector('input[type="password"]'),null);
-      assert.match(f.shadow.getElementById('api-key-status').textContent,/DeepSeek Key 已保存/);
-      assert(!f.shadow.innerHTML.includes('mock-page-hidden-key'));
-      assert(!f.w.document.documentElement.innerHTML.includes('mock-page-hidden-key'));
-    } finally {f.close();}
-  });
-  await test('受信菜单逐个选择六个平台且不会从页面选择框决定凭据归属', async()=>{
-    const f=fixture({cx_provider_custom_baseURL:'https://approved.example/v1',cx_provider_custom_model:'mock-model'});
-    try {
-      const ids=['deepseek','openai','qwen','kimi','glm','custom'];
-      for(const [index,id] of ids.entries()) {
-        f.shadow.getElementById('provider').value=id==='deepseek'?'openai':'deepseek';
-        f.answers.push(String(index+1),`mock-menu-${id}`);f.menus.get(names.save)();
-        assert.equal(f.api.readProviderConfiguration(id).key,`mock-menu-${id}`);
-        assert(!f.shadow.innerHTML.includes(`mock-menu-${id}`));
-      }
-      assert(f.prompts.every(prompt=>prompt.value===''));
-      assert(f.prompts.filter(prompt=>prompt.message.includes('输入 custom')).length===0);
-      assert(f.prompts.some(prompt=>prompt.message.includes('授权的 API 地址：https://approved.example/v1')));
-      const menuCount=f.menus.size;f.api.initCredentialSettingsMenu();assert.equal(f.menus.size,menuCount);
-    } finally {f.close();}
-  });
-  await test('取消、无效平台、空白输入和取消清除均保留旧 mock Key', async()=>{
-    const f=fixture({deepseek_api_key:'mock-old-key'});
-    try {
-      for(const responses of [[null],['7'],['1',null],['1','  ']]) {
-        f.answers.push(...responses);f.menus.get(names.save)();assert.equal(f.storage.get('deepseek_api_key'),'mock-old-key');
-      }
-      f.denyConfirmation();f.answers.push('1');f.menus.get(names.clear)();
-      assert.equal(f.storage.get('deepseek_api_key'),'mock-old-key');
-      assert(!JSON.stringify(f.prompts).includes('mock-old-key'));
-    } finally {f.close();}
-  });
-  await test('页面替换 prompt 或伪造旧凭据事件不能截获或修改 mock Key', async()=>{
-    const f=fixture({deepseek_api_key:'mock-old-key'});
-    try {
-      let intercepted=0;f.w.prompt=()=>{intercepted++;return 'attacker-value';};
-      f.w.document.dispatchEvent(new f.w.CustomEvent('cx-ai-save-api-key',{detail:{provider:'deepseek',key:'injected-key'}}));
-      assert.equal(f.storage.get('deepseek_api_key'),'mock-old-key');
-      f.answers.push('1','mock-new-key');f.menus.get(names.save)();
-      assert.equal(intercepted,0);assert.equal(f.storage.get('deepseek_api_key'),'mock-new-key');
-      assert(!f.shadow.innerHTML.includes('mock-new-key'));
-    } finally {f.close();}
-  });
-  await test('运行中的任务阻止凭据菜单修改，停止后可清除且不改变其他平台', async()=>{
-    const f=fixture({deepseek_api_key:'mock-old-key',cx_provider_openai_key:'mock-openai-key'});
-    try {
-      f.api.controller.state.busy=true;f.answers.push('1','mock-busy-key');f.menus.get(names.save)();
-      assert.equal(f.prompts.length,0);assert.equal(f.storage.get('deepseek_api_key'),'mock-old-key');
-      f.answers.length=0;f.api.controller.state.busy=false;f.answers.push('1');f.menus.get(names.clear)();
-      assert.equal(f.storage.get('deepseek_api_key'),'');assert.equal(f.storage.get('cx_provider_openai_key'),'mock-openai-key');
-      assert.match(f.shadow.getElementById('api-key-status').textContent,/尚未配置/);
-    } finally {f.close();}
-  });
-  await test('旧自定义 Key 必须授权具体地址，页面改地址后不向新目的地发送 Key', async()=>{
-    const f=fixture({cx_provider:'custom',cx_provider_custom_key:'mock-legacy-custom-key',cx_provider_custom_baseURL:'https://approved.example/v1',cx_provider_custom_model:'mock-model'});
-    try {
-      assert.equal(f.api.readProviderConfiguration().key,'');assert.equal(f.api.readProviderConfiguration().credentialNeedsApproval,true);
-      await assert.rejects(f.api.fetchConfiguredModels(f.api.readProviderConfiguration()),/API Key/);assert.equal(f.requests.length,0);
-      f.answers.push('6','mock-approved-key');f.menus.get(names.save)();
-      assert.equal(f.api.readProviderConfiguration().key,'mock-approved-key');
-      f.shadow.getElementById('custom-base').value='https://unapproved.example/v2';f.shadow.getElementById('save-custom').click();
-      assert.equal(f.api.readProviderConfiguration().baseURL,'https://approved.example/v1','页面合成点击不能保存目的地');
-      // jsdom 无法产生真人点击；单独通过测试 API 模拟合法地址更改，以验证凭据绑定。
-      f.api.saveProviderSetting('baseURL','https://unapproved.example/v2','custom');f.api.renderModelSettings(f.api.controller);
-      const settings=f.api.readProviderConfiguration();assert.equal(settings.baseURL,'https://unapproved.example/v2');
-      assert.equal(settings.key,'');assert.equal(settings.configured,false);
-      await assert.rejects(f.api.fetchConfiguredModels(settings),/API Key/);assert.equal(f.requests.length,0);
-      assert.match(f.shadow.getElementById('api-key-status').textContent,/尚未授权/);
-      f.answers.push('6','mock-reapproved-key');f.menus.get(names.save)();
-      assert.equal(f.api.readProviderConfiguration().configured,true);assert.equal(f.storage.get('cx_provider_custom_keyBaseURL'),'https://unapproved.example/v2');
-    } finally {f.close();}
-  });
-  await test('跨页凭据变更只刷新状态，清理页面时移除监听器', async()=>{
-    const f=fixture();
-    try {
-      assert.equal(f.listeners.size,7); // 六个凭据监听器与原有界面显隐监听器。
-      f.storage.set('deepseek_api_key','mock-remote-key');f.listeners.get('deepseek_api_key')('deepseek_api_key','','mock-remote-key',true);
-      assert.match(f.shadow.getElementById('api-key-status').textContent,/已保存/);
-      assert(!f.shadow.innerHTML.includes('mock-remote-key'));
-      f.w.dispatchEvent(new f.w.Event('pagehide'));assert.equal(f.listeners.size,0);
-    } finally {f.close();}
-  });
-  await test('不匹配脚本的顶层页面内，题目 iframe 仍有独立凭据菜单且只注册一次', async()=>{
-    const f=fixture({}, {iframe:true});
-    try {
-      assert.notEqual(f.w,f.w.top);
-      const save=[...f.menus.keys()].filter(name=>name.startsWith(names.save));
-      const clear=[...f.menus.keys()].filter(name=>name.startsWith(names.clear));
-      assert.equal(save.length,1);assert.equal(clear.length,1);assert.notEqual(save[0],names.save);
-      assert.match(save[0],/（题目页 [0-9a-f]{8}）$/);
-      const count=f.menus.size;f.api.initCredentialSettingsMenu();f.api.initQuizAssistant();assert.equal(f.menus.size,count);
-      f.answers.push('2','mock-iframe-key');f.menus.get(save[0])();
-      assert.equal(f.api.readProviderConfiguration('openai').key,'mock-iframe-key');
-      assert(!f.shadow.innerHTML.includes('mock-iframe-key'));
-    } finally {f.close();}
-  });
-  console.log(`\n${count} credential settings checks passed`);
-}
-main().catch(error=>{console.error(error);process.exitCode=1;});
+(async()=>{
+ await test('元数据保持 DOM 隔离，仅增加公开更新下载域名',()=>{assert.match(source,/^\/\/ @sandbox\s+DOM$/m);assert(!/^\/\/ @connect\s+\*$/m.test(source));assert(source.includes('// @connect      raw.githubusercontent.com\n'));assert(!source.includes('// @connect      api.github.com\n'));});
+ await test('Key 编辑器紧跟模型，直接显示掩码输入、保存与清除，不再有菜单和弹窗',()=>{const f=fixture();try{const model=f.s.getElementById('preset-model-block'),block=f.s.getElementById('api-key-editor').parentElement;assert.equal(model.nextElementSibling.nextElementSibling,block);assert(model.nextElementSibling.hidden);assert.equal(f.input.type,'password');assert.equal(f.api.editor.save.textContent,'保存');assert.equal(f.api.editor.clear.textContent,'清除');assert(![...f.menus.keys()].some(n=>n.includes('模型 API Key')));assert.equal(f.s.getElementById('api-key-open'),null);assert.equal(f.opened.length,0);}finally{f.close();}});
+ await test('已保存 Key 只显示状态不回填，闭合根不向课程暴露控件和 Key',()=>{const f=fixture({deepseek_api_key:'mock-old-secret'});try{assert.equal(f.input.value,'');assert.equal(f.api.editor.host.shadowRoot,null);assert.equal(f.s.querySelector('input[type=password]'),null);assert(!f.s.innerHTML.includes('mock-old-secret'));assert.match(f.s.getElementById('api-key-status').textContent,/已保存/);f.save('mock-new-secret');assert.equal(f.input.value,'');assert(!f.s.innerHTML.includes('mock-new-secret'));}finally{f.close();}});
+ await test('六个平台分别保存，新 Key 不串平台，不请求模型',()=>{const f=fixture({cx_provider_custom_baseURL:'https://approved.example/v1',cx_provider_custom_model:'mock-model'});try{for(const id of ['deepseek','openai','qwen','kimi','glm','custom']){f.provider(id);f.save('mock-key-'+id);assert.equal(f.api.readProviderConfiguration(id).key,'mock-key-'+id);assert.equal(f.input.value,'');}assert.equal(f.storage.get('cx_provider_custom_keyBaseURL'),'https://approved.example/v1');assert.equal(f.requests.length,0);}finally{f.close();}});
+ await test('空白或无效 Key 不覆盖旧配置，Enter 可保存且输入立即清空',()=>{const f=fixture({deepseek_api_key:'mock-old-secret'});try{for(const text of ['','  ','bad key','x'.repeat(4097)]){f.save(text);assert.equal(f.storage.get('deepseek_api_key'),'mock-old-secret');}f.input.value='mock-enter';f.input.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));assert.equal(f.storage.get('deepseek_api_key'),'mock-enter');assert.equal(f.input.value,'');}finally{f.close();}});
+ await test('清除须确认，仅改变当前平台，取消确认保留原 Key',()=>{const f=fixture({deepseek_api_key:'mock-old-secret',cx_provider_openai_key:'mock-other'});try{f.api.editor.clear.click();assert.equal(f.storage.get('deepseek_api_key'),'');assert.equal(f.storage.get('cx_provider_openai_key'),'mock-other');}finally{f.close();}const cancel=fixture({deepseek_api_key:'mock-old-secret'});try{cancel.deny();cancel.api.editor.clear.click();assert.equal(cancel.storage.get('deepseek_api_key'),'mock-old-secret');}finally{cancel.close();}});
+ await test('运行期间输入和按钮禁用，任务开始时清空未保存输入',()=>{const f=fixture({deepseek_api_key:'mock-old-secret'});try{f.input.value='draft';f.api.controller.report('running','generating',true);assert(f.input.disabled);assert(f.api.editor.save.disabled);assert(f.api.editor.clear.disabled);assert.equal(f.input.value,'');f.save('mock-busy');assert.equal(f.storage.get('deepseek_api_key'),'mock-old-secret');f.api.controller.report('','idle',false);assert(!f.input.disabled);}finally{f.close();}});
+ await test('自定义旧 Key 未授权不发送；地址变更后的草稿不会误保存',async()=>{const f=fixture({cx_provider:'custom',cx_provider_custom_key:'mock-legacy',cx_provider_custom_baseURL:'https://approved.example/v1',cx_provider_custom_model:'mock-model'});try{assert.equal(f.api.readProviderConfiguration().key,'');await assert.rejects(f.api.fetchConfiguredModels(f.api.readProviderConfiguration()),/API Key/);f.input.value='draft';f.api.saveProviderSetting('baseURL','https://changed.example/v1','custom');f.api.editor.save.click();assert.equal(f.storage.get('cx_provider_custom_key'),'mock-legacy');assert.equal(f.input.value,'');f.save('mock-approved');assert.equal(f.storage.get('cx_provider_custom_keyBaseURL'),'https://changed.example/v1');assert.equal(f.api.readProviderConfiguration().key,'mock-approved');assert.equal(f.requests.length,0);}finally{f.close();}});
+ await test('生产检查拒绝合成保存清除与旧凭据事件，真实控件上下文不可伪造',()=>{const f=fixture({deepseek_api_key:'mock-old-secret'},true);try{f.save('attacker-key');f.api.editor.clear.click();f.w.document.dispatchEvent(new f.w.CustomEvent('cx-ai-save-api-key',{detail:{key:'attacker'}}));assert.equal(f.storage.get('deepseek_api_key'),'mock-old-secret');assert.equal(f.requests.length,0);assert.equal(f.errors.length,0);}finally{f.close();}});
+ await test('切平台、全隐藏、关闭面板和 pagehide 都清空草稿',()=>{const f=fixture();try{f.input.value='draft';f.provider('openai');assert.equal(f.input.value,'');f.input.value='draft';f.api.setAssistantUiHidden(true);assert.equal(f.input.value,'');f.api.setAssistantUiHidden(false);f.input.value='draft';f.s.getElementById('close').click();assert.equal(f.input.value,'');f.input.value='draft';f.w.dispatchEvent(new f.w.Event('pagehide'));assert.equal(f.input.value,'');assert.equal(f.listeners.size,0);}finally{f.close();}});
+ await test('跨页 Key 改动只刷新状态并清空草稿，监听不重复',()=>{const f=fixture();try{f.input.value='draft';f.storage.set('deepseek_api_key','mock-remote');f.listeners.get('deepseek_api_key')('deepseek_api_key','','mock-remote',true);assert.equal(f.input.value,'');assert.match(f.s.getElementById('api-key-status').textContent,/已保存/);assert(!f.s.innerHTML.includes('mock-remote'));const size=f.listeners.size;f.api.initCredentialSettings();assert.equal(f.listeners.size,size);}finally{f.close();}});
+ await test('清除确认期间配置变化时拒绝继续，不覆盖模型列表和其他配置',()=>{const f=fixture({deepseek_api_key:'mock-old-secret',cx_provider_openai_key:'mock-openai',cx_model:'saved-model',cx_provider_custom_model:'saved-custom'});try{f.duringConfirm(()=>f.storage.set('cx_provider','openai'));f.api.editor.clear.click();assert.equal(f.storage.get('deepseek_api_key'),'mock-old-secret');assert.equal(f.storage.get('cx_provider_openai_key'),'mock-openai');f.provider('deepseek');f.save('mock-current');assert.equal(f.storage.get('cx_model'),'saved-model');assert.equal(f.storage.get('cx_provider_custom_model'),'saved-custom');assert(!source.includes('CREDENTIAL_WINDOW_TEMPLATE'));assert(!source.includes('credentialWindowOpen'));}finally{f.close();}});
+ console.log(`\n${count} credential settings checks passed`);
+})().catch(e=>{console.error(e);process.exitCode=1;});

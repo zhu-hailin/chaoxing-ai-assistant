@@ -18,7 +18,7 @@
     function createCourseVideoInfo(settings,{signal,now=Date.now,guard=()=>{},onItems=()=>{},onStatus=()=>{},capture=captureCourseVideoFrame}={}) {
         const provider=getModelProvider(settings.provider || 'deepseek');
         const model=provider.id==='custom' ? settings.model : settings.infoModel ||
-            (modelSupportsImages(settings.model,settings) ? settings.model : provider.models.find(item=>item.images)?.id || '');
+            (modelSupportsImages(settings.model,settings) ? settings.model : '');
         const infoSettings={...settings,provider:provider.id,model,thinking:false,search:false,courseContext:[]};
         const intervalRaw=Number(settings.videoInfoIntervalSeconds);
         const interval=Number.isFinite(intervalRaw)?Math.min(300,Math.max(5,intervalRaw)):30;
