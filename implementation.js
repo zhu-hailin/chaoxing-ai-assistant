@@ -11,8 +11,8 @@
         const onlyType = new RegExp('^(?:\\d+\\s*[.．、]\\s*)?(?:【\\s*' + label + '\\s*】|\\[\\s*' + label + '\\s*\\]|（\\s*' + label + '\\s*）|\\(\\s*' + label + '\\s*\\))$');
         return !onlyType.test(text);
     }
-    async function ensureFontDecoded(doc = document) {
-        const roots = [...doc.querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
+    async function ensureFontDecoded(doc = document, parseContext = {}) {
+        const roots = [...(parseContext.root?.matches('.font-cxsecret')?[parseContext.root]:[]),...(parseContext.root || doc).querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
         if (!roots.length) return;
         const styles = [...doc.querySelectorAll('style')];
         const style = styles.find(el =>
@@ -1025,6 +1025,7 @@
     }
 
     function renderRunState(state) {
+        if (!document?.defaultView || document.defaultView.document !== document) return;
         const busy = state.busy || courseRunActive();
         if (toolbarView) {
             const s = toolbarView.shadow;
@@ -1073,14 +1074,14 @@
 
     function checkSnapshot(snapshot) {
         snapshot.checkCurrent?.();
-        const current = extract(snapshot.doc || document);
+        const current = extract(snapshot.doc || document, snapshot.parseContext);
         if (signature(current.questions, current.media) !== snapshot.signature) throw new Error('题目或图片与分析时不一致，已中止预填，请重新生成');
     }
-    async function prefillChecked(snapshot, answers) {
-        await ensureFontDecoded(snapshot.doc || document);
+    async function prefillChecked(snapshot, answers, options = {}) {
+        await ensureFontDecoded(snapshot.doc || document, snapshot.parseContext);
         checkSnapshot(snapshot);
         if (!answers.some(a => a.answer.length)) throw new Error('没有有效答案可以预填');
-        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document);
+        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
         return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
@@ -1194,7 +1195,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.13',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.14',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1207,7 +1208,7 @@
             timer=setTimeout(()=>{signal?.removeEventListener('abort',cancel);resolve();},2000);
         });
     }
-    async function withAnalysisRetry(action, {signal,enabled=false,report=()=>{}}={}) {
+    async function withAnalysisRetry(action, {signal,enabled=false,report=()=>{},onRetry=()=>{}}={}) {
         for(let attempt=0;;attempt++) {
             throwIfAborted(signal);
             try {const value=await action();throwIfAborted(signal);return value;}
@@ -1216,13 +1217,13 @@
                 const transient=['NETWORK','TIMEOUT'].includes(error.code) || (error.code==='HTTP' && [502,503,504].includes(error.status));
                 if(!enabled || attempt!==0 || !transient)throw error;
                 report(`请求暂时失败：${error.message}；2 秒后自动重试一次`);
-                await retryWait(signal);
+                await retryWait(signal);onRetry();
             }
         }
     }
     async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},retryTransient=false}={}) {
         const check=()=>{throwIfAborted(settings.signal);checkSnapshot(snapshot);};
-        const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,report:message=>{check();report(message,phase);}});
+        const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
         let records,policies,skippedQuestions;
         try {

@@ -34,7 +34,7 @@
         if (root) visit(root, 0);
         return { documents, inaccessible, root };
     }
-    function courseBlocker(documents) {
+    function courseBlocker(documents, videoQuizContext = null) {
         for (const doc of documents) {
             for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
                 if (node.id === 'fcqrimg' && !node.getAttribute('src')) continue;
@@ -44,7 +44,7 @@
                 if (courseElementVisible(node)) return '出现验证码，自动流程已停止';
             }
             for (const node of doc.querySelectorAll('#videoquiz-submit,.ans-videoquiz:not([hidden])')) {
-                if (courseElementVisible(node)) return '视频中弹出交互题，需要人工处理';
+                if (courseElementVisible(node) && !(videoQuizContext?.root?.isConnected && videoQuizContext.root.ownerDocument === doc && (videoQuizContext.root === node || videoQuizContext.root.contains(node)))) return '视频中弹出交互题，需要人工处理';
             }
             for (const node of doc.querySelectorAll('form[action*="login"],.loginForm,[data-login-required]')) {
                 if (courseElementVisible(node)) return '登录状态已失效，请重新登录';
@@ -252,6 +252,26 @@
         return loadedAttachment || tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,
             '#img.imglook[src],.pdfViewer .page,[data-required="false"],[data-isjob="false"]'));
     }
+    function courseKnowledgeGraphTasks(tree, knownTasks) {
+        const graphs=new Set();
+        const title=value=>/^(?:\d+[.、]?\s*)?(?:章节)?知识图谱$/.test(clean(value));
+        for(const doc of tree.documents.slice(1)) {
+            for(const heading of doc.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')) {
+                if(!courseElementVisible(heading)||heading.closest(QUESTION_SELECTOR)||!title(heading.textContent))continue;
+                const node=courseTaskContainer(heading)||heading;
+                // 已识别的视频、课件和测验仍走原流程，不能被同一区域标题吞掉。
+                if(knownTasks.some(task=>node.contains(task.node)||task.node.contains(node)))continue;
+                graphs.add(node);
+            }
+        }
+        // 截图中的原生标签可确认整个图谱页面；不扫描正文关键词，也不跳过未知 iframe。
+        const active=courseTabs(tree.documents[0]).find(tab=>tab.active);
+        if(!graphs.size&&!knownTasks.length&&!tree.inaccessible.length&&title(active?.title)) {
+            const doc=tree.documents[1];
+            if(doc?.body&&courseElementVisible(doc.body))graphs.add(doc.body);
+        }
+        return [...graphs].map(node=>({type:'knowledge-graph',node}));
+    }
     function coursePageTasks(tree) {
         const tasks=[];
         for(const doc of tree.documents.slice(1)) {
@@ -259,6 +279,7 @@
             for(const reader of courseDocumentReaders(doc)) tasks.push({type:'document',node:reader.node,reader});
             if(!doc.querySelector('.fanyaMarking_left') && (hasQuestionNodes(doc)||courseQuizComplete(doc))) tasks.push({type:'quiz',doc,node:doc.querySelector('.singleQuesId,.TiMu,.CeYan,.testTit_status,[data-quiz-status]')||doc.body});
         }
+        tasks.push(...courseKnowledgeGraphTasks(tree,tasks));
         const path=node=>{
             const nodes=[node];
             for(let depth=0;node?.ownerDocument!==tree.documents[0]&&depth<12;depth++) {

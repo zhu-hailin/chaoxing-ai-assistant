@@ -11,10 +11,10 @@
         if (questionTypeParsers.some(item => item.id === parser.id)) throw new Error('题型解析器 ID 重复');
         questionTypeParsers.push(parser);
     }
-    function collectRawQuestions(doc = document) {
+    function collectRawQuestions(doc = document, parseContext = {}) {
         const records = [], seen = new Set(), claimedAncestors = new Set();
         for (const adapter of questionPageAdapters) {
-            const nodes = [...adapter.collect(doc)], candidates = new Set(nodes), containers = new Set();
+            const nodes = [...adapter.collect(doc, parseContext)].filter(node => parseContext.scope === 'video-quiz' ? parseContext.root?.contains(node) : !node.closest('.ans-videoquiz,[data-video-quiz-root]') && !node.closest('[role="dialog"],form')?.querySelector('#videoquiz-submit')), candidates = new Set(nodes), containers = new Set();
             for (const node of nodes) {
                 for (let parent = node.parentElement; parent; parent = parent.parentElement) {
                     if (candidates.has(parent)) containers.add(parent);
@@ -30,7 +30,7 @@
             }
         }
         records.sort((a, b) => a.node.compareDocumentPosition(b.node) & 2 ? 1 : -1);
-        return records.map((record, index) => record.adapter.read(record.node, index));
+        return records.map((record, index) => record.adapter.read(record.node, index, parseContext));
     }
     function hasQuestionNodes(doc = document) { return collectRawQuestions(doc).length > 0; }
     function textInputs(node) {
@@ -94,7 +94,7 @@
         return { media, imageNodes };
     }
     function rawQuestion(node, index, adapter) {
-        const stem = node.querySelector(STEM_SELECTOR);
+        const stem = node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
@@ -105,7 +105,7 @@
             group?.querySelector(':scope > .type_tit')?.textContent,
             group?.querySelector(':scope > .question-instructions')?.textContent].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
-        const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')];
+        const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         let optionTargets, options, writer;
         if (legacy.length) {
             const type = detectType(typeLabel || question);
@@ -123,7 +123,7 @@
         }
         const radios = native.filter(input => input.type === 'radio');
         const radioGroupIsolated = !radios.length || radios.every(input => input.name && input.name === radios[0].name && [...node.ownerDocument.getElementsByName(input.name)].filter(other => other.type === 'radio' && other.form === input.form).every(other => node.contains(other)));
-        const inputs = textInputs(node);
+        const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const { media, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets);
         for (const option of options) {
@@ -140,12 +140,12 @@
     }
     registerPageAdapter({
         id: 'chaoxing-chapter',
-        collect: doc => [...doc.querySelectorAll('.singleQuesId')].filter(node => !node.closest('.fanyaMarking_left')),
+        collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.singleQuesId')].filter(node => !node.closest('.fanyaMarking_left')),
         read: (node, index) => rawQuestion(node, index, 'chaoxing-chapter')
     });
     registerPageAdapter({
         id: 'chaoxing-homework',
-        collect: doc => [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
+        collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
         read: (node, index) => rawQuestion(node, index, 'chaoxing-homework')
     });
     function canonicalType(raw) {
@@ -238,8 +238,8 @@
         parse: raw => finishQuestion(raw, raw.controls.checkboxes ? 'multiple' : 'single', 'native-choice', true)
     });
     registerQuestionParser({ id: 'unknown', match: () => true, parse: raw => finishQuestion(raw, 'unknown', 'unknown') });
-    function parseQuestionDocument(doc = document) {
-        const raw = collectRawQuestions(doc);
+    function parseQuestionDocument(doc = document, parseContext = {}) {
+        const raw = collectRawQuestions(doc, parseContext);
         if (!raw.length) throw new Error('没有检测到题目，请先进入章节测验或作业');
         const questions = [], media = [], bindings = new Map();
         for (const record of raw) {

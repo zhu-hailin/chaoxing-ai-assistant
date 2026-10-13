@@ -17,12 +17,13 @@ const dom = new JSDOM(fs.readFileSync(path.join(__dirname, '离线验证.html'),
     });
   }
 });
-const deadline = Date.now() + 45000;
+// 此看门狗覆盖整组多 iframe UI 用例，不代表任何生产等待或单个断言的放宽。
+const deadline = Date.now() + 90000;
 const timer = setInterval(() => {
   const result = dom.window.testResults;
   if (!result && Date.now() < deadline) return;
   clearInterval(timer);
-  const report = result || { failures: ['测试超时'], errors };
+  const report = result || { failures: ['测试超时'], errors, progress: dom.window.document.getElementById('results')?.textContent };
   console.log(JSON.stringify(report, null, 2));
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(report, null, 2));
   dom.window.close();

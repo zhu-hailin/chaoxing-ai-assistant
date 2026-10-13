@@ -170,11 +170,12 @@
         if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw new Error(`本批图片单边尺寸超过 ${edge} 像素`);
         return records;
     }
-    function buildChatContent(questions, evidence = {}, preparedMedia = new Map(), courseContext = []) {
+    function buildChatContent(questions, evidence = {}, preparedMedia = new Map(), courseContext = [], answerFeedback = []) {
         const records = requestMedia(questions, preparedMedia);
         const context=(Array.isArray(courseContext)?courseContext:[]).filter(item=>item && typeof item.text==='string' && item.text.trim())
             .map(item=>({kind:typeof item.kind==='string'?item.kind.trim():'',title:typeof item.title==='string'?item.title.trim():'',text:item.text.trim(),...(item.truncated ? {truncated:true} : {})}));
         const text = JSON.stringify({ questions:questions.map(toAIQuestion), evidence,
+            ...(answerFeedback.length ? {answerFeedback:answerFeedback.filter(item => questions.some(q=>q.id===item.questionId)).map(item=>({questionId:item.questionId,previousAttempts:(item.previousAttempts || []).slice(-6).map(attempt=>({answer:Array.isArray(attempt.answer)?attempt.answer.map(value=>String(value).slice(0,4000)):[],feedback:String(attempt.feedback || '').slice(0,1200)}))}))} : {}),
             ...(context.length ? {courseContext:context} : {}),
             ...(records.length ? { imageManifest:records.map(({imageIds,sources,questionIds}) => ({imageIds,sources,questionIds})) } : {}) });
         if (!records.length) return text;
