@@ -1,10 +1,40 @@
 from pathlib import Path
 import re
+import json
+import hashlib
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.17'
+VERSION = '1.18'
+def bundled_font_dependencies():
+    # Offline and pinned: never download JavaScript during build or execution.
+    directory = ROOT / 'vendor/font'
+    manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+    contents = {}
+    for entry in manifest['files']:
+        name = entry['file']
+        if Path(name).name != name:
+            raise ValueError('Invalid font dependency filename')
+        raw = (directory / name).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != entry['sha256']:
+            raise ValueError(f'Font dependency checksum mismatch: {name}')
+        contents[name] = raw.decode('utf-8')
+    notices = '\n'.join(contents[name] for name in manifest['notices'])
+    sources = '\n;\n'.join(contents[name] for name in manifest['scripts'])
+    # The upstream scripts expect a classic-script this and optional UMD exports.
+    # A private receiver + masked AMD/CommonJS exports keeps globals untouched;
+    # the assistant itself remains in its separate strict closure.
+    return ('/* Bundled font dependencies: original pinned sources; MIT notices.\n'
+            + notices + '\n*/\n'
+            + 'const bundledFontDependencies = (function (define, module) {\n'
+            + sources + '\n;return { Typr: Typr, md5: this.md5 };\n'
+            + '}).call(Object.create(null), undefined, undefined);\n')
+
 core = (ROOT / 'sources/assistant-core.js').read_text(encoding='utf-8')
+font_marker = '/* BUNDLED_FONT_DEPENDENCIES */'
+if core.count(font_marker) != 1 or re.search(r'^// @require\b', core, re.M):
+    raise ValueError('Missing font bundle marker or unexpected remote JavaScript dependency')
+core = core.replace(font_marker, bundled_font_dependencies())
 template = (ROOT / 'sources/panel-template.html').read_text(encoding='utf-8')
 intro = (ROOT / 'sources/project-intro.html').read_text(encoding='utf-8')
 implementation = (ROOT / 'implementation.js').read_text(encoding='utf-8')
@@ -34,6 +64,6 @@ assert template.count(intro_placeholder) == 1
 template = template.replace(intro_placeholder, intro)
 implementation = re.sub(r"version: '[0-9.]+'", f"version: '{VERSION}'", implementation)
 implementation = implementation.replace('        /* PANEL_TEMPLATE */', '        shadow.innerHTML = `' + template + '`;')
-output = core + provider_logos + providers + credential_settings + updates + model_capability + parser + media + course_context + video_info + catalog + course_bridge + course_adapter + video_quiz + course_runner + model_picker + implementation + '\n})();\n'
+output = core + provider_logos + providers + credential_settings + updates + model_capability + parser + media + course_context + video_info + catalog + course_bridge + course_adapter + video_quiz + course_runner + model_picker + implementation + '\n})();\n})();\n'
 output = '\n'.join(line.rstrip() for line in output.splitlines()) + '\n'
 (ROOT / '学习通AI助手.user.js').write_text(output, encoding='utf-8', newline='\n')

@@ -4,14 +4,13 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.17
+// @version      1.18
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
 // @match        *://*.edu.cn/mooc-ans/work/doHomeWorkNew*
 // @run-at       document-start
 // @sandbox      DOM
-// @require      https://greasyfork.org/scripts/445293/code/TyprMd5.js
 // @resource     Table https://www.forestpolice.org/ttf/2.0/table.json
 // @grant        GM_getResourceText
 // @author       Hailin
@@ -34,14 +33,2869 @@
 // ==/UserScript==
 
 (() => {
+    /* Bundled font dependencies: original pinned sources; MIT notices.
+The MIT License (MIT)
+
+Copyright (c) 2016 Photopea
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+MIT License
+
+Copyright © 2011 Sebastian Tschan, https://blueimp.net
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+const bundledFontDependencies = (function (define, module) {
+
+
+var Typr = {};
+
+Typr["parse"] = function(buff)
+{
+	var readFont = function(data, idx, offset,tmap) {
+		var bin = Typr["B"];
+
+		var T = Typr["T"];
+		var prsr = {
+			"cmap":T.cmap,
+			"head":T.head,
+			"hhea":T.hhea,
+			"maxp":T.maxp,
+			"hmtx":T.hmtx,
+			"name":T.name,
+			"OS/2":T.OS2,
+			"post":T.post,
+
+			"loca":T.loca,
+			"kern":T.kern,
+			"glyf":T.glyf,
+
+			"CFF ":T.CFF,
+			/*
+			"GPOS",
+			"GSUB",
+			"GDEF",*/
+
+			"SVG ":T.SVG
+			//"VORG",
+		};
+		var obj = {"_data":data, "_index":idx, "_offset":offset};
+
+		for(var t in prsr) {
+			var tab = Typr["findTable"](data, t, offset);
+			if(tab) {
+				var off=tab[0], tobj = tmap[off];
+				if(tobj==null) tobj = prsr[t].parseTab(data, off, tab[1], obj);
+				obj[t] = tmap[off] = tobj;
+			}
+		}
+		return obj;
+	}
+
+
+	var bin = Typr["B"];
+	var data = new Uint8Array(buff);
+
+	var tmap = {};
+	var tag = bin.readASCII(data, 0, 4);
+	if(tag=="ttcf") {
+		var offset = 4;
+		var majV = bin.readUshort(data, offset);  offset+=2;
+		var minV = bin.readUshort(data, offset);  offset+=2;
+		var numF = bin.readUint  (data, offset);  offset+=4;
+		var fnts = [];
+		for(var i=0; i<numF; i++) {
+			var foff = bin.readUint  (data, offset);  offset+=4;
+			fnts.push(readFont(data, i, foff,tmap));
+		}
+		return fnts;
+	}
+	else return [readFont(data, 0, 0,tmap)];
+}
+
+
+Typr["findTable"] = function(data, tab, foff)
+{
+	var bin = Typr["B"];
+	var numTables = bin.readUshort(data, foff+4);
+	var offset = foff+12;
+	for(var i=0; i<numTables; i++)
+	{
+		var tag      = bin.readASCII(data, offset, 4);
+		var checkSum = bin.readUint (data, offset+ 4);
+		var toffset  = bin.readUint (data, offset+ 8);
+		var length   = bin.readUint (data, offset+12);
+		if(tag==tab) return [toffset,length];
+		offset+=16;
+	}
+	return null;
+}
+/*
+Typr["splitBy"] = function(data,tag) {
+	data = new Uint8Array(data);  console.log(data.slice(0,64));
+	var bin = Typr["B"];
+	var ttcf = bin.readASCII(data, 0, 4);  if(ttcf!="ttcf") return {};
+
+	var offset = 8;
+	var numF = bin.readUint  (data, offset);  offset+=4;
+	var colls = [], used={};
+	for(var i=0; i<numF; i++) {
+		var foff = bin.readUint  (data, offset);  offset+=4;
+		var toff = Typr["findTable"](data,tag,foff)[0];
+		if(used[toff]==null) used[toff] = [];
+		used[toff].push([foff,bin.readUshort(data,foff+4)]);  // font offset, numTables
+	}
+	for(var toff in used) {
+		var offs = used[toff];
+		var hlen = 12+4*offs.length;
+		var out = new Uint8Array(hlen);
+		for(var i=0; i<8; i++) out[i]=data[i];
+		bin.writeUint(out,8,offs.length);
+
+		for(var i=0; i<offs.length; i++) hlen += 12+offs[i][1]*16;
+
+		var hdrs = [out], tabs = [], hoff=out.length, toff=hlen, noffs={};
+		for(var i=0; i<offs.length; i++) {
+			bin.writeUint(out, 12+i*4, hoff);  hoff+=12+offs[i][1]*16;
+			toff = Typr["_cutFont"](data, offs[i][0], hdrs, tabs, toff, noffs);
+		}
+		colls.push(Typr["_joinArrs"](hdrs.concat(tabs)));
+	}
+	return colls;
+}
+
+Typr["splitFonts"] = function(data) {
+	data = new Uint8Array(data);
+	var bin = Typr["B"];
+	var ttcf = bin.readASCII(data, 0, 4);  if(ttcf!="ttcf") return {};
+
+	var offset = 8;
+	var numF = bin.readUint  (data, offset);  offset+=4;
+	var fnts = [];
+	for(var i=0; i<numF; i++) {
+		var foff = bin.readUint  (data, offset);  offset+=4;
+		fnts.push(Typr._cutFont(data, foff));
+		break;
+	}
+	return fnts;
+}
+
+Typr["_cutFont"] = function(data,foff,hdrs,tabs,toff, noffs) {
+	var bin = Typr["B"];
+	var numTables = bin.readUshort(data, foff+4);
+
+	var out = new Uint8Array(12+numTables*16);  hdrs.push(out);
+	for(var i=0; i<12; i++) out[i]=data[foff+i];  //console.log(out);
+
+	var off = 12;
+	for(var i=0; i<numTables; i++)
+	{
+		var tag      = bin.readASCII(data, foff+off, 4);
+		var checkSum = bin.readUint (data, foff+off+ 4);
+		var toffset  = bin.readUint (data, foff+off+ 8);
+		var length   = bin.readUint (data, foff+off+12);
+
+		while((length&3)!=0) length++;
+
+		for(var j=0; j<16; j++) out[off+j]=data[foff+off+j];
+
+		if(noffs[toffset]!=null) bin.writeUint(out,off+8,noffs[toffset]);
+		else {
+			noffs[toffset] = toff;
+			bin.writeUint(out, off+8, toff);
+			tabs.push(new Uint8Array(data.buffer, toffset, length));  toff+=length;
+		}
+		off+=16;
+	}
+	return toff;
+}
+Typr["_joinArrs"] = function(tabs) {
+	var len = 0;
+	for(var i=0; i<tabs.length; i++) len+=tabs[i].length;
+	var out = new Uint8Array(len), ooff=0;
+	for(var i=0; i<tabs.length; i++) {
+		var tab = tabs[i];
+		for(var j=0; j<tab.length; j++) out[ooff+j]=tab[j];
+		ooff+=tab.length;
+	}
+	return out;
+}
+*/
+
+Typr["T"]={};
+
+
+
+
+
+Typr["B"] = {
+	readFixed : function(data, o)
+	{
+		return ((data[o]<<8) | data[o+1]) +  (((data[o+2]<<8)|data[o+3])/(256*256+4));
+	},
+	readF2dot14 : function(data, o)
+	{
+		var num = Typr["B"].readShort(data, o);
+		return num / 16384;
+	},
+	readInt : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		var a = Typr["B"].t.uint8;
+		a[0] = buff[p+3];
+		a[1] = buff[p+2];
+		a[2] = buff[p+1];
+		a[3] = buff[p];
+		return Typr["B"].t.int32[0];
+	},
+
+	readInt8 : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		var a = Typr["B"].t.uint8;
+		a[0] = buff[p];
+		return Typr["B"].t.int8[0];
+	},
+	readShort : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		var a = Typr["B"].t.uint8;
+		a[1] = buff[p]; a[0] = buff[p+1];
+		return Typr["B"].t.int16[0];
+	},
+	readUshort : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		return (buff[p]<<8) | buff[p+1];
+	},
+	writeUshort : function(buff, p, n)
+	{
+		buff[p] = (n>>8)&255;  buff[p+1] = n&255;
+	},
+	readUshorts : function(buff, p, len)
+	{
+		var arr = [];
+		for(var i=0; i<len; i++) {
+			var v = Typr["B"].readUshort(buff, p+i*2);  //if(v==932) console.log(p+i*2);
+			arr.push(v);
+		}
+		return arr;
+	},
+	readUint : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		var a = Typr["B"].t.uint8;
+		a[3] = buff[p];  a[2] = buff[p+1];  a[1] = buff[p+2];  a[0] = buff[p+3];
+		return Typr["B"].t.uint32[0];
+	},
+	writeUint: function(buff, p, n)
+	{
+		buff[p] = (n>>24)&255;  buff[p+1] = (n>>16)&255;  buff[p+2] = (n>>8)&255;  buff[p+3] = (n>>0)&255;
+	},
+	readUint64 : function(buff, p)
+	{
+		//if(p>=buff.length) throw "error";
+		return (Typr["B"].readUint(buff, p)*(0xffffffff+1)) + Typr["B"].readUint(buff, p+4);
+	},
+	readASCII : function(buff, p, l)	// l : length in Characters (not Bytes)
+	{
+		//if(p>=buff.length) throw "error";
+		var s = "";
+		for(var i = 0; i < l; i++) s += String.fromCharCode(buff[p+i]);
+		return s;
+	},
+	writeASCII : function(buff, p, s)	// l : length in Characters (not Bytes)
+	{
+		for(var i = 0; i < s.length; i++)
+			buff[p+i] = s.charCodeAt(i);
+	},
+	readUnicode : function(buff, p, l)
+	{
+		//if(p>=buff.length) throw "error";
+		var s = "";
+		for(var i = 0; i < l; i++)
+		{
+			var c = (buff[p++]<<8) | buff[p++];
+			s += String.fromCharCode(c);
+		}
+		return s;
+	},
+	_tdec : window["TextDecoder"] ? new window["TextDecoder"]() : null,
+	readUTF8 : function(buff, p, l) {
+		var tdec = Typr["B"]._tdec;
+		if(tdec && p==0 && l==buff.length) return tdec["decode"](buff);
+		return Typr["B"].readASCII(buff,p,l);
+	},
+	readBytes : function(buff, p, l)
+	{
+		//if(p>=buff.length) throw "error";
+		var arr = [];
+		for(var i=0; i<l; i++) arr.push(buff[p+i]);
+		return arr;
+	},
+	readASCIIArray : function(buff, p, l)	// l : length in Characters (not Bytes)
+	{
+		//if(p>=buff.length) throw "error";
+		var s = [];
+		for(var i = 0; i < l; i++)
+			s.push(String.fromCharCode(buff[p+i]));
+		return s;
+	},
+	t : function() {
+		var ab = new ArrayBuffer(8);
+		return {
+			buff   : ab,
+			int8   : new Int8Array  (ab),
+			uint8  : new Uint8Array (ab),
+			int16  : new Int16Array (ab),
+			uint16 : new Uint16Array(ab),
+			int32  : new Int32Array (ab),
+			uint32 : new Uint32Array(ab)
+		}
+	}()
+};
+
+
+
+
+
+
+	Typr["T"].CFF = {
+		parseTab : function(data, offset, length)
+		{
+			var bin = Typr["B"];
+			var CFF = Typr["T"].CFF;
+
+			data = new Uint8Array(data.buffer, offset, length);
+			offset = 0;
+
+			// Header
+			var major = data[offset];  offset++;
+			var minor = data[offset];  offset++;
+			var hdrSize = data[offset];  offset++;
+			var offsize = data[offset];  offset++;
+			//console.log(major, minor, hdrSize, offsize);
+
+			// Name INDEX
+			var ninds = [];
+			offset = CFF.readIndex(data, offset, ninds);
+			var names = [];
+
+			for(var i=0; i<ninds.length-1; i++) names.push(bin.readASCII(data, offset+ninds[i], ninds[i+1]-ninds[i]));
+			offset += ninds[ninds.length-1];
+
+
+			// Top DICT INDEX
+			var tdinds = [];
+			offset = CFF.readIndex(data, offset, tdinds);  //console.log(tdinds);
+			// Top DICT Data
+			var topDicts = [];
+			for(var i=0; i<tdinds.length-1; i++) topDicts.push( CFF.readDict(data, offset+tdinds[i], offset+tdinds[i+1]) );
+			offset += tdinds[tdinds.length-1];
+			var topdict = topDicts[0];
+			//console.log(topdict);
+
+			// String INDEX
+			var sinds = [];
+			offset = CFF.readIndex(data, offset, sinds);
+			// String Data
+			var strings = [];
+			for(var i=0; i<sinds.length-1; i++) strings.push(bin.readASCII(data, offset+sinds[i], sinds[i+1]-sinds[i]));
+			offset += sinds[sinds.length-1];
+
+			// Global Subr INDEX  (subroutines)
+			CFF.readSubrs(data, offset, topdict);
+
+			// charstrings
+
+			if(topdict["CharStrings"]) topdict["CharStrings"] = CFF.readBytes(data, topdict["CharStrings"]);
+
+			// CID font
+			if(topdict["ROS"]) {
+				offset = topdict["FDArray"];
+				var fdind = [];
+				offset = CFF.readIndex(data, offset, fdind);
+
+				topdict["FDArray"] = [];
+				for(var i=0; i<fdind.length-1; i++) {
+					var dict = CFF.readDict(data, offset+fdind[i], offset+fdind[i+1]);
+					CFF._readFDict(data, dict, strings);
+					topdict["FDArray"].push( dict );
+				}
+				offset += fdind[fdind.length-1];
+
+				offset = topdict["FDSelect"];
+				topdict["FDSelect"] = [];
+				var fmt = data[offset];  offset++;
+				if(fmt==3) {
+					var rns = bin.readUshort(data, offset);  offset+=2;
+					for(var i=0; i<rns+1; i++) {
+						topdict["FDSelect"].push(bin.readUshort(data, offset), data[offset+2]);  offset+=3;
+					}
+				}
+				else throw fmt;
+			}
+
+			// Encoding
+			//if(topdict["Encoding"]) topdict["Encoding"] = CFF.readEncoding(data, topdict["Encoding"], topdict["CharStrings"].length);
+
+			// charset
+			if(topdict["charset"] ) topdict["charset"]  = CFF.readCharset (data, topdict["charset"] , topdict["CharStrings"].length);
+
+			CFF._readFDict(data, topdict, strings);
+			return topdict;
+		},
+
+		_readFDict : function(data, dict, ss) {
+			var CFF = Typr["T"].CFF;
+			var offset;
+			if(dict["Private"]) {
+				offset = dict["Private"][1];
+				dict["Private"] = CFF.readDict(data, offset, offset+dict["Private"][0]);
+				if(dict["Private"]["Subrs"]) CFF.readSubrs(data, offset+dict["Private"]["Subrs"], dict["Private"]);
+			}
+			for(var p in dict) if(["FamilyName","FontName","FullName","Notice","version","Copyright"].indexOf(p)!=-1)  dict[p]=ss[dict[p] -426 + 35];
+		},
+
+		readSubrs : function(data, offset, obj)
+		{
+			obj["Subrs"] = Typr["T"].CFF.readBytes(data, offset);
+
+			var bias, nSubrs = obj["Subrs"].length+1;
+			if (false) bias = 0;
+			else if (nSubrs <  1240) bias = 107;
+			else if (nSubrs < 33900) bias = 1131;
+			else bias = 32768;
+			obj["Bias"] = bias;
+		},
+		readBytes : function(data, offset) {
+			var bin = Typr["B"];
+			var arr = [];
+			offset = Typr["T"].CFF.readIndex(data, offset, arr);
+
+			var subrs = [], arl = arr.length-1, no = data.byteOffset+offset;
+			for(var i=0; i<arl; i++) {
+				var ari = arr[i];
+				subrs.push(new Uint8Array(data.buffer, no+ari, arr[i+1]-ari));
+			}
+			return subrs;
+		},
+
+		tableSE : [
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  1,   2,   3,   4,   5,   6,   7,   8,
+		  9,  10,  11,  12,  13,  14,  15,  16,
+		 17,  18,  19,  20,  21,  22,  23,  24,
+		 25,  26,  27,  28,  29,  30,  31,  32,
+		 33,  34,  35,  36,  37,  38,  39,  40,
+		 41,  42,  43,  44,  45,  46,  47,  48,
+		 49,  50,  51,  52,  53,  54,  55,  56,
+		 57,  58,  59,  60,  61,  62,  63,  64,
+		 65,  66,  67,  68,  69,  70,  71,  72,
+		 73,  74,  75,  76,  77,  78,  79,  80,
+		 81,  82,  83,  84,  85,  86,  87,  88,
+		 89,  90,  91,  92,  93,  94,  95,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0,  96,  97,  98,  99, 100, 101, 102,
+		103, 104, 105, 106, 107, 108, 109, 110,
+		  0, 111, 112, 113, 114,   0, 115, 116,
+		117, 118, 119, 120, 121, 122,   0, 123,
+		  0, 124, 125, 126, 127, 128, 129, 130,
+		131,   0, 132, 133,   0, 134, 135, 136,
+		137,   0,   0,   0,   0,   0,   0,   0,
+		  0,   0,   0,   0,   0,   0,   0,   0,
+		  0, 138,   0, 139,   0,   0,   0,   0,
+		140, 141, 142, 143,   0,   0,   0,   0,
+		  0, 144,   0,   0,   0, 145,   0,   0,
+		146, 147, 148, 149,   0,   0,   0,   0
+		],
+
+		glyphByUnicode : function(cff, code)
+		{
+			for(var i=0; i<cff["charset"].length; i++) if(cff["charset"][i]==code) return i;
+			return -1;
+		},
+
+		glyphBySE : function(cff, charcode)	// glyph by standard encoding
+		{
+			if ( charcode < 0 || charcode > 255 ) return -1;
+			return Typr["T"].CFF.glyphByUnicode(cff, Typr["T"].CFF.tableSE[charcode]);
+		},
+
+		/*readEncoding : function(data, offset, num)
+		{
+			var bin = Typr["B"];
+
+			var array = ['.notdef'];
+			var format = data[offset];  offset++;
+			//console.log("Encoding");
+			//console.log(format);
+
+			if(format==0)
+			{
+				var nCodes = data[offset];  offset++;
+				for(var i=0; i<nCodes; i++)  array.push(data[offset+i]);
+			}
+			/*
+			else if(format==1 || format==2)
+			{
+				while(charset.length<num)
+				{
+					var first = bin.readUshort(data, offset);  offset+=2;
+					var nLeft=0;
+					if(format==1) {  nLeft = data[offset];  offset++;  }
+					else          {  nLeft = bin.readUshort(data, offset);  offset+=2;  }
+					for(var i=0; i<=nLeft; i++)  {  charset.push(first);  first++;  }
+				}
+			}
+
+			else throw "error: unknown encoding format: " + format;
+
+			return array;
+		},*/
+
+		readCharset : function(data, offset, num)
+		{
+			var bin = Typr["B"];
+
+			var charset = ['.notdef'];
+			var format = data[offset];  offset++;
+
+			if(format==0)
+			{
+				for(var i=0; i<num; i++)
+				{
+					var first = bin.readUshort(data, offset);  offset+=2;
+					charset.push(first);
+				}
+			}
+			else if(format==1 || format==2)
+			{
+				while(charset.length<num)
+				{
+					var first = bin.readUshort(data, offset);  offset+=2;
+					var nLeft=0;
+					if(format==1) {  nLeft = data[offset];  offset++;  }
+					else          {  nLeft = bin.readUshort(data, offset);  offset+=2;  }
+					for(var i=0; i<=nLeft; i++)  {  charset.push(first);  first++;  }
+				}
+			}
+			else throw "error: format: " + format;
+
+			return charset;
+		},
+
+		readIndex : function(data, offset, inds)
+		{
+			var bin = Typr["B"];
+
+			var count = bin.readUshort(data, offset)+1;  offset+=2;
+			var offsize = data[offset];  offset++;
+
+			if     (offsize==1) for(var i=0; i<count; i++) inds.push( data[offset+i] );
+			else if(offsize==2) for(var i=0; i<count; i++) inds.push( bin.readUshort(data, offset+i*2) );
+			else if(offsize==3) for(var i=0; i<count; i++) inds.push( bin.readUint  (data, offset+i*3 - 1) & 0x00ffffff );
+			else if(offsize==4) for(var i=0; i<count; i++) inds.push( bin.readUint  (data, offset+i*4) );
+			else if(count!=1) throw "unsupported offset size: " + offsize + ", count: " + count;
+
+			offset += count*offsize;
+			return offset-1;
+		},
+
+		getCharString : function(data, offset, o)
+		{
+			var bin = Typr["B"];
+
+			var b0 = data[offset], b1 = data[offset+1], b2 = data[offset+2], b3 = data[offset+3], b4=data[offset+4];
+			var vs = 1;
+			var op=null, val=null;
+			// operand
+			if(b0<=20) { op = b0;  vs=1;  }
+			if(b0==12) { op = b0*100+b1;  vs=2;  }
+			//if(b0==19 || b0==20) { op = b0/*+" "+b1*/;  vs=2; }
+			if(21 <=b0 && b0<= 27) { op = b0;  vs=1; }
+			if(b0==28) { val = bin.readShort(data,offset+1);  vs=3; }
+			if(29 <=b0 && b0<= 31) { op = b0;  vs=1; }
+			if(32 <=b0 && b0<=246) { val = b0-139;  vs=1; }
+			if(247<=b0 && b0<=250) { val = (b0-247)*256+b1+108;  vs=2; }
+			if(251<=b0 && b0<=254) { val =-(b0-251)*256-b1-108;  vs=2; }
+			if(b0==255) {  val = bin.readInt(data, offset+1)/0xffff;  vs=5;   }
+
+			o.val = val!=null ? val : "o"+op;
+			o.size = vs;
+		},
+
+		readCharString : function(data, offset, length)
+		{
+			var end = offset + length;
+			var bin = Typr["B"];
+			var arr = [];
+
+			while(offset<end)
+			{
+				var b0 = data[offset], b1 = data[offset+1], b2 = data[offset+2], b3 = data[offset+3], b4=data[offset+4];
+				var vs = 1;
+				var op=null, val=null;
+				// operand
+				if(b0<=20) { op = b0;  vs=1;  }
+				if(b0==12) { op = b0*100+b1;  vs=2;  }
+				if(b0==19 || b0==20) { op = b0/*+" "+b1*/;  vs=2; }
+				if(21 <=b0 && b0<= 27) { op = b0;  vs=1; }
+				if(b0==28) { val = bin.readShort(data,offset+1);  vs=3; }
+				if(29 <=b0 && b0<= 31) { op = b0;  vs=1; }
+				if(32 <=b0 && b0<=246) { val = b0-139;  vs=1; }
+				if(247<=b0 && b0<=250) { val = (b0-247)*256+b1+108;  vs=2; }
+				if(251<=b0 && b0<=254) { val =-(b0-251)*256-b1-108;  vs=2; }
+				if(b0==255) {  val = bin.readInt(data, offset+1)/0xffff;  vs=5;   }
+
+				arr.push(val!=null ? val : "o"+op);
+				offset += vs;
+
+				//var cv = arr[arr.length-1];
+				//if(cv==undefined) throw "error";
+				//console.log()
+			}
+			return arr;
+		},
+
+		readDict : function(data, offset, end)
+		{
+			var bin = Typr["B"];
+			//var dict = [];
+			var dict = {};
+			var carr = [];
+
+			while(offset<end)
+			{
+				var b0 = data[offset], b1 = data[offset+1], b2 = data[offset+2], b3 = data[offset+3], b4=data[offset+4];
+				var vs = 1;
+				var key=null, val=null;
+				// operand
+				if(b0==28) { val = bin.readShort(data,offset+1);  vs=3; }
+				if(b0==29) { val = bin.readInt  (data,offset+1);  vs=5; }
+				if(32 <=b0 && b0<=246) { val = b0-139;  vs=1; }
+				if(247<=b0 && b0<=250) { val = (b0-247)*256+b1+108;  vs=2; }
+				if(251<=b0 && b0<=254) { val =-(b0-251)*256-b1-108;  vs=2; }
+				if(b0==255) {  val = bin.readInt(data, offset+1)/0xffff;  vs=5;  throw "unknown number";  }
+
+				if(b0==30)
+				{
+					var nibs = [];
+					vs = 1;
+					while(true)
+					{
+						var b = data[offset+vs];  vs++;
+						var nib0 = b>>4, nib1 = b&0xf;
+						if(nib0 != 0xf) nibs.push(nib0);  if(nib1!=0xf) nibs.push(nib1);
+						if(nib1==0xf) break;
+					}
+					var s = "";
+					var chars = [0,1,2,3,4,5,6,7,8,9,".","e","e-","reserved","-","endOfNumber"];
+					for(var i=0; i<nibs.length; i++) s += chars[nibs[i]];
+					//console.log(nibs);
+					val = parseFloat(s);
+				}
+
+				if(b0<=21)	// operator
+				{
+					var keys = ["version", "Notice", "FullName", "FamilyName", "Weight", "FontBBox", "BlueValues", "OtherBlues", "FamilyBlues","FamilyOtherBlues",
+						"StdHW", "StdVW", "escape", "UniqueID", "XUID", "charset", "Encoding", "CharStrings", "Private", "Subrs",
+						"defaultWidthX", "nominalWidthX"];
+
+					key = keys[b0];  vs=1;
+					if(b0==12) {
+						var keys = [ "Copyright", "isFixedPitch", "ItalicAngle", "UnderlinePosition", "UnderlineThickness", "PaintType", "CharstringType", "FontMatrix", "StrokeWidth", "BlueScale",
+						"BlueShift", "BlueFuzz", "StemSnapH", "StemSnapV", "ForceBold", "","", "LanguageGroup", "ExpansionFactor", "initialRandomSeed",
+						"SyntheticBase", "PostScript", "BaseFontName", "BaseFontBlend", "","","",  "","","",
+						"ROS", "CIDFontVersion", "CIDFontRevision", "CIDFontType", "CIDCount", "UIDBase", "FDArray", "FDSelect", "FontName"];
+						key = keys[b1];  vs=2;
+					}
+				}
+
+				if(key!=null) {  dict[key] = carr.length==1 ? carr[0] : carr;  carr=[]; }
+				else  carr.push(val);
+
+				offset += vs;
+			}
+			return dict;
+		}
+	};
+
+
+Typr["T"].cmap = {
+	parseTab : function(data, offset, length)
+	{
+		var obj = {tables:[],ids:{},off:offset};
+		data = new Uint8Array(data.buffer, offset, length);
+		offset = 0;
+
+		var offset0 = offset;
+		var bin = Typr["B"], rU = bin.readUshort, cmap = Typr["T"].cmap;
+		var version   = rU(data, offset);  offset += 2;
+		var numTables = rU(data, offset);  offset += 2;
+
+		//console.log(version, numTables);
+
+		var offs = [];
+
+
+		for(var i=0; i<numTables; i++)
+		{
+			var platformID = rU(data, offset);  offset += 2;
+			var encodingID = rU(data, offset);  offset += 2;
+			var noffset = bin.readUint(data, offset);       offset += 4;
+
+			var id = "p"+platformID+"e"+encodingID;
+
+			//console.log("cmap subtable", platformID, encodingID, noffset);
+
+
+			var tind = offs.indexOf(noffset);
+
+			if(tind==-1)
+			{
+				tind = obj.tables.length;
+				var subt = {};
+				offs.push(noffset);
+				//var time = Date.now();
+				var format = subt.format = rU(data, noffset);
+				if     (format== 0) subt = cmap.parse0(data, noffset, subt);
+				//else if(format== 2) subt.off = noffset;
+				else if(format== 4) subt = cmap.parse4(data, noffset, subt);
+				else if(format== 6) subt = cmap.parse6(data, noffset, subt);
+				else if(format==12) subt = cmap.parse12(data,noffset, subt);
+				//console.log(format, Date.now()-time);
+				//else console.log("unknown format: "+format, platformID, encodingID, noffset);
+				obj.tables.push(subt);
+			}
+
+			if(obj.ids[id]!=null) throw "multiple tables for one platform+encoding";
+			obj.ids[id] = tind;
+		}
+		return obj;
+	},
+
+	parse0 : function(data, offset, obj)
+	{
+		var bin = Typr["B"];
+		offset += 2;
+		var len    = bin.readUshort(data, offset);  offset += 2;
+		var lang   = bin.readUshort(data, offset);  offset += 2;
+		obj.map = [];
+		for(var i=0; i<len-6; i++) obj.map.push(data[offset+i]);
+		return obj;
+	},
+
+	parse4 : function(data, offset, obj)
+	{
+		var bin = Typr["B"], rU = bin.readUshort, rUs = bin.readUshorts;
+		var offset0 = offset;
+		offset+=2;
+		var length   = rU(data, offset);  offset+=2;
+		var language = rU(data, offset);  offset+=2;
+		var segCountX2 = rU(data, offset);  offset+=2;
+		var segCount = segCountX2>>>1;
+		obj.searchRange = rU(data, offset);  offset+=2;
+		obj.entrySelector = rU(data, offset);  offset+=2;
+		obj.rangeShift = rU(data, offset);  offset+=2;
+		obj.endCount   = rUs(data, offset, segCount);  offset += segCount*2;
+		offset+=2;
+		obj.startCount = rUs(data, offset, segCount);  offset += segCount*2;
+		obj.idDelta = [];
+		for(var i=0; i<segCount; i++) {obj.idDelta.push(bin.readShort(data, offset));  offset+=2;}
+		obj.idRangeOffset = rUs(data, offset, segCount);  offset += segCount*2;
+		obj.glyphIdArray  = rUs(data, offset, ((offset0+length)-offset)>>>1);  //offset += segCount*2;
+		return obj;
+	},
+
+	parse6 : function(data, offset, obj)
+	{
+		var bin = Typr["B"];
+		var offset0 = offset;
+		offset+=2;
+		var length = bin.readUshort(data, offset);  offset+=2;
+		var language = bin.readUshort(data, offset);  offset+=2;
+		obj.firstCode = bin.readUshort(data, offset);  offset+=2;
+		var entryCount = bin.readUshort(data, offset);  offset+=2;
+		obj.glyphIdArray = [];
+		for(var i=0; i<entryCount; i++) {obj.glyphIdArray.push(bin.readUshort(data, offset));  offset+=2;}
+
+		return obj;
+	},
+
+	parse12 : function(data, offset, obj)
+	{
+		var bin = Typr["B"], rU = bin.readUint;
+		var offset0 = offset;
+		offset+=4;
+		var length = rU(data, offset);  offset+=4;
+		var lang   = rU(data, offset);  offset+=4;
+		var nGroups= rU(data, offset)*3;  offset+=4;
+
+		var gps = obj.groups = new Uint32Array(nGroups);//new Uint32Array(data.slice(offset, offset+nGroups*12).buffer);
+
+		for(var i=0; i<nGroups; i+=3) {
+			gps[i  ] = rU(data, offset+(i<<2)  );
+			gps[i+1] = rU(data, offset+(i<<2)+4);
+			gps[i+2] = rU(data, offset+(i<<2)+8);
+		}
+		return obj;
+	}
+};
+
+Typr["T"].glyf = {
+	parseTab : function(data, offset, length, font)
+	{
+		var obj = [], ng=font["maxp"]["numGlyphs"];
+		for(var g=0; g<ng; g++) obj.push(null);
+		return obj;
+	},
+
+	_parseGlyf : function(font, g)
+	{
+		var bin = Typr["B"];
+		var data = font["_data"], loca=font["loca"];
+
+		if(loca[g]==loca[g+1]) return null;
+
+		var offset = Typr["findTable"](data, "glyf", font["_offset"])[0] + loca[g];
+
+		var gl = {};
+
+		gl.noc  = bin.readShort(data, offset);  offset+=2;		// number of contours
+		gl.xMin = bin.readShort(data, offset);  offset+=2;
+		gl.yMin = bin.readShort(data, offset);  offset+=2;
+		gl.xMax = bin.readShort(data, offset);  offset+=2;
+		gl.yMax = bin.readShort(data, offset);  offset+=2;
+
+		if(gl.xMin>=gl.xMax || gl.yMin>=gl.yMax) return null;
+
+		if(gl.noc>0)
+		{
+			gl.endPts = [];
+			for(var i=0; i<gl.noc; i++) { gl.endPts.push(bin.readUshort(data,offset)); offset+=2; }
+
+			var instructionLength = bin.readUshort(data,offset); offset+=2;
+			if((data.length-offset)<instructionLength) return null;
+			gl.instructions = bin.readBytes(data, offset, instructionLength);   offset+=instructionLength;
+
+			var crdnum = gl.endPts[gl.noc-1]+1;
+			gl.flags = [];
+			for(var i=0; i<crdnum; i++ )
+			{
+				var flag = data[offset];  offset++;
+				gl.flags.push(flag);
+				if((flag&8)!=0)
+				{
+					var rep = data[offset];  offset++;
+					for(var j=0; j<rep; j++) { gl.flags.push(flag); i++; }
+				}
+			}
+			gl.xs = [];
+			for(var i=0; i<crdnum; i++) {
+				var i8=((gl.flags[i]&2)!=0), same=((gl.flags[i]&16)!=0);
+				if(i8) { gl.xs.push(same ? data[offset] : -data[offset]);  offset++; }
+				else
+				{
+					if(same) gl.xs.push(0);
+					else { gl.xs.push(bin.readShort(data, offset));  offset+=2; }
+				}
+			}
+			gl.ys = [];
+			for(var i=0; i<crdnum; i++) {
+				var i8=((gl.flags[i]&4)!=0), same=((gl.flags[i]&32)!=0);
+				if(i8) { gl.ys.push(same ? data[offset] : -data[offset]);  offset++; }
+				else
+				{
+					if(same) gl.ys.push(0);
+					else { gl.ys.push(bin.readShort(data, offset));  offset+=2; }
+				}
+			}
+			var x = 0, y = 0;
+			for(var i=0; i<crdnum; i++) { x += gl.xs[i]; y += gl.ys[i];  gl.xs[i]=x;  gl.ys[i]=y; }
+			//console.log(endPtsOfContours, instructionLength, instructions, flags, xCoordinates, yCoordinates);
+		}
+		else
+		{
+			var ARG_1_AND_2_ARE_WORDS	= 1<<0;
+			var ARGS_ARE_XY_VALUES		= 1<<1;
+			var ROUND_XY_TO_GRID		= 1<<2;
+			var WE_HAVE_A_SCALE			= 1<<3;
+			var RESERVED				= 1<<4;
+			var MORE_COMPONENTS			= 1<<5;
+			var WE_HAVE_AN_X_AND_Y_SCALE= 1<<6;
+			var WE_HAVE_A_TWO_BY_TWO	= 1<<7;
+			var WE_HAVE_INSTRUCTIONS	= 1<<8;
+			var USE_MY_METRICS			= 1<<9;
+			var OVERLAP_COMPOUND		= 1<<10;
+			var SCALED_COMPONENT_OFFSET	= 1<<11;
+			var UNSCALED_COMPONENT_OFFSET	= 1<<12;
+
+			gl.parts = [];
+			var flags;
+			do {
+				flags = bin.readUshort(data, offset);  offset += 2;
+				var part = { m:{a:1,b:0,c:0,d:1,tx:0,ty:0}, p1:-1, p2:-1 };  gl.parts.push(part);
+				part.glyphIndex = bin.readUshort(data, offset);  offset += 2;
+				if ( flags & ARG_1_AND_2_ARE_WORDS) {
+					var arg1 = bin.readShort(data, offset);  offset += 2;
+					var arg2 = bin.readShort(data, offset);  offset += 2;
+				} else {
+					var arg1 = bin.readInt8(data, offset);  offset ++;
+					var arg2 = bin.readInt8(data, offset);  offset ++;
+				}
+
+				if(flags & ARGS_ARE_XY_VALUES) { part.m.tx = arg1;  part.m.ty = arg2; }
+				else  {  part.p1=arg1;  part.p2=arg2;  }
+				//part.m.tx = arg1;  part.m.ty = arg2;
+				//else { throw "params are not XY values"; }
+
+				if ( flags & WE_HAVE_A_SCALE ) {
+					part.m.a = part.m.d = bin.readF2dot14(data, offset);  offset += 2;
+				} else if ( flags & WE_HAVE_AN_X_AND_Y_SCALE ) {
+					part.m.a = bin.readF2dot14(data, offset);  offset += 2;
+					part.m.d = bin.readF2dot14(data, offset);  offset += 2;
+				} else if ( flags & WE_HAVE_A_TWO_BY_TWO ) {
+					part.m.a = bin.readF2dot14(data, offset);  offset += 2;
+					part.m.b = bin.readF2dot14(data, offset);  offset += 2;
+					part.m.c = bin.readF2dot14(data, offset);  offset += 2;
+					part.m.d = bin.readF2dot14(data, offset);  offset += 2;
+				}
+			} while ( flags & MORE_COMPONENTS )
+			if (flags & WE_HAVE_INSTRUCTIONS){
+				var numInstr = bin.readUshort(data, offset);  offset += 2;
+				gl.instr = [];
+				for(var i=0; i<numInstr; i++) { gl.instr.push(data[offset]);  offset++; }
+			}
+		}
+		return gl;
+	}
+};
+
+Typr["T"].head = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var obj = {};
+		var tableVersion = bin.readFixed(data, offset);  offset += 4;
+
+		obj["fontRevision"] = bin.readFixed(data, offset);  offset += 4;
+		var checkSumAdjustment = bin.readUint(data, offset);  offset += 4;
+		var magicNumber = bin.readUint(data, offset);  offset += 4;
+		obj["flags"] = bin.readUshort(data, offset);  offset += 2;
+		obj["unitsPerEm"] = bin.readUshort(data, offset);  offset += 2;
+		obj["created"]  = bin.readUint64(data, offset);  offset += 8;
+		obj["modified"] = bin.readUint64(data, offset);  offset += 8;
+		obj["xMin"] = bin.readShort(data, offset);  offset += 2;
+		obj["yMin"] = bin.readShort(data, offset);  offset += 2;
+		obj["xMax"] = bin.readShort(data, offset);  offset += 2;
+		obj["yMax"] = bin.readShort(data, offset);  offset += 2;
+		obj["macStyle"] = bin.readUshort(data, offset);  offset += 2;
+		obj["lowestRecPPEM"] = bin.readUshort(data, offset);  offset += 2;
+		obj["fontDirectionHint"] = bin.readShort(data, offset);  offset += 2;
+		obj["indexToLocFormat"]  = bin.readShort(data, offset);  offset += 2;
+		obj["glyphDataFormat"]   = bin.readShort(data, offset);  offset += 2;
+		return obj;
+	}
+};
+
+Typr["T"].hhea = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var obj = {};
+		var tableVersion = bin.readFixed(data, offset);  offset += 4;
+
+		var keys = ["ascender","descender","lineGap",
+			"advanceWidthMax","minLeftSideBearing","minRightSideBearing","xMaxExtent",
+			"caretSlopeRise","caretSlopeRun","caretOffset",
+			"res0","res1","res2","res3",
+			"metricDataFormat","numberOfHMetrics" ];
+
+		for(var i=0; i<	keys.length; i++) {
+			var key = keys[i];
+			var func = (key=="advanceWidthMax" || key=="numberOfHMetrics")?bin.readUshort:bin.readShort;
+			obj[key]=func(data,offset+i*2);
+		}
+		return obj;
+	}
+};
+
+
+Typr["T"].hmtx = {
+	parseTab : function(data, offset, length, font)
+	{
+		var bin = Typr["B"];
+		var aWidth = [];
+		var lsBearing = [];
+
+		var nG = font["maxp"]["numGlyphs"], nH = font["hhea"]["numberOfHMetrics"];
+		var aw = 0, lsb = 0, i=0;
+		while(i<nH) {  aw=bin.readUshort(data, offset+(i<<2));  lsb=bin.readShort(data, offset+(i<<2)+2);  aWidth.push(aw);  lsBearing.push(lsb);  i++;  }
+		while(i<nG) {  aWidth.push(aw);  lsBearing.push(lsb);  i++;  }
+
+		return {aWidth:aWidth, lsBearing:lsBearing};
+	}
+};
+
+
+Typr["T"].kern = {
+	parseTab : function(data, offset, length, font)
+	{
+		var bin = Typr["B"], kern=Typr["T"].kern;
+
+		var version = bin.readUshort(data, offset);
+		if(version==1) return kern.parseV1(data, offset, length, font);
+		var nTables = bin.readUshort(data, offset+2);  offset+=4;
+
+		var map = {glyph1: [], rval:[]};
+		for(var i=0; i<nTables; i++)
+		{
+			offset+=2;	// skip version
+			var length  = bin.readUshort(data, offset);  offset+=2;
+			var coverage = bin.readUshort(data, offset);  offset+=2;
+			var format = coverage>>>8;
+			/* I have seen format 128 once, that's why I do */ format &= 0xf;
+			if(format==0) offset = kern.readFormat0(data, offset, map);
+			//else throw "unknown kern table format: "+format;
+		}
+		return map;
+	},
+
+	parseV1 : function(data, offset, length, font)
+	{
+		var bin = Typr["B"], kern=Typr["T"].kern;
+
+		var version = bin.readFixed(data, offset);   // 0x00010000
+		var nTables = bin.readUint (data, offset+4);  offset+=8;
+
+		var map = {glyph1: [], rval:[]};
+		for(var i=0; i<nTables; i++)
+		{
+			var length = bin.readUint(data, offset);   offset+=4;
+			var coverage = bin.readUshort(data, offset);  offset+=2;
+			var tupleIndex = bin.readUshort(data, offset);  offset+=2;
+			var format = coverage&0xff;
+			if(format==0) offset = kern.readFormat0(data, offset, map);
+			//else throw "unknown kern table format: "+format;
+		}
+		return map;
+	},
+
+	readFormat0 : function(data, offset, map)
+	{
+		var bin = Typr["B"], rUs = bin.readUshort;
+		var pleft = -1;
+		var nPairs        = rUs(data, offset);
+		var searchRange   = rUs(data, offset+2);
+		var entrySelector = rUs(data, offset+4);
+		var rangeShift    = rUs(data, offset+6);  offset+=8;
+		for(var j=0; j<nPairs; j++)
+		{
+			var left  = rUs(data, offset);  offset+=2;
+			var right = rUs(data, offset);  offset+=2;
+			var value = bin.readShort (data, offset);  offset+=2;
+			if(left!=pleft) { map.glyph1.push(left);  map.rval.push({ glyph2:[], vals:[] }) }
+			var rval = map.rval[map.rval.length-1];
+			rval.glyph2.push(right);   rval.vals.push(value);
+			pleft = left;
+		}
+		return offset;
+	}
+};
+
+
+Typr["T"].loca = {
+	parseTab : function(data, offset, length, font)
+	{
+		var bin = Typr["B"];
+		var obj = [];
+
+		var ver = font["head"]["indexToLocFormat"];
+		var len = font["maxp"]["numGlyphs"]+1;
+
+		if(ver==0) for(var i=0; i<len; i++) obj.push(bin.readUshort(data, offset+(i<<1))<<1);
+		if(ver==1) for(var i=0; i<len; i++) obj.push(bin.readUint  (data, offset+(i<<2))   );
+
+		return obj;
+	}
+};
+
+
+Typr["T"].maxp = {
+	parseTab : function(data, offset, length)
+	{
+		//console.log(data.length, offset, length);
+
+		var bin = Typr["B"], rU=bin.readUshort;
+		var obj = {};
+
+		// both versions 0.5 and 1.0
+		var ver = bin.readUint(data, offset); offset += 4;
+
+		obj["numGlyphs"] = rU(data, offset);  offset += 2;
+
+		// only 1.0
+		/*
+		if(ver == 0x00010000) {
+			obj.maxPoints             = rU(data, offset);  offset += 2;
+			obj.maxContours           = rU(data, offset);  offset += 2;
+			obj.maxCompositePoints    = rU(data, offset);  offset += 2;
+			obj.maxCompositeContours  = rU(data, offset);  offset += 2;
+			obj.maxZones              = rU(data, offset);  offset += 2;
+			obj.maxTwilightPoints     = rU(data, offset);  offset += 2;
+			obj.maxStorage            = rU(data, offset);  offset += 2;
+			obj.maxFunctionDefs       = rU(data, offset);  offset += 2;
+			obj.maxInstructionDefs    = rU(data, offset);  offset += 2;
+			obj.maxStackElements      = rU(data, offset);  offset += 2;
+			obj.maxSizeOfInstructions = rU(data, offset);  offset += 2;
+			obj.maxComponentElements  = rU(data, offset);  offset += 2;
+			obj.maxComponentDepth     = rU(data, offset);  offset += 2;
+		}
+		*/
+
+		return obj;
+	}
+};
+
+
+Typr["T"].name = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var obj = {};
+		var format = bin.readUshort(data, offset);  offset += 2;
+		var count  = bin.readUshort(data, offset);  offset += 2;
+		var stringOffset = bin.readUshort(data, offset);  offset += 2;
+
+		//console.log(format,count);
+
+		var names = [
+			"copyright",
+			"fontFamily",
+			"fontSubfamily",
+			"ID",
+			"fullName",
+			"version",
+			"postScriptName",
+			"trademark",
+			"manufacturer",
+			"designer",
+			"description",
+			"urlVendor",
+			"urlDesigner",
+			"licence",
+			"licenceURL",
+			"---",
+			"typoFamilyName",
+			"typoSubfamilyName",
+			"compatibleFull",
+			"sampleText",
+			"postScriptCID",
+			"wwsFamilyName",
+			"wwsSubfamilyName",
+			"lightPalette",
+			"darkPalette"
+		];
+
+		var offset0 = offset;
+		var rU = bin.readUshort;
+
+		for(var i=0; i<count; i++)
+		{
+			var platformID = rU(data, offset);  offset += 2;
+			var encodingID = rU(data, offset);  offset += 2;
+			var languageID = rU(data, offset);  offset += 2;
+			var nameID     = rU(data, offset);  offset += 2;
+			var slen       = rU(data, offset);  offset += 2;
+			var noffset    = rU(data, offset);  offset += 2;
+			//console.log(platformID, encodingID, languageID.toString(16), nameID, length, noffset);
+
+
+			var soff = offset0 + count*12 + noffset;
+			var str;
+			if(false){}
+			else if(platformID == 0) str = bin.readUnicode(data, soff, slen/2);
+			else if(platformID == 3 && encodingID == 0) str = bin.readUnicode(data, soff, slen/2);
+			else if(encodingID == 0) str = bin.readASCII  (data, soff, slen);
+			else if(encodingID == 1) str = bin.readUnicode(data, soff, slen/2);
+			else if(encodingID == 3) str = bin.readUnicode(data, soff, slen/2);
+			else if(encodingID == 4) str = bin.readUnicode(data, soff, slen/2);
+			else if(encodingID ==10) str = bin.readUnicode(data, soff, slen/2);
+
+			else if(platformID == 1) { str = bin.readASCII(data, soff, slen);  console.log("reading unknown MAC encoding "+encodingID+" as ASCII") }
+			else {
+				console.log("unknown encoding "+encodingID + ", platformID: "+platformID);
+				str = bin.readASCII(data, soff, slen);
+			}
+
+			var tid = "p"+platformID+","+(languageID).toString(16);//Typr._platforms[platformID];
+			if(obj[tid]==null) obj[tid] = {};
+			obj[tid][names[nameID]] = str;
+			obj[tid]["_lang"] = languageID;
+			//console.log(tid, obj[tid]);
+		}
+		/*
+		if(format == 1)
+		{
+			var langTagCount = bin.readUshort(data, offset);  offset += 2;
+			for(var i=0; i<langTagCount; i++)
+			{
+				var length  = bin.readUshort(data, offset);  offset += 2;
+				var noffset = bin.readUshort(data, offset);  offset += 2;
+			}
+		}
+		*/
+
+		//console.log(obj);
+		var psn = "postScriptName";
+
+		for(var p in obj) if(obj[p][psn]!=null && obj[p]["_lang"]==0x0409) return obj[p];		// United States
+		for(var p in obj) if(obj[p][psn]!=null && obj[p]["_lang"]==0x0000) return obj[p];		// Universal
+		for(var p in obj) if(obj[p][psn]!=null && obj[p]["_lang"]==0x0c0c) return obj[p];		// Canada
+		for(var p in obj) if(obj[p][psn]!=null) return obj[p];
+
+		var out;
+		for(var p in obj) { out=obj[p]; break; }
+		console.log("returning name table with languageID "+ out._lang);
+		if(out[psn]==null && out["ID"]!=null) out[psn]=out["ID"];
+		return out;
+	}
+}
+
+Typr["T"].OS2 = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var ver = bin.readUshort(data, offset); offset += 2;
+
+		var OS2 = Typr["T"].OS2;
+
+		var obj = {};
+		if     (ver==0) OS2.version0(data, offset, obj);
+		else if(ver==1) OS2.version1(data, offset, obj);
+		else if(ver==2 || ver==3 || ver==4) OS2.version2(data, offset, obj);
+		else if(ver==5) OS2.version5(data, offset, obj);
+		else throw "unknown OS/2 table version: "+ver;
+
+		return obj;
+	},
+
+	version0 : function(data, offset, obj)
+	{
+		var bin = Typr["B"];
+		obj["xAvgCharWidth"] = bin.readShort(data, offset); offset += 2;
+		obj["usWeightClass"] = bin.readUshort(data, offset); offset += 2;
+		obj["usWidthClass"]  = bin.readUshort(data, offset); offset += 2;
+		obj["fsType"] = bin.readUshort(data, offset); offset += 2;
+		obj["ySubscriptXSize"] = bin.readShort(data, offset); offset += 2;
+		obj["ySubscriptYSize"] = bin.readShort(data, offset); offset += 2;
+		obj["ySubscriptXOffset"] = bin.readShort(data, offset); offset += 2;
+		obj["ySubscriptYOffset"] = bin.readShort(data, offset); offset += 2;
+		obj["ySuperscriptXSize"] = bin.readShort(data, offset); offset += 2;
+		obj["ySuperscriptYSize"] = bin.readShort(data, offset); offset += 2;
+		obj["ySuperscriptXOffset"] = bin.readShort(data, offset); offset += 2;
+		obj["ySuperscriptYOffset"] = bin.readShort(data, offset); offset += 2;
+		obj["yStrikeoutSize"] = bin.readShort(data, offset); offset += 2;
+		obj["yStrikeoutPosition"] = bin.readShort(data, offset); offset += 2;
+		obj["sFamilyClass"] = bin.readShort(data, offset); offset += 2;
+		obj["panose"] = bin.readBytes(data, offset, 10);  offset += 10;
+		obj["ulUnicodeRange1"]	= bin.readUint(data, offset);  offset += 4;
+		obj["ulUnicodeRange2"]	= bin.readUint(data, offset);  offset += 4;
+		obj["ulUnicodeRange3"]	= bin.readUint(data, offset);  offset += 4;
+		obj["ulUnicodeRange4"]	= bin.readUint(data, offset);  offset += 4;
+		obj["achVendID"] = bin.readASCII(data, offset, 4);  offset += 4;
+		obj["fsSelection"]	 = bin.readUshort(data, offset); offset += 2;
+		obj["usFirstCharIndex"] = bin.readUshort(data, offset); offset += 2;
+		obj["usLastCharIndex"] = bin.readUshort(data, offset); offset += 2;
+		obj["sTypoAscender"] = bin.readShort(data, offset); offset += 2;
+		obj["sTypoDescender"] = bin.readShort(data, offset); offset += 2;
+		obj["sTypoLineGap"] = bin.readShort(data, offset); offset += 2;
+		obj["usWinAscent"] = bin.readUshort(data, offset); offset += 2;
+		obj["usWinDescent"] = bin.readUshort(data, offset); offset += 2;
+		return offset;
+	},
+
+	version1 : function(data, offset, obj)
+	{
+		var bin = Typr["B"];
+		offset = Typr["T"].OS2.version0(data, offset, obj);
+
+		obj["ulCodePageRange1"] = bin.readUint(data, offset); offset += 4;
+		obj["ulCodePageRange2"] = bin.readUint(data, offset); offset += 4;
+		return offset;
+	},
+
+	version2 : function(data, offset, obj)
+	{
+		var bin = Typr["B"], rU=bin.readUshort;
+		offset = Typr["T"].OS2.version1(data, offset, obj);
+
+		obj["sxHeight"]     = bin.readShort(data, offset); offset += 2;
+		obj["sCapHeight"]   = bin.readShort(data, offset); offset += 2;
+		obj["usDefault"]    = rU(data, offset); offset += 2;
+		obj["usBreak"]      = rU(data, offset); offset += 2;
+		obj["usMaxContext"] = rU(data, offset); offset += 2;
+		return offset;
+	},
+
+	version5 : function(data, offset, obj)
+	{
+		var rU = Typr["B"].readUshort;
+		offset = Typr["T"].OS2.version2(data, offset, obj);
+
+		obj["usLowerOpticalPointSize"] = rU(data, offset); offset += 2;
+		obj["usUpperOpticalPointSize"] = rU(data, offset); offset += 2;
+		return offset;
+	}
+}
+
+Typr["T"].post = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var obj = {};
+
+		obj["version"]            = bin.readFixed(data, offset);  offset+=4;
+		obj["italicAngle"]        = bin.readFixed(data, offset);  offset+=4;
+		obj["underlinePosition"]  = bin.readShort(data, offset);  offset+=2;
+		obj["underlineThickness"] = bin.readShort(data, offset);  offset+=2;
+
+		return obj;
+	}
+};
+Typr["T"].SVG = {
+	parseTab : function(data, offset, length)
+	{
+		var bin = Typr["B"];
+		var obj = { entries: []};
+
+		var offset0 = offset;
+
+		var tableVersion = bin.readUshort(data, offset);	offset += 2;
+		var svgDocIndexOffset = bin.readUint(data, offset);	offset += 4;
+		var reserved = bin.readUint(data, offset); offset += 4;
+
+		offset = svgDocIndexOffset + offset0;
+
+		var numEntries = bin.readUshort(data, offset);	offset += 2;
+
+		for(var i=0; i<numEntries; i++)
+		{
+			var startGlyphID = bin.readUshort(data, offset);  offset += 2;
+			var endGlyphID   = bin.readUshort(data, offset);  offset += 2;
+			var svgDocOffset = bin.readUint  (data, offset);  offset += 4;
+			var svgDocLength = bin.readUint  (data, offset);  offset += 4;
+
+			var sbuf = new Uint8Array(data.buffer, offset0 + svgDocOffset + svgDocIndexOffset, svgDocLength);
+			var svg = bin.readUTF8(sbuf, 0, sbuf.length);
+
+			for(var f=startGlyphID; f<=endGlyphID; f++) {
+				obj.entries[f] = svg;
+			}
+		}
+		return obj;
+	}
+};
+
+;
+
+
+Typr["U"] = {
+	"shape" : function(font,str,ltr) {
+
+		var getGlyphPosition = function(font, gls,i1,ltr)
+		{
+			var g1=gls[i1],g2=gls[i1+1], kern=font["kern"];
+			if(kern) {
+				var ind1 = kern.glyph1.indexOf(g1);
+				if(ind1!=-1)
+				{
+					var ind2 = kern.rval[ind1].glyph2.indexOf(g2);
+					if(ind2!=-1) return [0,0,kern.rval[ind1].vals[ind2],0];
+				}
+			}
+			//console.log("no kern");
+			return [0,0,0,0];
+		}
+
+
+		var gls = [];
+		for(var i=0; i<str.length; i++) {
+			var cc = str.codePointAt(i);  if(cc>0xffff) i++;
+			gls.push(Typr["U"]["codeToGlyph"](font, cc));
+		}
+		var shape = [];
+		var x = 0, y = 0;
+
+		for(var i=0; i<gls.length; i++) {
+			var padj = getGlyphPosition(font, gls,i,ltr);
+			var gid = gls[i];
+			var ax=font["hmtx"].aWidth[gid]+padj[2];
+			shape.push({"g":gid, "cl":i, "dx":0, "dy":0, "ax":ax, "ay":0});
+			x+=ax;
+		}
+		return shape;
+	},
+
+	"shapeToPath" : function(font,shape,clr) {
+		var tpath = {cmds:[], crds:[]};
+		var x = 0, y = 0;
+
+		for(var i=0; i<shape.length; i++) {
+			var it = shape[i]
+			var path = Typr["U"]["glyphToPath"](font, it["g"]), crds=path["crds"];
+			for(var j=0; j<crds.length; j+=2) {
+				tpath.crds.push(crds[j  ] + x + it["dx"]);
+				tpath.crds.push(crds[j+1] + y + it["dy"]);
+			}
+			if(clr) tpath.cmds.push(clr);
+			for(var j=0; j<path["cmds"].length; j++) tpath.cmds.push(path["cmds"][j]);
+			var clen = tpath.cmds.length;
+			if(clr) if(clen!=0 && tpath.cmds[clen-1]!="X") tpath.cmds.push("X");  // SVG fonts might contain "X". Then, nothing would stroke non-SVG glyphs.
+
+			x += it["ax"];  y+= it["ay"];
+		}
+		return {"cmds":tpath.cmds, "crds":tpath.crds};
+	},
+
+	"codeToGlyph" : function(font, code)
+	{
+		var cmap = font["cmap"];
+		//console.log(cmap);
+		// "p3e10" for NotoEmoji-Regular.ttf
+		var tind = -1, pps=["p3e10","p0e4","p3e1","p1e0","p0e3","p0e1"/*,"p3e3"*/];
+		for(var i=0; i<pps.length; i++) if(cmap.ids[pps[i]]!=null) {  tind=cmap.ids[pps[i]];  break;  }
+		if(tind==-1) throw "no familiar platform and encoding!";
+
+
+		// find the greatest index with a value <=v
+		var arrSearch = function(arr, k, v) {
+			var l=0, r=Math.floor(arr.length/k);
+			while(l+1!=r) {  var mid = l + ((r-l)>>>1);   if(arr[mid*k]<=v) l=mid;  else r=mid;  }
+			return l*k;
+		}
+
+		var tab = cmap.tables[tind], fmt=tab.format, gid = -1;  //console.log(fmt); throw "e";
+
+		if(fmt==0) {
+			if(code>=tab.map.length) gid = 0;
+			else gid = tab.map[code];
+		}
+		/*else if(fmt==2) {
+			var data=font["_data"], off = cmap.off+tab.off+6, bin=Typr["B"];
+			var shKey = bin.readUshort(data,off + 2*(code>>>8));
+			var shInd = off + 256*2 + shKey*8;
+
+			var firstCode = bin.readUshort(data,shInd);
+			var entryCount= bin.readUshort(data,shInd+2);
+			var idDelta   = bin.readShort (data,shInd+4);
+			var idRangeOffset = bin.readUshort(data,shInd+6);
+
+			if(firstCode<=code && code<=firstCode+entryCount) {
+				// not completely correct
+				gid = bin.readUshort(data, shInd+6+idRangeOffset + (code&255)*2);
+			}
+			else gid=0;
+			//if(code>256) console.log(code,(code>>>8),shKey,firstCode,entryCount,idDelta,idRangeOffset);
+
+			//throw "e";
+			//console.log(tab,  bin.readUshort(data,off));
+			//throw "e";
+		}*/
+		else if(fmt==4) {
+			var sind = -1, ec = tab.endCount;
+			if(code>ec[ec.length-1]) sind=-1;
+			else {
+				// smallest index with code <= value
+				sind = arrSearch(ec,1,code);
+				if(ec[sind]<code) sind++;
+			}
+			if(sind==-1) gid = 0;
+			else if(code<tab.startCount[sind]) gid = 0;
+			else {
+				var gli = 0;
+				if(tab.idRangeOffset[sind]!=0) gli = tab.glyphIdArray[(code-tab.startCount[sind]) + (tab.idRangeOffset[sind]>>1) - (tab.idRangeOffset.length-sind)];
+				else                           gli = code + tab.idDelta[sind];
+				gid = (gli & 0xFFFF);
+			}
+		}
+		else if(fmt==6) {
+			var off = code-tab.firstCode, arr=tab.glyphIdArray;
+			if(off<0 || off>=arr.length) gid=0;
+			else gid = arr[off];
+		}
+		else if(fmt==12) {
+			var grp = tab.groups;  //console.log(grp);  throw "e";
+
+			if(code>grp[grp.length-2]) gid = 0;
+			else {
+				var i = arrSearch(grp,3,code);
+				if(grp[i]<=code && code<=grp[i+1]) {  gid = grp[i+2] + (code-grp[i]);  }
+				if(gid==-1) gid=0;
+			}
+		}
+		else throw "unknown cmap table format "+tab.format;
+
+		//*
+		var SVG = font["SVG "], loca = font["loca"];
+		// if the font claims to have a Glyph for a character, but the glyph is empty, and the character is not "white", it is a lie!
+		if(gid!=0 && font["CFF "]==null && (SVG==null || SVG.entries[gid]==null) && loca[gid]==loca[gid+1]  // loca not present in CFF or SVG fonts
+			&& [0x9,0xa,0xb,0xc,0xd,0x20,0x85,0xa0,0x1680,0x2028,0x2029,0x202f,0x3000,
+				0x180e,0x200b,0x200c,0x200d,0x2060,0xfeff].indexOf(code)==-1 && !(0x2000<=code && code<=0x200a))  gid=0;
+		//*/
+
+		return gid;
+	},
+
+	"glyphToPath" : function(font, gid)
+	{
+		var path = { cmds:[], crds:[] };
+		var SVG = font["SVG "], CFF = font["CFF "];
+		var U = Typr["U"];
+		if(SVG && SVG.entries[gid]) {
+			var p = SVG.entries[gid];
+			if(p!=null) {
+				if(typeof p == "string") {  p = U["SVG"].toPath(p);  SVG.entries[gid]=p;  }
+				path=p;
+			}
+		}
+		else if(CFF) {
+			var pdct = CFF["Private"];
+			var state = {x:0,y:0,stack:[],nStems:0,haveWidth:false,width: pdct ? pdct["defaultWidthX"] : 0,open:false};
+			if(CFF["ROS"]) {
+				var gi = 0;
+				while(CFF["FDSelect"][gi+2]<=gid) gi+=2;
+				pdct = CFF["FDArray"][CFF["FDSelect"][gi+1]]["Private"];
+			}
+			U["_drawCFF"](CFF["CharStrings"][gid], state, CFF, pdct, path);
+		}
+		else if(font["glyf"]) {  U["_drawGlyf"](gid, font, path);  }
+		return {"cmds":path.cmds, "crds":path.crds};
+	},
+
+	"_drawGlyf" : function(gid, font, path)
+	{
+		var gl = font["glyf"][gid];
+		if(gl==null) gl = font["glyf"][gid] = Typr["T"].glyf._parseGlyf(font, gid);
+		if(gl!=null){
+			if(gl.noc>-1) Typr["U"]["_simpleGlyph"](gl, path);
+			else          Typr["U"]["_compoGlyph"] (gl, font, path);
+		}
+	},
+	"_simpleGlyph" : function(gl, p)
+	{
+		var P = Typr["U"]["P"];
+		for(var c=0; c<gl.noc; c++) {
+			var i0 = (c==0) ? 0 : (gl.endPts[c-1] + 1);
+			var il = gl.endPts[c];
+
+			for(var i=i0; i<=il; i++) {
+				var pr = (i==i0)?il:(i-1);
+				var nx = (i==il)?i0:(i+1);
+				var onCurve = gl.flags[i]&1;
+				var prOnCurve = gl.flags[pr]&1;
+				var nxOnCurve = gl.flags[nx]&1;
+
+				var x = gl.xs[i], y = gl.ys[i];
+
+				if(i==i0) {
+					if(onCurve) {
+						if(prOnCurve) P.MoveTo(p, gl.xs[pr], gl.ys[pr]);
+						else          {  P.MoveTo(p,x,y);  continue;  /*  will do CurveTo at il  */  }
+					}
+					else {
+						if(prOnCurve) P.MoveTo(p,  gl.xs[pr],       gl.ys[pr]        );
+						else          P.MoveTo(p, Math.floor((gl.xs[pr]+x)*0.5), Math.floor((gl.ys[pr]+y)*0.5)   );
+					}
+				}
+				if(onCurve) {
+					if(prOnCurve) P.LineTo(p,x,y);
+				}
+				else {
+					if(nxOnCurve) P.qCurveTo(p, x, y, gl.xs[nx], gl.ys[nx]);
+					else          P.qCurveTo(p, x, y, Math.floor((x+gl.xs[nx])*0.5), Math.floor((y+gl.ys[nx])*0.5) );
+				}
+			}
+			P.ClosePath(p);
+		}
+	},
+	"_compoGlyph" : function(gl, font, p) {
+		for(var j=0; j<gl.parts.length; j++) {
+			var path = { cmds:[], crds:[] };
+			var prt = gl.parts[j];
+			Typr["U"]["_drawGlyf"](prt.glyphIndex, font, path);
+
+			var m = prt.m;
+			for(var i=0; i<path.crds.length; i+=2) {
+				var x = path.crds[i  ], y = path.crds[i+1];
+				p.crds.push(x*m.a + y*m.b + m.tx);
+				p.crds.push(x*m.c + y*m.d + m.ty);
+			}
+			for(var i=0; i<path.cmds.length; i++) p.cmds.push(path.cmds[i]);
+		}
+	},
+
+	"pathToSVG" : function(path, prec)
+	{
+		var cmds = path["cmds"], crds = path["crds"];
+		if(prec==null) prec = 5;
+		var out = [], co = 0, lmap = {"M":2,"L":2,"Q":4,"C":6};
+		for(var i=0; i<cmds.length; i++)
+		{
+			var cmd = cmds[i], cn = co+(lmap[cmd]?lmap[cmd]:0);
+			out.push(cmd);
+			while(co<cn) {  var c = crds[co++];  out.push(parseFloat(c.toFixed(prec))+(co==cn?"":" "));  }
+		}
+		return out.join("");
+	},
+	"SVGToPath" : function(d) {
+		var pth = {cmds:[], crds:[]};
+		Typr["U"]["SVG"].svgToPath(d, pth);
+		return {"cmds":pth.cmds, "crds":pth.crds};
+	},
+
+	"pathToContext" : function(path, ctx) {
+		var c = 0, cmds = path["cmds"], crds = path["crds"];
+
+		for(var j=0; j<cmds.length; j++) {
+			var cmd = cmds[j];
+			if     (cmd=="M") {
+				ctx.moveTo(crds[c], crds[c+1]);
+				c+=2;
+			}
+			else if(cmd=="L") {
+				ctx.lineTo(crds[c], crds[c+1]);
+				c+=2;
+			}
+			else if(cmd=="C") {
+				ctx.bezierCurveTo(crds[c], crds[c+1], crds[c+2], crds[c+3], crds[c+4], crds[c+5]);
+				c+=6;
+			}
+			else if(cmd=="Q") {
+				ctx.quadraticCurveTo(crds[c], crds[c+1], crds[c+2], crds[c+3]);
+				c+=4;
+			}
+			else if(cmd.charAt(0)=="#") {
+				ctx.beginPath();
+				ctx.fillStyle = cmd;
+			}
+			else if(cmd=="Z") {
+				ctx.closePath();
+			}
+			else if(cmd=="X") {
+				ctx.fill();
+			}
+		}
+	},
+
+	"P" : {
+		MoveTo    : function(p, x, y)        {  p.cmds.push("M");  p.crds.push(x,y);  },
+		LineTo    : function(p, x, y)        {  p.cmds.push("L");  p.crds.push(x,y);  },
+		CurveTo   : function(p, a,b,c,d,e,f) {  p.cmds.push("C");  p.crds.push(a,b,c,d,e,f);  },
+		qCurveTo  : function(p, a,b,c,d)     {  p.cmds.push("Q");  p.crds.push(a,b,c,d);  },
+		ClosePath : function(p)              {  p.cmds.push("Z");  }
+	},
+
+	"_drawCFF" : function(cmds, state, font, pdct, p)
+	{
+		var stack = state.stack;
+		var nStems = state.nStems, haveWidth=state.haveWidth, width=state.width, open=state.open;
+		var i=0;
+		var x=state.x, y=state.y, c1x=0, c1y=0, c2x=0, c2y=0, c3x=0, c3y=0, c4x=0, c4y=0, jpx=0, jpy=0;
+		var CFF = Typr["T"].CFF, P = Typr["U"]["P"];
+
+		var nominalWidthX = pdct["nominalWidthX"];
+		var o = {val:0,size:0};
+		//console.log(cmds);
+		while(i<cmds.length)
+		{
+			CFF.getCharString(cmds, i, o);
+			var v = o.val;
+			i += o.size;
+
+			if(false) {}
+			else if(v=="o1" || v=="o18")  //  hstem || hstemhm
+			{
+				var hasWidthArg;
+
+				// The number of stem operators on the stack is always even.
+				// If the value is uneven, that means a width is specified.
+				hasWidthArg = stack.length % 2 !== 0;
+				if (hasWidthArg && !haveWidth) {
+					width = stack.shift() + nominalWidthX;
+				}
+
+				nStems += stack.length >> 1;
+				stack.length = 0;
+				haveWidth = true;
+			}
+			else if(v=="o3" || v=="o23")  // vstem || vstemhm
+			{
+				var hasWidthArg;
+
+				// The number of stem operators on the stack is always even.
+				// If the value is uneven, that means a width is specified.
+				hasWidthArg = stack.length % 2 !== 0;
+				if (hasWidthArg && !haveWidth) {
+					width = stack.shift() + nominalWidthX;
+				}
+
+				nStems += stack.length >> 1;
+				stack.length = 0;
+				haveWidth = true;
+			}
+			else if(v=="o4")
+			{
+				if (stack.length > 1 && !haveWidth) {
+							width = stack.shift() + nominalWidthX;
+							haveWidth = true;
+						}
+				if(open) P.ClosePath(p);
+
+						y += stack.pop();
+						P.MoveTo(p,x,y);   open=true;
+			}
+			else if(v=="o5")
+			{
+				while (stack.length > 0) {
+							x += stack.shift();
+							y += stack.shift();
+							P.LineTo(p, x, y);
+						}
+			}
+			else if(v=="o6" || v=="o7")  // hlineto || vlineto
+			{
+				var count = stack.length;
+				var isX = (v == "o6");
+
+				for(var j=0; j<count; j++) {
+					var sval = stack.shift();
+
+					if(isX) x += sval;  else  y += sval;
+					isX = !isX;
+					P.LineTo(p, x, y);
+				}
+			}
+			else if(v=="o8" || v=="o24")	// rrcurveto || rcurveline
+			{
+				var count = stack.length;
+				var index = 0;
+				while(index+6 <= count) {
+					c1x = x + stack.shift();
+					c1y = y + stack.shift();
+					c2x = c1x + stack.shift();
+					c2y = c1y + stack.shift();
+					x = c2x + stack.shift();
+					y = c2y + stack.shift();
+					P.CurveTo(p, c1x, c1y, c2x, c2y, x, y);
+					index+=6;
+				}
+				if(v=="o24")
+				{
+					x += stack.shift();
+					y += stack.shift();
+					P.LineTo(p, x, y);
+				}
+			}
+			else if(v=="o11")  break;
+			else if(v=="o1234" || v=="o1235" || v=="o1236" || v=="o1237")//if((v+"").slice(0,3)=="o12")
+			{
+				if(v=="o1234")
+				{
+					c1x = x   + stack.shift();    // dx1
+					c1y = y;                      // dy1
+					c2x = c1x + stack.shift();    // dx2
+					c2y = c1y + stack.shift();    // dy2
+					jpx = c2x + stack.shift();    // dx3
+					jpy = c2y;                    // dy3
+					c3x = jpx + stack.shift();    // dx4
+					c3y = c2y;                    // dy4
+					c4x = c3x + stack.shift();    // dx5
+					c4y = y;                      // dy5
+					x = c4x + stack.shift();      // dx6
+					P.CurveTo(p, c1x, c1y, c2x, c2y, jpx, jpy);
+					P.CurveTo(p, c3x, c3y, c4x, c4y, x, y);
+
+				}
+				if(v=="o1235")
+				{
+					c1x = x   + stack.shift();    // dx1
+					c1y = y   + stack.shift();    // dy1
+					c2x = c1x + stack.shift();    // dx2
+					c2y = c1y + stack.shift();    // dy2
+					jpx = c2x + stack.shift();    // dx3
+					jpy = c2y + stack.shift();    // dy3
+					c3x = jpx + stack.shift();    // dx4
+					c3y = jpy + stack.shift();    // dy4
+					c4x = c3x + stack.shift();    // dx5
+					c4y = c3y + stack.shift();    // dy5
+					x = c4x + stack.shift();      // dx6
+					y = c4y + stack.shift();      // dy6
+					stack.shift();                // flex depth
+					P.CurveTo(p, c1x, c1y, c2x, c2y, jpx, jpy);
+					P.CurveTo(p, c3x, c3y, c4x, c4y, x, y);
+				}
+				if(v=="o1236")
+				{
+					c1x = x   + stack.shift();    // dx1
+					c1y = y   + stack.shift();    // dy1
+					c2x = c1x + stack.shift();    // dx2
+					c2y = c1y + stack.shift();    // dy2
+					jpx = c2x + stack.shift();    // dx3
+					jpy = c2y;                    // dy3
+					c3x = jpx + stack.shift();    // dx4
+					c3y = c2y;                    // dy4
+					c4x = c3x + stack.shift();    // dx5
+					c4y = c3y + stack.shift();    // dy5
+					x = c4x + stack.shift();      // dx6
+					P.CurveTo(p, c1x, c1y, c2x, c2y, jpx, jpy);
+					P.CurveTo(p, c3x, c3y, c4x, c4y, x, y);
+				}
+				if(v=="o1237")
+				{
+					c1x = x   + stack.shift();    // dx1
+					c1y = y   + stack.shift();    // dy1
+					c2x = c1x + stack.shift();    // dx2
+					c2y = c1y + stack.shift();    // dy2
+					jpx = c2x + stack.shift();    // dx3
+					jpy = c2y + stack.shift();    // dy3
+					c3x = jpx + stack.shift();    // dx4
+					c3y = jpy + stack.shift();    // dy4
+					c4x = c3x + stack.shift();    // dx5
+					c4y = c3y + stack.shift();    // dy5
+					if (Math.abs(c4x - x) > Math.abs(c4y - y)) {
+						x = c4x + stack.shift();
+					} else {
+						y = c4y + stack.shift();
+					}
+					P.CurveTo(p, c1x, c1y, c2x, c2y, jpx, jpy);
+					P.CurveTo(p, c3x, c3y, c4x, c4y, x, y);
+				}
+			}
+			else if(v=="o14")
+			{
+				if (stack.length > 0 && !haveWidth) {
+							width = stack.shift() + font["nominalWidthX"];
+							haveWidth = true;
+						}
+				if(stack.length==4) // seac = standard encoding accented character
+				{
+
+					var asb = 0;
+					var adx = stack.shift();
+					var ady = stack.shift();
+					var bchar = stack.shift();
+					var achar = stack.shift();
+
+
+					var bind = CFF.glyphBySE(font, bchar);
+					var aind = CFF.glyphBySE(font, achar);
+
+					//console.log(bchar, bind);
+					//console.log(achar, aind);
+					//state.x=x; state.y=y; state.nStems=nStems; state.haveWidth=haveWidth; state.width=width;  state.open=open;
+
+					Typr["U"]["_drawCFF"](font["CharStrings"][bind], state,font,pdct,p);
+					state.x = adx; state.y = ady;
+					Typr["U"]["_drawCFF"](font["CharStrings"][aind], state,font,pdct,p);
+
+					//x=state.x; y=state.y; nStems=state.nStems; haveWidth=state.haveWidth; width=state.width;  open=state.open;
+				}
+				if(open) {  P.ClosePath(p);  open=false;  }
+			}
+			else if(v=="o19" || v=="o20")
+			{
+				var hasWidthArg;
+
+				// The number of stem operators on the stack is always even.
+				// If the value is uneven, that means a width is specified.
+				hasWidthArg = stack.length % 2 !== 0;
+				if (hasWidthArg && !haveWidth) {
+					width = stack.shift() + nominalWidthX;
+				}
+
+				nStems += stack.length >> 1;
+				stack.length = 0;
+				haveWidth = true;
+
+				i += (nStems + 7) >> 3;
+			}
+
+			else if(v=="o21") {
+				if (stack.length > 2 && !haveWidth) {
+							width = stack.shift() + nominalWidthX;
+							haveWidth = true;
+						}
+
+						y += stack.pop();
+						x += stack.pop();
+
+						if(open) P.ClosePath(p);
+						P.MoveTo(p,x,y);   open=true;
+			}
+			else if(v=="o22")
+			{
+				 if (stack.length > 1 && !haveWidth) {
+							width = stack.shift() + nominalWidthX;
+							haveWidth = true;
+						}
+
+						x += stack.pop();
+
+						if(open) P.ClosePath(p);
+						P.MoveTo(p,x,y);   open=true;
+			}
+			else if(v=="o25")
+			{
+				while (stack.length > 6) {
+							x += stack.shift();
+							y += stack.shift();
+							P.LineTo(p, x, y);
+						}
+
+						c1x = x + stack.shift();
+						c1y = y + stack.shift();
+						c2x = c1x + stack.shift();
+						c2y = c1y + stack.shift();
+						x = c2x + stack.shift();
+						y = c2y + stack.shift();
+						P.CurveTo(p, c1x, c1y, c2x, c2y, x, y);
+			}
+			else if(v=="o26")
+			{
+				if (stack.length % 2) {
+							x += stack.shift();
+						}
+
+						while (stack.length > 0) {
+							c1x = x;
+							c1y = y + stack.shift();
+							c2x = c1x + stack.shift();
+							c2y = c1y + stack.shift();
+							x = c2x;
+							y = c2y + stack.shift();
+							P.CurveTo(p, c1x, c1y, c2x, c2y, x, y);
+						}
+
+			}
+			else if(v=="o27")
+			{
+				if (stack.length % 2) {
+							y += stack.shift();
+						}
+
+						while (stack.length > 0) {
+							c1x = x + stack.shift();
+							c1y = y;
+							c2x = c1x + stack.shift();
+							c2y = c1y + stack.shift();
+							x = c2x + stack.shift();
+							y = c2y;
+							P.CurveTo(p, c1x, c1y, c2x, c2y, x, y);
+						}
+			}
+			else if(v=="o10" || v=="o29")	// callsubr || callgsubr
+			{
+				var obj = (v=="o10" ? pdct : font);
+				if(stack.length==0) { console.log("error: empty stack");  }
+				else {
+					var ind = stack.pop();
+					var subr = obj["Subrs"][ ind + obj["Bias"] ];
+					state.x=x; state.y=y; state.nStems=nStems; state.haveWidth=haveWidth; state.width=width;  state.open=open;
+					Typr["U"]["_drawCFF"](subr, state,font,pdct,p);
+					x=state.x; y=state.y; nStems=state.nStems; haveWidth=state.haveWidth; width=state.width;  open=state.open;
+				}
+			}
+			else if(v=="o30" || v=="o31")   // vhcurveto || hvcurveto
+			{
+				var count, count1 = stack.length;
+				var index = 0;
+				var alternate = v == "o31";
+
+				count  = count1 & ~2;
+				index += count1 - count;
+
+				while ( index < count )
+				{
+					if(alternate)
+					{
+						c1x = x + stack.shift();
+						c1y = y;
+						c2x = c1x + stack.shift();
+						c2y = c1y + stack.shift();
+						y = c2y + stack.shift();
+						if(count-index == 5) {  x = c2x + stack.shift();  index++;  }
+						else x = c2x;
+						alternate = false;
+					}
+					else
+					{
+						c1x = x;
+						c1y = y + stack.shift();
+						c2x = c1x + stack.shift();
+						c2y = c1y + stack.shift();
+						x = c2x + stack.shift();
+						if(count-index == 5) {  y = c2y + stack.shift();  index++;  }
+						else y = c2y;
+						alternate = true;
+					}
+					P.CurveTo(p, c1x, c1y, c2x, c2y, x, y);
+					index += 4;
+				}
+			}
+
+			else if((v+"").charAt(0)=="o") {   console.log("Unknown operation: "+v, cmds); throw v;  }
+			else stack.push(v);
+		}
+		//console.log(cmds);
+		state.x=x; state.y=y; state.nStems=nStems; state.haveWidth=haveWidth; state.width=width; state.open=open;
+	},
+
+
+	"SVG" : function() {
+		var M = {
+			getScale : function(m) {  return Math.sqrt(Math.abs(m[0]*m[3]-m[1]*m[2]));  },
+			translate: function(m,x,y) {  M.concat(m, [1,0,0,1,x,y]);  },
+			rotate   : function(m,a  ) {  M.concat(m, [Math.cos(a), -Math.sin(a), Math.sin(a), Math.cos(a),0,0]);  },
+			scale    : function(m,x,y) {  M.concat(m, [x,0,0,y,0,0]);  },
+			concat   : function(m,w  ) {
+				var a=m[0],b=m[1],c=m[2],d=m[3],tx=m[4],ty=m[5];
+				m[0] = (a *w[0])+(b *w[2]);       m[1] = (a *w[1])+(b *w[3]);
+				m[2] = (c *w[0])+(d *w[2]);       m[3] = (c *w[1])+(d *w[3]);
+				m[4] = (tx*w[0])+(ty*w[2])+w[4];  m[5] = (tx*w[1])+(ty*w[3])+w[5];
+			},
+			invert   : function(m    ) {
+				var a=m[0],b=m[1],c=m[2],d=m[3],tx=m[4],ty=m[5], adbc=a*d-b*c;
+				m[0] = d/adbc;  m[1] = -b/adbc;  m[2] =-c/adbc;  m[3] =  a/adbc;
+				m[4] = (c*ty - d*tx)/adbc;  m[5] = (b*tx - a*ty)/adbc;
+			},
+			multPoint: function(m, p ) {  var x=p[0],y=p[1];  return [x*m[0]+y*m[2]+m[4],   x*m[1]+y*m[3]+m[5]];  },
+			multArray: function(m, a ) {  for(var i=0; i<a.length; i+=2) {  var x=a[i],y=a[i+1];  a[i]=x*m[0]+y*m[2]+m[4];  a[i+1]=x*m[1]+y*m[3]+m[5];  }  }
+		}
+
+		function _bracketSplit(str, lbr, rbr) {
+			var out = [], pos=0, ci = 0, lvl = 0;
+			while(true) {  //throw "e";
+				var li = str.indexOf(lbr, ci);
+				var ri = str.indexOf(rbr, ci);
+				if(li==-1 && ri==-1) break;
+				if(ri==-1 || (li!=-1 && li<ri)) {
+					if(lvl==0) {  out.push(str.slice(pos,li).trim());  pos=li+1;  }
+					lvl++;  ci=li+1;
+				}
+				else if(li==-1 || (ri!=-1 && ri<li)) {
+					lvl--;
+					if(lvl==0) {  out.push(str.slice(pos,ri).trim());  pos=ri+1;  }
+					ci=ri+1;
+				}
+			}
+			return out;
+		}
+		//"cssMap":
+		function cssMap(str) {
+			var pts = _bracketSplit(str, "{", "}");
+			var css = {};
+			for(var i=0; i<pts.length; i+=2) {
+				var cn = pts[i].split(",");
+				for(var j=0; j<cn.length; j++) {
+					var cnj = cn[j].trim();  if(css[cnj]==null) css[cnj]="";
+					css[cnj] += pts[i+1];
+				}
+			}
+			return css;
+		}
+		//"readTrnf"
+		function readTrnf(trna) {
+			var pts = _bracketSplit(trna, "(",")");
+			var m = [1,0,0,1,0,0];
+			for(var i=0; i<pts.length; i+=2) {  var om=m;  m=_readTrnsAttr(pts[i], pts[i+1]);  M.concat(m,om);  }
+			return m;
+		}
+
+		function _readTrnsAttr(fnc, vls) {
+			//console.log(vls);
+			//vls = vls.replace(/\-/g, " -").trim();
+			var m = [1,0,0,1,0,0], gotSep = true;
+			for(var i=0; i<vls.length; i++) {	// matrix(.99915 0 0 .99915.418.552)   matrix(1 0 0-.9474-22.535 271.03)
+				var ch = vls.charAt(i);
+				if(ch=="," || ch==" ") gotSep = true;
+				else if(ch==".") {
+					if(!gotSep) {  vls = vls.slice(0,i) + ","+vls.slice(i);  i++;  }     gotSep = false;
+				}
+				else if(ch=="-" && i>0 && vls[i-1]!="e") {  vls = vls.slice(0,i) + " "+vls.slice(i);  i++;  gotSep=true;  }
+			}
+
+			vls = vls.split(/\s*[\s,]\s*/).map(parseFloat);
+			if(false) {}
+			else if(fnc=="translate") {  if(vls.length==1) M.translate(m,vls[0],     0);  else M.translate(m,vls[0],vls[1]);  }
+			else if(fnc=="scale"    ) {  if(vls.length==1) M.scale    (m,vls[0],vls[0]);  else M.scale    (m,vls[0],vls[1]);  }
+			else if(fnc=="rotate"   ) {  var tx=0,ty=0;  if(vls.length!=1) { tx=vls[1];  ty=vls[2];  }  M.translate(m,-tx,-ty);  M.rotate(m,-Math.PI*vls[0]/180);  M.translate(m,tx,ty);  }
+			else if(fnc=="matrix"   ) m = vls;
+			else console.log("unknown transform: ", fnc);
+			return m;
+		}
+
+		function toPath(str)
+		{
+			var pth = {cmds:[], crds:[]};
+			if(str==null) return pth;
+
+			var prsr = new DOMParser();
+			var doc = prsr["parseFromString"](str,"image/svg+xml");
+
+			//var svg = doc.firstChild;  while(svg.tagName!="svg") svg = svg.nextSibling;
+			var svg = doc.getElementsByTagName("svg")[0];
+			var vb = svg.getAttribute("viewBox");
+			if(vb) vb = vb.trim().split(" ").map(parseFloat);  else   vb = [0,0,1000,1000];
+			_toPath(svg.children, pth);
+			for(var i=0; i<pth.crds.length; i+=2) {
+				var x = pth.crds[i], y = pth.crds[i+1];
+				x -= vb[0];
+				y -= vb[1];
+				y = -y;
+				pth.crds[i] = x;
+				pth.crds[i+1] = y;
+			}
+			return pth;
+		}
+
+		function _toPath(nds, pth, fill) {
+			for(var ni=0; ni<nds.length; ni++) {
+				var nd = nds[ni], tn = nd.tagName;
+				var cfl = nd.getAttribute("fill");  if(cfl==null) cfl = fill;
+				if(tn=="g") {
+					var tp = {crds:[], cmds:[]};
+					_toPath(nd.children, tp, cfl);
+					var trf = nd.getAttribute("transform");
+					if(trf) {
+						var m = readTrnf(trf);
+						M.multArray(m, tp.crds);
+					}
+					pth.crds=pth.crds.concat(tp.crds);
+					pth.cmds=pth.cmds.concat(tp.cmds);
+				}
+				else if(tn=="path" || tn=="circle" || tn=="ellipse") {
+					pth.cmds.push(cfl?cfl:"#000000");
+					var d;
+					if(tn=="path") d = nd.getAttribute("d");  //console.log(d);
+					if(tn=="circle" || tn=="ellipse") {
+						var vls=[0,0,0,0], nms=["cx","cy","rx","ry","r"];
+						for(var i=0; i<5; i++) {  var V=nd.getAttribute(nms[i]);  if(V) {  V=parseFloat(V);  if(i<4) vls[i]=V;  else vls[2]=vls[3]=V;  }  }
+						var cx=vls[0],cy=vls[1],rx=vls[2],ry=vls[3];
+						d = ["M",cx-rx,cy,"a",rx,ry,0,1,0,rx*2,0,"a",rx,ry,0,1,0,-rx*2,0].join(" ");
+					}
+					svgToPath(d, pth);  pth.cmds.push("X");
+				}
+				else if(tn=="defs") {}
+				else console.log(tn, nd);
+			}
+		}
+
+		function _tokens(d) {
+			var ts = [], off = 0, rn=false, cn="", pc="";  // reading number, current number, prev char
+			while(off<d.length){
+				var cc=d.charCodeAt(off), ch = d.charAt(off);  off++;
+				var isNum = (48<=cc && cc<=57) || ch=="." || ch=="-" || ch=="e" || ch=="E";
+
+				if(rn) {
+					if( (ch=="-" && pc!="e") || (ch=="." && cn.indexOf(".")!=-1)) {  ts.push(parseFloat(cn));  cn=ch;  }
+					else if(isNum) cn+=ch;
+					else {  ts.push(parseFloat(cn));  if(ch!="," && ch!=" ") ts.push(ch);  rn=false;  }
+				}
+				else {
+					if(isNum) {  cn=ch;  rn=true;  }
+					else if(ch!="," && ch!=" ") ts.push(ch);
+				}
+				pc = ch;
+			}
+			if(rn) ts.push(parseFloat(cn));
+			return ts;
+		}
+
+		function _reps(ts, off, ps) {
+			var i = off;
+			while(i<ts.length) {  if((typeof ts[i]) == "string") break;  i+=ps;  }
+			return (i-off)/ps;
+		}
+
+		function svgToPath(d, pth) {
+			var ts = _tokens(d);
+			var i = 0, x = 0, y = 0, ox = 0, oy = 0, oldo=pth.crds.length;
+			var pc = {"M":2,"L":2,"H":1,"V":1,   "T":2,"S":4, "A":7,   "Q":4, "C":6};
+			var cmds = pth.cmds, crds = pth.crds;
+
+			while(i<ts.length) {
+				var cmd = ts[i];  i++;
+				var cmu = cmd.toUpperCase();
+
+				if(cmu=="Z") {  cmds.push("Z");  x=ox;  y=oy;  }
+				else {
+					var ps = pc[cmu], reps = _reps(ts, i, ps);
+
+					for(var j=0; j<reps; j++) {
+						// If a moveto is followed by multiple pairs of coordinates, the subsequent pairs are treated as implicit lineto commands.
+						if(j==1 && cmu=="M") {  cmd=(cmd==cmu)?"L":"l";  cmu="L";  }
+
+						var xi = 0, yi = 0;   if(cmd!=cmu) {  xi=x;  yi=y;  }
+
+						if(false) {}
+						else if(cmu=="M") {  x = xi+ts[i++];  y = yi+ts[i++];  cmds.push("M");  crds.push(x,y);  ox=x;  oy=y; }
+						else if(cmu=="L") {  x = xi+ts[i++];  y = yi+ts[i++];  cmds.push("L");  crds.push(x,y);  }
+						else if(cmu=="H") {  x = xi+ts[i++];                   cmds.push("L");  crds.push(x,y);  }
+						else if(cmu=="V") {  y = yi+ts[i++];                   cmds.push("L");  crds.push(x,y);  }
+						else if(cmu=="Q") {
+							var x1=xi+ts[i++], y1=yi+ts[i++], x2=xi+ts[i++], y2=yi+ts[i++];
+							cmds.push("Q");  crds.push(x1,y1,x2,y2);  x=x2;  y=y2;
+						}
+						else if(cmu=="T") {
+							var co = Math.max(crds.length-2, oldo);
+							var x1 = x+x-crds[co], y1 = y+y-crds[co+1];
+							var x2=xi+ts[i++], y2=yi+ts[i++];
+							cmds.push("Q");  crds.push(x1,y1,x2,y2);  x=x2;  y=y2;
+						}
+						else if(cmu=="C") {
+							var x1=xi+ts[i++], y1=yi+ts[i++], x2=xi+ts[i++], y2=yi+ts[i++], x3=xi+ts[i++], y3=yi+ts[i++];
+							cmds.push("C");  crds.push(x1,y1,x2,y2,x3,y3);  x=x3;  y=y3;
+						}
+						else if(cmu=="S") {
+							var co = Math.max(crds.length-(cmds[cmds.length-1]=="C"?4:2), oldo);
+							var x1 = x+x-crds[co], y1 = y+y-crds[co+1];
+							var x2=xi+ts[i++], y2=yi+ts[i++], x3=xi+ts[i++], y3=yi+ts[i++];
+							cmds.push("C");  crds.push(x1,y1,x2,y2,x3,y3);  x=x3;  y=y3;
+						}
+						else if(cmu=="A") {  // convert SVG Arc to four cubic bézier segments "C"
+							var x1 = x, y1 = y;
+							var rx = ts[i++], ry = ts[i++];
+							var phi = ts[i++]*(Math.PI/180), fA = ts[i++], fS = ts[i++];
+							var x2 = xi+ts[i++], y2 = yi+ts[i++];
+							if(x2==x && y2==y && rx==0 && ry==0) continue;
+
+							var hdx = (x1-x2)/2, hdy = (y1-y2)/2;
+							var cosP = Math.cos(phi), sinP = Math.sin(phi);
+							var x1A =  cosP * hdx + sinP * hdy;
+							var y1A = -sinP * hdx + cosP * hdy;
+
+							var rxS = rx*rx, ryS = ry*ry;
+							var x1AS  = x1A*x1A, y1AS = y1A*y1A;
+							var frc = (rxS*ryS  - rxS*y1AS - ryS*x1AS)  /  (rxS*y1AS + ryS*x1AS);
+							var coef = (fA!=fS ? 1 : -1) * Math.sqrt(  Math.max(frc,0)  );
+							var cxA =  coef * (rx * y1A) / ry;
+							var cyA = -coef * (ry * x1A) / rx;
+
+							var cx = cosP*cxA - sinP*cyA + (x1+x2)/2;
+							var cy = sinP*cxA + cosP*cyA + (y1+y2)/2;
+
+							var angl = function(ux,uy,vx,vy) {  var lU = Math.sqrt(ux*ux+uy*uy), lV = Math.sqrt(vx*vx+vy*vy);
+									var num = (ux*vx+uy*vy) / (lU*lV);  //console.log(num, Math.acos(num));
+									return (ux*vy-uy*vx>=0?1:-1) * Math.acos( Math.max(-1, Math.min(1, num)) );  }
+
+							var vX = (x1A-cxA)/rx, vY = (y1A-cyA)/ry;
+							var theta1 = angl( 1, 0, vX,vY);
+							var dtheta = angl(vX,vY, (-x1A-cxA)/rx, (-y1A-cyA)/ry);
+							dtheta = dtheta % (2*Math.PI);
+
+							var arc = function(gst,x,y,r,a0,a1, neg) {
+								var rotate = function(m, a) {  var si=Math.sin(a), co=Math.cos(a);
+									var a=m[0],b=m[1],c=m[2],d=m[3];
+									m[0] = (a *co)+(b *si);   m[1] = (-a *si)+(b *co);
+									m[2] = (c *co)+(d *si);   m[3] = (-c *si)+(d *co);
+								}
+								var multArr= function(m,a) {
+									for(var j=0; j<a.length; j+=2) {
+										var x=a[j], y=a[j+1];
+										a[j  ] = m[0]*x + m[2]*y + m[4];
+										a[j+1] = m[1]*x + m[3]*y + m[5];
+									}
+								}
+								var concatA= function(a,b) {  for(var j=0; j<b.length; j++) a.push(b[j]);  }
+								var concatP= function(p,r) {  concatA(p.cmds,r.cmds);  concatA(p.crds,r.crds);  }
+								// circle from a0 counter-clock-wise to a1
+								if(neg) while(a1>a0) a1-=2*Math.PI;
+								else    while(a1<a0) a1+=2*Math.PI;
+								var th = (a1-a0)/4;
+
+								var x0 = Math.cos(th/2), y0 = -Math.sin(th/2);
+								var x1 = (4-x0)/3, y1 = y0==0 ? y0 : (1-x0)*(3-x0)/(3*y0);
+								var x2 = x1, y2 = -y1;
+								var x3 = x0, y3 = -y0;
+
+								var ps = [x1,y1,x2,y2,x3,y3];
+
+								var pth = {cmds:["C","C","C","C"], crds:ps.slice(0)};
+								var rot = [1,0,0,1,0,0];  rotate(rot,-th);
+								for(var j=0; j<3; j++) {  multArr(rot,ps);  concatA(pth.crds,ps);  }
+
+								rotate(rot, -a0+th/2);  rot[0]*=r;  rot[1]*=r;  rot[2]*=r;  rot[3]*=r;  rot[4]=x;  rot[5]=y;
+								multArr(rot, pth.crds);
+								multArr(gst.ctm, pth.crds);
+								concatP(gst.pth, pth);
+							}
+
+							var gst = {pth:pth, ctm:[rx*cosP,rx*sinP,-ry*sinP,ry*cosP,cx,cy]};
+							arc(gst, 0,0, 1, theta1, theta1+dtheta, fS==0);
+							x=x2;  y=y2;
+						}
+						else console.log("Unknown SVG command "+cmd);
+					}
+				}
+			}
+		};
+		return {  "cssMap":cssMap, "readTrnf":readTrnf, svgToPath:svgToPath, toPath:toPath };
+	}(),
+
+
+
+
+	"initHB": function(hurl,resp) {
+	var codeLength = function(code) {
+		var len=0;
+		if     ((code&(0xffffffff-(1<< 7)+1))==0) {  len=1;  }
+		else if((code&(0xffffffff-(1<<11)+1))==0) {  len=2;  }
+		else if((code&(0xffffffff-(1<<16)+1))==0) {  len=3;  }
+		else if((code&(0xffffffff-(1<<21)+1))==0) {  len=4;  }
+		return len;
+	}
+	var te = new window["TextEncoder"]("utf8");
+
+	fetch(hurl)
+		.then(function (x  ) { return x["arrayBuffer"](); })
+		.then(function (ab ) { return WebAssembly["instantiate"](ab); })
+		.then(function (res) {
+			console.log("HB ready");
+			var exp = res["instance"]["exports"], mem=exp["memory"];
+			mem["grow"](700); // each page is 64kb in size
+			var heapu8  = new Uint8Array (mem.buffer);
+			var u32 = new Uint32Array(mem.buffer);
+			var i32 = new Int32Array (mem.buffer);
+			var __lastFnt, blob,blobPtr,face,font;
+
+			Typr["U"]["shapeHB"] = (function () {
+
+				var toJson = function (ptr) {
+					var length = exp["hb_buffer_get_length"](ptr);
+					var result = [];
+					var iPtr32 = exp["hb_buffer_get_glyph_infos"](ptr, 0) >>>2;
+					var pPtr32 = exp["hb_buffer_get_glyph_positions"](ptr, 0) >>>2;
+					for(var i=0; i<length; ++i) {
+						var a=iPtr32+i*5, b=pPtr32+i*5;
+					  result.push({
+						"g" : u32[a + 0],
+						"cl": u32[a + 2],
+						"ax": i32[b + 0],
+						"ay": i32[b + 1],
+						"dx": i32[b + 2],
+						"dy": i32[b + 3]
+					  });
+					}
+					return result;
+				}
+				return function (fnt, str, ltr) {
+					var fdata = fnt["_data"], fn = fnt["name"]["postScriptName"];
+
+					if(__lastFnt!=fn) {
+						if(blob!=null) {
+							exp["hb_blob_destroy"](blob);
+							exp["free"](blobPtr);
+							exp["hb_face_destroy"](face);
+							exp["hb_font_destroy"](font);
+						}
+						blobPtr = exp["malloc"](fdata.byteLength);  heapu8.set(fdata, blobPtr);
+						blob = exp["hb_blob_create"](blobPtr, fdata.byteLength, 2, 0, 0);
+						face = exp["hb_face_create"](blob, 0);
+						font = exp["hb_font_create"](face)
+						__lastFnt = fn;
+					}
+
+					var buffer = exp["hb_buffer_create"]();
+					var bytes = te["encode"](str);
+					var len=bytes.length, strp = exp["malloc"](len);  heapu8.set(bytes, strp);
+					exp["hb_buffer_add_utf8"](buffer, strp, len, 0, len);
+					exp["free"](strp);
+
+					exp["hb_buffer_set_direction"](buffer,ltr?4:5);
+					exp["hb_buffer_guess_segment_properties"](buffer);
+					exp["hb_shape"](font, buffer, 0, 0);
+					var json = toJson(buffer)//buffer["json"]();
+					exp["hb_buffer_destroy"](buffer);
+
+					var arr = json.slice(0);  if(!ltr) arr.reverse();
+					var ci=0, bi=0;  // character index, binary index
+					for(var i=1; i<arr.length; i++) {
+						var gl = arr[i], cl=gl["cl"];
+						while(true) {
+							var cpt = str.codePointAt(ci), cln = codeLength(cpt);
+							if(bi+cln <=cl) {  bi+=cln;  ci += cpt<=0xffff ? 1 : 2;  }
+							else break;
+						}
+						//while(bi+codeLength(str.charCodeAt(ci)) <=cl) {  bi+=codeLength(str.charCodeAt(ci));  ci++;  }
+						gl["cl"]=ci;
+					}
+					return json;
+				}
+			}());
+			resp();
+		});
+	}
+}
+
+
+;
+/*
+ * JavaScript MD5
+ * https://github.com/blueimp/JavaScript-MD5
+ *
+ * Copyright 2011, Sebastian Tschan
+ * https://blueimp.net
+ *
+ * Licensed under the MIT license:
+ * https://opensource.org/licenses/MIT
+ *
+ * Based on
+ * A JavaScript implementation of the RSA Data Security, Inc. MD5 Message
+ * Digest Algorithm, as defined in RFC 1321.
+ * Version 2.2 Copyright (C) Paul Johnston 1999 - 2009
+ * Other contributors: Greg Holt, Andrew Kepert, Ydnar, Lostinet
+ * Distributed under the BSD License
+ * See http://pajhome.org.uk/crypt/md5 for more info.
+ */
+
+/* global define */
+
+/* eslint-disable strict */
+
+;(function ($) {
+  'use strict'
+
+  /**
+   * Add integers, wrapping at 2^32.
+   * This uses 16-bit operations internally to work around bugs in interpreters.
+   *
+   * @param {number} x First integer
+   * @param {number} y Second integer
+   * @returns {number} Sum
+   */
+  function safeAdd(x, y) {
+    var lsw = (x & 0xffff) + (y & 0xffff)
+    var msw = (x >> 16) + (y >> 16) + (lsw >> 16)
+    return (msw << 16) | (lsw & 0xffff)
+  }
+
+  /**
+   * Bitwise rotate a 32-bit number to the left.
+   *
+   * @param {number} num 32-bit number
+   * @param {number} cnt Rotation count
+   * @returns {number} Rotated number
+   */
+  function bitRotateLeft(num, cnt) {
+    return (num << cnt) | (num >>> (32 - cnt))
+  }
+
+  /**
+   * Basic operation the algorithm uses.
+   *
+   * @param {number} q q
+   * @param {number} a a
+   * @param {number} b b
+   * @param {number} x x
+   * @param {number} s s
+   * @param {number} t t
+   * @returns {number} Result
+   */
+  function md5cmn(q, a, b, x, s, t) {
+    return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b)
+  }
+  /**
+   * Basic operation the algorithm uses.
+   *
+   * @param {number} a a
+   * @param {number} b b
+   * @param {number} c c
+   * @param {number} d d
+   * @param {number} x x
+   * @param {number} s s
+   * @param {number} t t
+   * @returns {number} Result
+   */
+  function md5ff(a, b, c, d, x, s, t) {
+    return md5cmn((b & c) | (~b & d), a, b, x, s, t)
+  }
+  /**
+   * Basic operation the algorithm uses.
+   *
+   * @param {number} a a
+   * @param {number} b b
+   * @param {number} c c
+   * @param {number} d d
+   * @param {number} x x
+   * @param {number} s s
+   * @param {number} t t
+   * @returns {number} Result
+   */
+  function md5gg(a, b, c, d, x, s, t) {
+    return md5cmn((b & d) | (c & ~d), a, b, x, s, t)
+  }
+  /**
+   * Basic operation the algorithm uses.
+   *
+   * @param {number} a a
+   * @param {number} b b
+   * @param {number} c c
+   * @param {number} d d
+   * @param {number} x x
+   * @param {number} s s
+   * @param {number} t t
+   * @returns {number} Result
+   */
+  function md5hh(a, b, c, d, x, s, t) {
+    return md5cmn(b ^ c ^ d, a, b, x, s, t)
+  }
+  /**
+   * Basic operation the algorithm uses.
+   *
+   * @param {number} a a
+   * @param {number} b b
+   * @param {number} c c
+   * @param {number} d d
+   * @param {number} x x
+   * @param {number} s s
+   * @param {number} t t
+   * @returns {number} Result
+   */
+  function md5ii(a, b, c, d, x, s, t) {
+    return md5cmn(c ^ (b | ~d), a, b, x, s, t)
+  }
+
+  /**
+   * Calculate the MD5 of an array of little-endian words, and a bit length.
+   *
+   * @param {Array} x Array of little-endian words
+   * @param {number} len Bit length
+   * @returns {Array<number>} MD5 Array
+   */
+  function binlMD5(x, len) {
+    /* append padding */
+    x[len >> 5] |= 0x80 << len % 32
+    x[(((len + 64) >>> 9) << 4) + 14] = len
+
+    var i
+    var olda
+    var oldb
+    var oldc
+    var oldd
+    var a = 1732584193
+    var b = -271733879
+    var c = -1732584194
+    var d = 271733878
+
+    for (i = 0; i < x.length; i += 16) {
+      olda = a
+      oldb = b
+      oldc = c
+      oldd = d
+
+      a = md5ff(a, b, c, d, x[i], 7, -680876936)
+      d = md5ff(d, a, b, c, x[i + 1], 12, -389564586)
+      c = md5ff(c, d, a, b, x[i + 2], 17, 606105819)
+      b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330)
+      a = md5ff(a, b, c, d, x[i + 4], 7, -176418897)
+      d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426)
+      c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341)
+      b = md5ff(b, c, d, a, x[i + 7], 22, -45705983)
+      a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416)
+      d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417)
+      c = md5ff(c, d, a, b, x[i + 10], 17, -42063)
+      b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162)
+      a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682)
+      d = md5ff(d, a, b, c, x[i + 13], 12, -40341101)
+      c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290)
+      b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329)
+
+      a = md5gg(a, b, c, d, x[i + 1], 5, -165796510)
+      d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632)
+      c = md5gg(c, d, a, b, x[i + 11], 14, 643717713)
+      b = md5gg(b, c, d, a, x[i], 20, -373897302)
+      a = md5gg(a, b, c, d, x[i + 5], 5, -701558691)
+      d = md5gg(d, a, b, c, x[i + 10], 9, 38016083)
+      c = md5gg(c, d, a, b, x[i + 15], 14, -660478335)
+      b = md5gg(b, c, d, a, x[i + 4], 20, -405537848)
+      a = md5gg(a, b, c, d, x[i + 9], 5, 568446438)
+      d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690)
+      c = md5gg(c, d, a, b, x[i + 3], 14, -187363961)
+      b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501)
+      a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467)
+      d = md5gg(d, a, b, c, x[i + 2], 9, -51403784)
+      c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473)
+      b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734)
+
+      a = md5hh(a, b, c, d, x[i + 5], 4, -378558)
+      d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463)
+      c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562)
+      b = md5hh(b, c, d, a, x[i + 14], 23, -35309556)
+      a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060)
+      d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353)
+      c = md5hh(c, d, a, b, x[i + 7], 16, -155497632)
+      b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640)
+      a = md5hh(a, b, c, d, x[i + 13], 4, 681279174)
+      d = md5hh(d, a, b, c, x[i], 11, -358537222)
+      c = md5hh(c, d, a, b, x[i + 3], 16, -722521979)
+      b = md5hh(b, c, d, a, x[i + 6], 23, 76029189)
+      a = md5hh(a, b, c, d, x[i + 9], 4, -640364487)
+      d = md5hh(d, a, b, c, x[i + 12], 11, -421815835)
+      c = md5hh(c, d, a, b, x[i + 15], 16, 530742520)
+      b = md5hh(b, c, d, a, x[i + 2], 23, -995338651)
+
+      a = md5ii(a, b, c, d, x[i], 6, -198630844)
+      d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415)
+      c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905)
+      b = md5ii(b, c, d, a, x[i + 5], 21, -57434055)
+      a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571)
+      d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606)
+      c = md5ii(c, d, a, b, x[i + 10], 15, -1051523)
+      b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799)
+      a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359)
+      d = md5ii(d, a, b, c, x[i + 15], 10, -30611744)
+      c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380)
+      b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649)
+      a = md5ii(a, b, c, d, x[i + 4], 6, -145523070)
+      d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379)
+      c = md5ii(c, d, a, b, x[i + 2], 15, 718787259)
+      b = md5ii(b, c, d, a, x[i + 9], 21, -343485551)
+
+      a = safeAdd(a, olda)
+      b = safeAdd(b, oldb)
+      c = safeAdd(c, oldc)
+      d = safeAdd(d, oldd)
+    }
+    return [a, b, c, d]
+  }
+
+  /**
+   * Convert an array of little-endian words to a string
+   *
+   * @param {Array<number>} input MD5 Array
+   * @returns {string} MD5 string
+   */
+  function binl2rstr(input) {
+    var i
+    var output = ''
+    var length32 = input.length * 32
+    for (i = 0; i < length32; i += 8) {
+      output += String.fromCharCode((input[i >> 5] >>> i % 32) & 0xff)
+    }
+    return output
+  }
+
+  /**
+   * Convert a raw string to an array of little-endian words
+   * Characters >255 have their high-byte silently ignored.
+   *
+   * @param {string} input Raw input string
+   * @returns {Array<number>} Array of little-endian words
+   */
+  function rstr2binl(input) {
+    var i
+    var output = []
+    output[(input.length >> 2) - 1] = undefined
+    for (i = 0; i < output.length; i += 1) {
+      output[i] = 0
+    }
+    var length8 = input.length * 8
+    for (i = 0; i < length8; i += 8) {
+      output[i >> 5] |= (input.charCodeAt(i / 8) & 0xff) << i % 32
+    }
+    return output
+  }
+
+  /**
+   * Calculate the MD5 of a raw string
+   *
+   * @param {string} s Input string
+   * @returns {string} Raw MD5 string
+   */
+  function rstrMD5(s) {
+    return binl2rstr(binlMD5(rstr2binl(s), s.length * 8))
+  }
+
+  /**
+   * Calculates the HMAC-MD5 of a key and some data (raw strings)
+   *
+   * @param {string} key HMAC key
+   * @param {string} data Raw input string
+   * @returns {string} Raw MD5 string
+   */
+  function rstrHMACMD5(key, data) {
+    var i
+    var bkey = rstr2binl(key)
+    var ipad = []
+    var opad = []
+    var hash
+    ipad[15] = opad[15] = undefined
+    if (bkey.length > 16) {
+      bkey = binlMD5(bkey, key.length * 8)
+    }
+    for (i = 0; i < 16; i += 1) {
+      ipad[i] = bkey[i] ^ 0x36363636
+      opad[i] = bkey[i] ^ 0x5c5c5c5c
+    }
+    hash = binlMD5(ipad.concat(rstr2binl(data)), 512 + data.length * 8)
+    return binl2rstr(binlMD5(opad.concat(hash), 512 + 128))
+  }
+
+  /**
+   * Convert a raw string to a hex string
+   *
+   * @param {string} input Raw input string
+   * @returns {string} Hex encoded string
+   */
+  function rstr2hex(input) {
+    var hexTab = '0123456789abcdef'
+    var output = ''
+    var x
+    var i
+    for (i = 0; i < input.length; i += 1) {
+      x = input.charCodeAt(i)
+      output += hexTab.charAt((x >>> 4) & 0x0f) + hexTab.charAt(x & 0x0f)
+    }
+    return output
+  }
+
+  /**
+   * Encode a string as UTF-8
+   *
+   * @param {string} input Input string
+   * @returns {string} UTF8 string
+   */
+  function str2rstrUTF8(input) {
+    return unescape(encodeURIComponent(input))
+  }
+
+  /**
+   * Encodes input string as raw MD5 string
+   *
+   * @param {string} s Input string
+   * @returns {string} Raw MD5 string
+   */
+  function rawMD5(s) {
+    return rstrMD5(str2rstrUTF8(s))
+  }
+  /**
+   * Encodes input string as Hex encoded string
+   *
+   * @param {string} s Input string
+   * @returns {string} Hex encoded string
+   */
+  function hexMD5(s) {
+    return rstr2hex(rawMD5(s))
+  }
+  /**
+   * Calculates the raw HMAC-MD5 for the given key and data
+   *
+   * @param {string} k HMAC key
+   * @param {string} d Input string
+   * @returns {string} Raw MD5 string
+   */
+  function rawHMACMD5(k, d) {
+    return rstrHMACMD5(str2rstrUTF8(k), str2rstrUTF8(d))
+  }
+  /**
+   * Calculates the Hex encoded HMAC-MD5 for the given key and data
+   *
+   * @param {string} k HMAC key
+   * @param {string} d Input string
+   * @returns {string} Raw MD5 string
+   */
+  function hexHMACMD5(k, d) {
+    return rstr2hex(rawHMACMD5(k, d))
+  }
+
+  /**
+   * Calculates MD5 value for a given string.
+   * If a key is provided, calculates the HMAC-MD5 value.
+   * Returns a Hex encoded string unless the raw argument is given.
+   *
+   * @param {string} string Input string
+   * @param {string} [key] HMAC key
+   * @param {boolean} [raw] Raw output switch
+   * @returns {string} MD5 output
+   */
+  function md5(string, key, raw) {
+    if (!key) {
+      if (!raw) {
+        return hexMD5(string)
+      }
+      return rawMD5(string)
+    }
+    if (!raw) {
+      return hexHMACMD5(key, string)
+    }
+    return rawHMACMD5(key, string)
+  }
+
+  if (typeof define === 'function' && define.amd) {
+    define(function () {
+      return md5
+    })
+  } else if (typeof module === 'object' && module.exports) {
+    module.exports = md5
+  } else {
+    $.md5 = md5
+  }
+})(this)
+
+;return { Typr: Typr, md5: this.md5 };
+}).call(Object.create(null), undefined, undefined);
+
+    (() => {
     'use strict';
+    const { Typr, md5 } = bundledFontDependencies;
 
     // 尽早安装旧鼠标移出监听；只有 runner 的当前视频上下文能激活。
     const backgroundPlaybackGuard = initBackgroundPlayback();
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.17';
+    const ASSISTANT_VERSION = '1.18';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -89,7 +2943,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.17', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.18', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -2151,7 +5005,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.17');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.18');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -4449,7 +7303,7 @@
         if (!base64) throw new Error('存在加密题目，但未找到可解析的 Base64 字体');
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
-                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('字体解析依赖未加载，请检查油猴外部资源');
+                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('内置字体解析模块不可用，请重新安装完整脚本');
                 if (!fontTable) fontTable = JSON.parse(GM_getResourceText('Table'));
                 const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                 const font = Typr.parse(bytes)[0];
@@ -5067,9 +7921,9 @@
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.17</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.18</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.17.08 1.725 1.17 1.725 1.17 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.17-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.173a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.173 3.092-1.173.615 1.55.228 2.695.112 2.98.722.788 1.179 1.79 1.179 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.18.08 1.725 1.18 1.725 1.18 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.18-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.183a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.183 3.092-1.183.615 1.55.228 2.695.112 2.98.722.788 1.189 1.79 1.189 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -5753,7 +8607,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.17',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.18',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -6088,4 +8942,5 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();
 
+})();
 })();

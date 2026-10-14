@@ -65,7 +65,7 @@
         if (!base64) throw new Error('存在加密题目，但未找到可解析的 Base64 字体');
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
-                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('字体解析依赖未加载，请检查油猴外部资源');
+                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('内置字体解析模块不可用，请重新安装完整脚本');
                 if (!fontTable) fontTable = JSON.parse(GM_getResourceText('Table'));
                 const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                 const font = Typr.parse(bytes)[0];
@@ -1241,7 +1241,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.17',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.18',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

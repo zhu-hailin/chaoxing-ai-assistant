@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "file": "Typr.js",
+      "source": "https://raw.githubusercontent.com/photopea/Typr.js/15aa12ffa6cf39e8788562ea4af65b42317375fb/src/Typr.js",
+      "version": "15aa12ffa6cf39e8788562ea4af65b42317375fb",
+      "license": "MIT",
+      "sha256": "e906fc581293ebb6c005e472f7d5b038ca9c8f6e40927ad450ba90f8b7377971"
+    },
+    {
+      "file": "Typr.U.js",
+      "source": "https://raw.githubusercontent.com/photopea/Typr.js/f4fcdeb8014edc75ab7296bd85ac9cde8cb30489/src/Typr.U.js",
+      "version": "f4fcdeb8014edc75ab7296bd85ac9cde8cb30489",
+      "license": "MIT",
+      "sha256": "36f0c3bfd9c11ae6d2336e02e65f10442d6dec134431e9d980f5db508fc96b86"
+    },
+    {
+      "file": "md5.js",
+      "source": "https://raw.githubusercontent.com/blueimp/JavaScript-MD5/v2.19.0/js/md5.js",
+      "version": "2.19.0",
+      "license": "MIT",
+      "sha256": "5f14f0efb563db7b23efaf394339a78bced6fd5ba649f049961a65476d928af5"
+    },
+    {
+      "file": "Typr-LICENSE.txt",
+      "source": "https://raw.githubusercontent.com/photopea/Typr.js/15aa12ffa6cf39e8788562ea4af65b42317375fb/LICENSE",
+      "version": "15aa12ffa6cf39e8788562ea4af65b42317375fb",
+      "license": "MIT",
+      "sha256": "44b8cdb76bb7adb8fb3ca23a63d4bbf32c2be201bae44106e712094e6cff42a7"
+    },
+    {
+      "file": "md5-LICENSE.txt",
+      "source": "https://raw.githubusercontent.com/blueimp/JavaScript-MD5/v2.19.0/LICENSE.txt",
+      "version": "2.19.0",
+      "license": "MIT",
+      "sha256": "ce2ef2581ac80c09ea7025ce0eca7995b1cdc631cd0daaffce3a1353bc2143f8"
+    }
+  ],
+  "scripts": [
+    "Typr.js",
+    "Typr.U.js",
+    "md5.js"
+  ],
+  "notices": [
+    "Typr-LICENSE.txt",
+    "md5-LICENSE.txt"
+  ],
+  "legacyBundle": {
+    "version": "2.0",
+    "url": "https://greasyfork.org/scripts/445293/code/TyprMd5.js",
+    "sha256": "e5f59b146409f8b0779e0c9add9a81de1a484f6ca3b81c9edf2dfe0df13493b0"
+  }
+}
