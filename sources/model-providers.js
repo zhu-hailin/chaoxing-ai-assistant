@@ -198,6 +198,29 @@
         if(!models.size)throw new Error('模型列表没有有效条目');
         return [...models.values()];
     }
+    function modelConnectionSignature(settings) {
+        return JSON.stringify([settings.provider,settings.baseURL,settings.model,endpointFingerprint(settings.key)]);
+    }
+    async function detectConfiguredModelConnection(settings,signal) {
+        throwIfAborted(signal);
+        if(settings.credentialNeedsApproval)throw requestFailure('自定义接口尚未授权，请重新保存 Key','ENDPOINT_NOT_APPROVED');
+        if(!settings.key)throw requestFailure('请先保存 API Key','NO_API_KEY');
+        if(!settings.model)throw requestFailure('请先选择或保存模型','NO_MODEL');
+        if(!settings.baseURL)throw requestFailure('请先保存有效接口地址','NO_ENDPOINT');
+        const payload=adaptConfiguredPayload({...settings,thinking:false},{model:settings.model,messages:[{role:'user',content:'Hi'}]});
+        assertConfiguredRequestSize(settings,payload);
+        const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
+            data:payload,timeout:60000,signal});
+        throwIfAborted(signal);
+        if(response?.error)throw requestFailure(String(response.error.message||'模型返回错误'),'MODEL_ERROR');
+        const message=response?.choices?.[0]?.message;
+        if(!message || typeof message!=='object')throw requestFailure('接口没有返回有效的模型消息','BAD_RESPONSE');
+        const content=message.content;
+        const text=typeof content==='string'?content:Array.isArray(content)?content.filter(part=>part?.type==='text'&&typeof part.text==='string').map(part=>part.text).join(''):
+            typeof message.refusal==='string'?message.refusal:'';
+        if(!text.trim())throw requestFailure('模型没有返回消息','EMPTY_REPLY');
+        return text.trim().slice(0,200);
+    }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
         if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
         if(questions.some(question=>questionImageIds(question).length) && !modelSupportsImages(settings.model,settings))

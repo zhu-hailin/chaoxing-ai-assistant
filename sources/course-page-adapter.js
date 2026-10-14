@@ -243,13 +243,20 @@
         if(courseVisibleMarker(container,'[data-course-task],.ans-job,.ans-job-finished,[data-isjob="true"],.ans-job-icon,.orangeNew'))return true;
         return false;
     }
+    function coursePageHasTaskPoints(tree) {
+        // 通用附件外壳及 isjob 元数据不是可见任务点；已有实际控件另由 courseTaskRequired 检查。
+        return tree.documents.slice(1).some(doc=>courseTaskLabel(doc.body)
+            || courseVisibleMarker(doc.body,'.ans-job-icon'));
+    }
     function coursePageWithoutTasks(tree,tasks) {
         if(tasks.some(task=>courseTaskRequired(task.node)===true))return false;
-        if(tree.documents.slice(1).some(doc=>courseTaskLabel(doc.body)))return false;
-        if(tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,'.ans-job-icon,.ans-job,.ans-job-finished,[data-isjob="true"],[data-course-task]:not([data-required="false"]):not([data-isjob="false"])')))return false;
-        // 空附件壳不能证明内容已加载；任务标记和 iframe 控件可能随后才出现。
+        if(coursePageHasTaskPoints(tree))return false;
+        // 先完成加载等待，再按可见任务标记判断；不依赖标签名称或固定标签数量。
+        // 空白、不可读框架仍不能证明无任务；无任务仅表示跳过，不写平台完成状态。
         const loadedAttachment=tasks.some(task=>courseTaskContainer(task.node)&&courseTaskRequired(task.node)===false);
-        return loadedAttachment || tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,
+        const loadedPage=!tree.inaccessible.length && tree.documents.length>1
+            && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
+        return loadedAttachment || loadedPage || tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,
             '#img.imglook[src],.pdfViewer .page,[data-required="false"],[data-isjob="false"]'));
     }
     function courseKnowledgeGraphTasks(tree, knownTasks) {

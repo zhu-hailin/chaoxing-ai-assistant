@@ -1,4 +1,4 @@
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3 });
@@ -146,7 +146,7 @@
     function courseReportText(report) {
         if (!report) return '尚未开始自动学习';
         const pending=coursePendingChapters(report),protection=report.protection;
-        const hasManualTasks=report.chapters.some(chapter=>chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
         const finished = report.chapters.filter(item => ['done','already'].includes(item.status)).length;
         const completedQuizzes=report.chapters.flatMap(chapter=>chapter.tasks).filter(task=>task.type==='quiz'&&task.status==='already').length;
         const taskFree = report.chapters.filter(item=>item.status==='no-tasks');
@@ -378,8 +378,8 @@
                     const tree = courseFrameTree(owner), blocker = courseBlocker(tree.documents, run.videoQuizAuto ? courseVideoQuizCandidate(run.activeVideo || (tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible).length===1 ? tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible)[0] : null)) : null);
                     if (blocker) throw new Error(blocker);
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
-                    // 其他任务跨域、用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
+                    if (!run.navigating && !run.frameLoading && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查');
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
@@ -388,6 +388,33 @@
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
+                const waitForFrameReady = async (settle = false) => {
+                    // 仅在明确等待的读取窗口暂缓不可读 iframe；窗口内不执行任务操作。
+                    const context=run.chapter;
+                    run.frameLoading=true;run.frameReadRetries=0;
+                    const check=()=>{
+                        guardRun();
+                        if(context && (context!==run.chapter || context.skipped))throw skippedError();
+                    };
+                    const delay=async()=>{
+                        check();
+                        await Promise.race([sleep(limits.frameReadDelayMs),run.cancelWait,...(context?[context.wait]:[])]);
+                        check();
+                    };
+                    try {
+                        check();
+                        if(settle)await delay();
+                        while(!courseContentReady(owner)) {
+                            if(run.frameReadRetries>=limits.maxFrameReadRetries)
+                                throw Object.assign(new Error(`任务 iframe 跨域或尚未加载，无法确认控件；等待后重试 ${limits.maxFrameReadRetries} 次仍不可读，请人工检查`),{code:'COURSE_FRAME_UNAVAILABLE'});
+                            run.frameReadRetries++;
+                            emitRun(`正在等待课程控件加载…重试 ${run.frameReadRetries}/${limits.maxFrameReadRetries}`,'course-loading');
+                            await delay();
+                        }
+                        check();run.frameReadRetries=0;
+                    } finally {run.frameLoading=false;}
+                };
+
                 const waitForRest=async()=>{
                     pausePacing();run.resting=true;
                     if(run.pacing.restUntil===null)run.pacing.restUntil=now()+run.learning.restMinutes*60000;
@@ -1039,10 +1066,9 @@
                     if(!entry.active) {
                         save();entry.target.click();
                         await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
-                            && courseContentChanged(before,courseContentFingerprint(owner)) && courseContentReady(owner),limits.loadMs,'章节内容未成功切换');
+                            && courseContentChanged(before,courseContentFingerprint(owner)),limits.loadMs,'章节内容未成功切换');
                     }
-                    await until(()=>courseContentReady(owner),limits.loadMs,'章节内容加载超时');
-                    await wait(limits.settleMs);run.navigating=false;guard();
+                    await waitForFrameReady(true);run.navigating=false;guard();
                     let tabs=courseTabs(owner);
                     if(tabs.some(tab=>tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
                     if(!tabs.length) tabs=[{id:'current',title:'当前页面',active:true}];
@@ -1054,16 +1080,16 @@
                         if(tab && !tab.active) {
                             const old=courseContentFingerprint(owner);run.navigating=true;save();tab.node.click();
                             await until(()=>courseTabs(owner).some(item=>item.id===id&&item.active)
-                                && courseContentChanged(old,courseContentFingerprint(owner)) && courseContentReady(owner),limits.loadMs,'页面标签未成功切换');
-                            await wait(limits.settleMs);run.navigating=false;
+                                && courseContentChanged(old,courseContentFingerprint(owner)),limits.loadMs,'页面标签未成功切换');
+                            await waitForFrameReady(true);run.navigating=false;
                         }
-                        run.expectedTab=id==='current'?null:id;guard();
+                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();guard();
                         let tree=courseFrameTree(owner);
                         let docs=tree.documents.slice(1);
                         if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
                         let allTasks=coursePageTasks(tree);
-                        if(!allTasks.length && !coursePageWithoutTasks(tree,allTasks)
-                            && (/视频|PPT|幻灯片|章节测验/.test(tab?.title||'') || docs.some(doc=>courseVisibleMarker(doc.body,'.ans-attach-ct,.ans-job-icon,.ans-job,[data-course-task]')))) {
+                        // 只有可见任务点且无可用控件时才等加载；不凭标签名称或附件外壳推测还有任务。
+                        if(!allTasks.length && coursePageHasTaskPoints(tree)) {
                             emit('正在等待任务控件加载…','course-running');
                             await until(()=>{
                                 tree=courseFrameTree(owner);docs=tree.documents.slice(1);allTasks=coursePageTasks(tree);
@@ -1123,13 +1149,15 @@
                             const lastTab=run.tabIndex===tabIds.length-1;
                             const pendingHere=()=>courseFrameTree(owner).documents.slice(1).some(doc=>[...doc.querySelectorAll('.ans-attach-ct,[data-course-task]')]
                                 .some(node=>courseElementVisible(node)&&courseTaskRequired(node)!==false&&courseTaskComplete(node)===false
+                                    && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>node.contains(quiz)||quiz.contains(node))));
-                            if(!tasks.length && (!chapter.tasks.some(task=>task.status==='manual-pending') || pendingHere()) && entryState()?.pending>0 && !entryState()?.completed && (lastTab||pendingHere())) {
+                            // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
+                            if(!tasks.length && lastTab && pendingHere() && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if((!lastTab||chapter.tasks.some(task=>task.status==='manual-pending'))&&!pendingHere())return {tasks:[]};
+                                    if(!pendingHere())return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -1146,10 +1174,16 @@
                         save();
                     }
                     const pending=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
-                    if(taskFreeOnly && !(pending()?.pending>0)) {chapter.status='no-tasks';save();return;}
+                    if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
+                    }
+                    if(chapter.tasks.some(task=>task.tab===tabIds[tabIds.length-1]&&task.type==='non-task')
+                        && !pending()?.completed && pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已遍历全部标签，最后一页无任务控件，已继续下一节；目录仍未确认完成，保留待人工核对';
+                        save();return;
                     }
                     if(!pending()?.completed && pending()?.pending!==0) await until(()=>pending()?.completed||pending()?.pending===0,limits.completionMs,'本章仍有未完成任务或状态未提供，已停止');
                     chapter.status='done';save();
@@ -1172,7 +1206,7 @@
                     if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw Object.assign(new Error(`连续 ${run.protection.limit} 个章节超时，已保护性停止，请检查后重试`),{code:'COURSE_FAILURE_LIMIT'});}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
-                        guardRun();const chapter=report.chapters[run.chapterIndex];
+                        await waitForFrameReady();guardRun();const chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
                         const entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
                         if(!entry?.target?.isConnected) throw new Error('课程目录发生变化或章节入口不存在');
@@ -1339,7 +1373,7 @@
         s.getElementById('close').addEventListener('click',clearRetryConfirmation);
         const renderPending=report=>{
             const pending=coursePendingChapters(report),summary=s.getElementById('course-pending-summary'),list=s.getElementById('course-pending-list');
-            const hasManualTasks=report?.chapters?.some(chapter=>chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+            const hasManualTasks=report?.chapters?.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
             const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.unvisited.length;
             s.getElementById('course-pending').hidden=!report||count===0&&pending.taskFree.length===0;
             summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;

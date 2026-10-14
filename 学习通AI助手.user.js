@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.15
+// @version      1.16
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -41,7 +41,7 @@
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.15';
+    const ASSISTANT_VERSION = '1.16';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -89,7 +89,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.15', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.16', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -625,6 +625,29 @@
         }
         if(!models.size)throw new Error('模型列表没有有效条目');
         return [...models.values()];
+    }
+    function modelConnectionSignature(settings) {
+        return JSON.stringify([settings.provider,settings.baseURL,settings.model,endpointFingerprint(settings.key)]);
+    }
+    async function detectConfiguredModelConnection(settings,signal) {
+        throwIfAborted(signal);
+        if(settings.credentialNeedsApproval)throw requestFailure('自定义接口尚未授权，请重新保存 Key','ENDPOINT_NOT_APPROVED');
+        if(!settings.key)throw requestFailure('请先保存 API Key','NO_API_KEY');
+        if(!settings.model)throw requestFailure('请先选择或保存模型','NO_MODEL');
+        if(!settings.baseURL)throw requestFailure('请先保存有效接口地址','NO_ENDPOINT');
+        const payload=adaptConfiguredPayload({...settings,thinking:false},{model:settings.model,messages:[{role:'user',content:'Hi'}]});
+        assertConfiguredRequestSize(settings,payload);
+        const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
+            data:payload,timeout:60000,signal});
+        throwIfAborted(signal);
+        if(response?.error)throw requestFailure(String(response.error.message||'模型返回错误'),'MODEL_ERROR');
+        const message=response?.choices?.[0]?.message;
+        if(!message || typeof message!=='object')throw requestFailure('接口没有返回有效的模型消息','BAD_RESPONSE');
+        const content=message.content;
+        const text=typeof content==='string'?content:Array.isArray(content)?content.filter(part=>part?.type==='text'&&typeof part.text==='string').map(part=>part.text).join(''):
+            typeof message.refusal==='string'?message.refusal:'';
+        if(!text.trim())throw requestFailure('模型没有返回消息','EMPTY_REPLY');
+        return text.trim().slice(0,200);
     }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
         if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
@@ -2128,7 +2151,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.15');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.16');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -2382,13 +2405,20 @@
         if(courseVisibleMarker(container,'[data-course-task],.ans-job,.ans-job-finished,[data-isjob="true"],.ans-job-icon,.orangeNew'))return true;
         return false;
     }
+    function coursePageHasTaskPoints(tree) {
+        // 通用附件外壳及 isjob 元数据不是可见任务点；已有实际控件另由 courseTaskRequired 检查。
+        return tree.documents.slice(1).some(doc=>courseTaskLabel(doc.body)
+            || courseVisibleMarker(doc.body,'.ans-job-icon'));
+    }
     function coursePageWithoutTasks(tree,tasks) {
         if(tasks.some(task=>courseTaskRequired(task.node)===true))return false;
-        if(tree.documents.slice(1).some(doc=>courseTaskLabel(doc.body)))return false;
-        if(tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,'.ans-job-icon,.ans-job,.ans-job-finished,[data-isjob="true"],[data-course-task]:not([data-required="false"]):not([data-isjob="false"])')))return false;
-        // 空附件壳不能证明内容已加载；任务标记和 iframe 控件可能随后才出现。
+        if(coursePageHasTaskPoints(tree))return false;
+        // 先完成加载等待，再按可见任务标记判断；不依赖标签名称或固定标签数量。
+        // 空白、不可读框架仍不能证明无任务；无任务仅表示跳过，不写平台完成状态。
         const loadedAttachment=tasks.some(task=>courseTaskContainer(task.node)&&courseTaskRequired(task.node)===false);
-        return loadedAttachment || tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,
+        const loadedPage=!tree.inaccessible.length && tree.documents.length>1
+            && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
+        return loadedAttachment || loadedPage || tree.documents.slice(1).some(doc=>courseVisibleMarker(doc.body,
             '#img.imglook[src],.pdfViewer .page,[data-required="false"],[data-isjob="false"]'));
     }
     function courseKnowledgeGraphTasks(tree, knownTasks) {
@@ -2736,7 +2766,7 @@
         };
         return {handle,close(){closed=true;hooks.wake();}};
     }
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3 });
@@ -2884,7 +2914,7 @@
     function courseReportText(report) {
         if (!report) return '尚未开始自动学习';
         const pending=coursePendingChapters(report),protection=report.protection;
-        const hasManualTasks=report.chapters.some(chapter=>chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
         const finished = report.chapters.filter(item => ['done','already'].includes(item.status)).length;
         const completedQuizzes=report.chapters.flatMap(chapter=>chapter.tasks).filter(task=>task.type==='quiz'&&task.status==='already').length;
         const taskFree = report.chapters.filter(item=>item.status==='no-tasks');
@@ -3116,8 +3146,8 @@
                     const tree = courseFrameTree(owner), blocker = courseBlocker(tree.documents, run.videoQuizAuto ? courseVideoQuizCandidate(run.activeVideo || (tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible).length===1 ? tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible)[0] : null)) : null);
                     if (blocker) throw new Error(blocker);
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
-                    // 其他任务跨域、用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
+                    if (!run.navigating && !run.frameLoading && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查');
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
@@ -3126,6 +3156,33 @@
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
+                const waitForFrameReady = async (settle = false) => {
+                    // 仅在明确等待的读取窗口暂缓不可读 iframe；窗口内不执行任务操作。
+                    const context=run.chapter;
+                    run.frameLoading=true;run.frameReadRetries=0;
+                    const check=()=>{
+                        guardRun();
+                        if(context && (context!==run.chapter || context.skipped))throw skippedError();
+                    };
+                    const delay=async()=>{
+                        check();
+                        await Promise.race([sleep(limits.frameReadDelayMs),run.cancelWait,...(context?[context.wait]:[])]);
+                        check();
+                    };
+                    try {
+                        check();
+                        if(settle)await delay();
+                        while(!courseContentReady(owner)) {
+                            if(run.frameReadRetries>=limits.maxFrameReadRetries)
+                                throw Object.assign(new Error(`任务 iframe 跨域或尚未加载，无法确认控件；等待后重试 ${limits.maxFrameReadRetries} 次仍不可读，请人工检查`),{code:'COURSE_FRAME_UNAVAILABLE'});
+                            run.frameReadRetries++;
+                            emitRun(`正在等待课程控件加载…重试 ${run.frameReadRetries}/${limits.maxFrameReadRetries}`,'course-loading');
+                            await delay();
+                        }
+                        check();run.frameReadRetries=0;
+                    } finally {run.frameLoading=false;}
+                };
+
                 const waitForRest=async()=>{
                     pausePacing();run.resting=true;
                     if(run.pacing.restUntil===null)run.pacing.restUntil=now()+run.learning.restMinutes*60000;
@@ -3777,10 +3834,9 @@
                     if(!entry.active) {
                         save();entry.target.click();
                         await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
-                            && courseContentChanged(before,courseContentFingerprint(owner)) && courseContentReady(owner),limits.loadMs,'章节内容未成功切换');
+                            && courseContentChanged(before,courseContentFingerprint(owner)),limits.loadMs,'章节内容未成功切换');
                     }
-                    await until(()=>courseContentReady(owner),limits.loadMs,'章节内容加载超时');
-                    await wait(limits.settleMs);run.navigating=false;guard();
+                    await waitForFrameReady(true);run.navigating=false;guard();
                     let tabs=courseTabs(owner);
                     if(tabs.some(tab=>tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
                     if(!tabs.length) tabs=[{id:'current',title:'当前页面',active:true}];
@@ -3792,16 +3848,16 @@
                         if(tab && !tab.active) {
                             const old=courseContentFingerprint(owner);run.navigating=true;save();tab.node.click();
                             await until(()=>courseTabs(owner).some(item=>item.id===id&&item.active)
-                                && courseContentChanged(old,courseContentFingerprint(owner)) && courseContentReady(owner),limits.loadMs,'页面标签未成功切换');
-                            await wait(limits.settleMs);run.navigating=false;
+                                && courseContentChanged(old,courseContentFingerprint(owner)),limits.loadMs,'页面标签未成功切换');
+                            await waitForFrameReady(true);run.navigating=false;
                         }
-                        run.expectedTab=id==='current'?null:id;guard();
+                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();guard();
                         let tree=courseFrameTree(owner);
                         let docs=tree.documents.slice(1);
                         if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
                         let allTasks=coursePageTasks(tree);
-                        if(!allTasks.length && !coursePageWithoutTasks(tree,allTasks)
-                            && (/视频|PPT|幻灯片|章节测验/.test(tab?.title||'') || docs.some(doc=>courseVisibleMarker(doc.body,'.ans-attach-ct,.ans-job-icon,.ans-job,[data-course-task]')))) {
+                        // 只有可见任务点且无可用控件时才等加载；不凭标签名称或附件外壳推测还有任务。
+                        if(!allTasks.length && coursePageHasTaskPoints(tree)) {
                             emit('正在等待任务控件加载…','course-running');
                             await until(()=>{
                                 tree=courseFrameTree(owner);docs=tree.documents.slice(1);allTasks=coursePageTasks(tree);
@@ -3861,13 +3917,15 @@
                             const lastTab=run.tabIndex===tabIds.length-1;
                             const pendingHere=()=>courseFrameTree(owner).documents.slice(1).some(doc=>[...doc.querySelectorAll('.ans-attach-ct,[data-course-task]')]
                                 .some(node=>courseElementVisible(node)&&courseTaskRequired(node)!==false&&courseTaskComplete(node)===false
+                                    && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>node.contains(quiz)||quiz.contains(node))));
-                            if(!tasks.length && (!chapter.tasks.some(task=>task.status==='manual-pending') || pendingHere()) && entryState()?.pending>0 && !entryState()?.completed && (lastTab||pendingHere())) {
+                            // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
+                            if(!tasks.length && lastTab && pendingHere() && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if((!lastTab||chapter.tasks.some(task=>task.status==='manual-pending'))&&!pendingHere())return {tasks:[]};
+                                    if(!pendingHere())return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -3884,10 +3942,16 @@
                         save();
                     }
                     const pending=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
-                    if(taskFreeOnly && !(pending()?.pending>0)) {chapter.status='no-tasks';save();return;}
+                    if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
+                    }
+                    if(chapter.tasks.some(task=>task.tab===tabIds[tabIds.length-1]&&task.type==='non-task')
+                        && !pending()?.completed && pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已遍历全部标签，最后一页无任务控件，已继续下一节；目录仍未确认完成，保留待人工核对';
+                        save();return;
                     }
                     if(!pending()?.completed && pending()?.pending!==0) await until(()=>pending()?.completed||pending()?.pending===0,limits.completionMs,'本章仍有未完成任务或状态未提供，已停止');
                     chapter.status='done';save();
@@ -3910,7 +3974,7 @@
                     if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw Object.assign(new Error(`连续 ${run.protection.limit} 个章节超时，已保护性停止，请检查后重试`),{code:'COURSE_FAILURE_LIMIT'});}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
-                        guardRun();const chapter=report.chapters[run.chapterIndex];
+                        await waitForFrameReady();guardRun();const chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
                         const entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
                         if(!entry?.target?.isConnected) throw new Error('课程目录发生变化或章节入口不存在');
@@ -4077,7 +4141,7 @@
         s.getElementById('close').addEventListener('click',clearRetryConfirmation);
         const renderPending=report=>{
             const pending=coursePendingChapters(report),summary=s.getElementById('course-pending-summary'),list=s.getElementById('course-pending-list');
-            const hasManualTasks=report?.chapters?.some(chapter=>chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+            const hasManualTasks=report?.chapters?.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
             const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.unvisited.length;
             s.getElementById('course-pending').hidden=!report||count===0&&pending.taskFree.length===0;
             summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;
@@ -4973,6 +5037,7 @@
           .head{flex:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px 9px 16px;border-bottom:1px solid var(--line);background:#fbfcfe;cursor:grab;touch-action:none;user-select:none}.head strong{font-size:14px;letter-spacing:.1px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.head:active{cursor:grabbing}.head-actions{display:flex;align-items:center;gap:5px;flex:none}.head-actions button{padding:5px 9px;font-size:12px;min-height:28px}#download-update,#github,#about-toggle,#minimize,#close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0}#about-toggle{border-radius:50%;font-weight:700;font-size:16px}#minimize svg,#close svg{width:16px;height:16px}#github svg{width:18px;height:18px}#download-update{background:#e7effc;color:var(--accent)}#download-update svg{width:18px;height:18px}#update-status{font-size:12px;color:var(--muted)}
           .panel-body{flex:1;display:grid;grid-template-columns:54px minmax(0,1fr);min-height:0;max-height:var(--content-height,none);overflow:hidden}.nav-rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0;background:#f7f9fc;border-right:1px solid var(--line)}.nav-button{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:8px;border-radius:7px;background:transparent;color:#78889d}.nav-model-bottom{margin-top:auto;flex-shrink:0}.nav-button svg{width:20px;height:20px;flex:none}.nav-button[aria-selected=true]{background:#e7effc;color:var(--accent)}.nav-button[aria-selected=true]::before{content:"";position:absolute;left:-9px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}.assistant-main{min-width:0;min-height:0;overflow:hidden}.view-page{height:100%;min-height:0;min-width:0;padding:18px;overflow:auto;overscroll-behavior:contain}.view-heading{flex:none;margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;gap:8px}.view-heading h2{font-size:17px;line-height:1.4;letter-spacing:.3px;margin:0;font-weight:700}.view-tag{font-size:11px;color:var(--muted);padding:2px 7px;background:#f3f6fa;border-radius:4px}
           .settings-block{border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:17px}.settings-block:last-child{border:0;margin:0}.field-caption{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{max-width:100%}.row>label{min-width:65px}input,select{background:#fff;color:var(--ink);border:1px solid #cbd5e3;border-radius:6px;padding:8px;min-width:0}input[type=password]{min-width:120px;flex:1;width:180px}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent);flex:none}.check-label{display:inline-flex;align-items:center;gap:7px}.row select{max-width:100%}.setting-label{font-size:13px;color:var(--muted)}
+          #model-test-status[data-state="ok"]{color:#226342}#model-test-status[data-state="error"]{color:#b13b32}
           .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
@@ -4989,9 +5054,9 @@
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.15</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.16</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.15.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.153a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.153 3.092-1.153.615 1.55.228 2.695.112 2.98.722.788 1.159 1.79 1.159 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.16.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.16-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.163a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.163 3.092-1.163.615 1.55.228 2.695.112 2.98.722.788 1.169 1.79 1.169 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -5020,6 +5085,8 @@
                   <p class="note">地址填写到 API 前缀；图片选项请按接口文档确认。自定义接口首次访问时，在篡改猴中仅授权该域名；若被拦截，请在本脚本设置的用户域名白名单中添加该域名。</p>
                 </div>
                 <div class="settings-block"><div id="api-key-editor"></div><p id="api-key-status" class="note" role="status"></p></div>
+                <div class="row"><button type="button" id="detect-model" class="secondary">检测</button><button type="button" id="cancel-model-test" class="secondary" hidden>取消检测</button><span class="note">向当前模型发送 Hi，消耗一次调用。</span></div>
+                <p id="model-test-status" class="note" role="status" aria-live="polite">尚未检测</p>
                 <p id="model-capability" class="note" role="status"></p>
                 <div class="row"><button type="button" id="detect-images" class="secondary">检测图片能力</button><button type="button" id="cancel-images" class="secondary" hidden>取消检测</button><span class="note">使用当前模型识别测试图片，消耗一次调用；通过后保存能力。</span></div>
                 <div class="settings-block">
@@ -5218,6 +5285,8 @@
             }
         };
         el('cancel-images').onclick=event=>{ if (trustedAssistantActivation(event, el('cancel-images'))) ctl.capabilityTest?.abort(); };
+        el('detect-model').onclick = event => { if (trustedAssistantActivation(event, el('detect-model'))) ctl.testModelConnection(); };
+        el('cancel-model-test').onclick = event => { if (trustedAssistantActivation(event, el('cancel-model-test'))) ctl.connectionTest?.abort(); };
         el('models').onclick = event => { if (trustedAssistantActivation(event, el('models'))) ctl.loadModels(); };
         el('extract').onclick = () => ctl.extractOnly();
         el('solve').onclick = event => { if (trustedAssistantActivation(event, el('solve'))) ctl.runAnswerFlow({ autoPrefill: false }); };
@@ -5523,9 +5592,15 @@
             launcher.dataset.phase = state.phase;
             launcher.setAttribute('aria-busy', String(busy));
             launcher.title = busy ? '任务运行中，点击恢复助手；拖动调整位置' : '恢复学习通AI助手；拖动调整位置';
-            for (const id of ['extract', 'solve', 'models', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
+            for (const id of ['extract', 'solve', 'models', 'detect-model', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
             s.getElementById('cancel-images').hidden=!controller?.capabilityTest;
             s.getElementById('cancel-images').disabled=controller?.capabilityTest?.signal.aborted===true;
+            s.getElementById('cancel-model-test').hidden=!controller?.connectionTest;
+            s.getElementById('cancel-model-test').disabled=controller?.connectionTest?.signal.aborted===true;
+            const connection=controller?.connectionResult;
+            const currentConnection=connection?.signature===modelConnectionSignature(configuration)?connection:null;
+            s.getElementById('model-test-status').textContent=currentConnection?.message||'尚未检测';
+            s.getElementById('model-test-status').dataset.state=currentConnection?.state||'idle';
             refreshModelCapabilities(s, busy);
             s.getElementById('prefill').disabled = busy || !controller?.last;
             const task=controller?.task;
@@ -5665,7 +5740,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.15',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.16',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -5869,6 +5944,29 @@
                     ctl.report(`预填中止：${e.message}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
                 finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }
+            },
+            async testModelConnection() {
+                if(ctl.state.busy || courseRunActive())return;
+                const cfg=readModelConfiguration(),signature=modelConnectionSignature(cfg),abort=new AbortController();
+                ctl.connectionTest=abort;ctl.connectionResult={signature,state:'checking',message:'检测中…'};
+                const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
+                ctl.report('正在向当前模型发送 Hi…','model-check',true);
+                const redact=value=>clean(String(value??'').split(cfg.key||'\u0000').join('[已隐藏]')).slice(0,260);
+                try {
+                    const reply=await detectConfiguredModelConnection(cfg,abort.signal);
+                    throwIfAborted(abort.signal);
+                    if(!panelView?.host.isConnected || modelConnectionSignature(readModelConfiguration())!==signature)
+                        throw requestFailure('模型配置已变化，请重新检测','CONFIG_CHANGED');
+                    ctl.connectionResult={signature,state:'ok',message:`可用 · 回复：${redact(reply)}`};
+                    ctl.report('当前模型可用（已收到文本回复）','done',true);
+                } catch(error) {
+                    const code=Number.isInteger(error?.status)?`HTTP_${error.status}`:redact(error?.code||'REQUEST_FAILED');
+                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · 错误码：${code} · ${redact(error?.message||'请求失败')}`};
+                    ctl.report(ctl.connectionResult.message,'error',true);
+                } finally {
+                    window.removeEventListener('pagehide',cancel);
+                    if(ctl.connectionTest===abort){ctl.connectionTest=null;ctl.state.busy=false;renderRunState(ctl.state);}
+                }
             },
             async loadModels() {
                 if (ctl.state.busy || courseRunActive()) return;

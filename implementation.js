@@ -786,6 +786,8 @@
             }
         };
         el('cancel-images').onclick=event=>{ if (trustedAssistantActivation(event, el('cancel-images'))) ctl.capabilityTest?.abort(); };
+        el('detect-model').onclick = event => { if (trustedAssistantActivation(event, el('detect-model'))) ctl.testModelConnection(); };
+        el('cancel-model-test').onclick = event => { if (trustedAssistantActivation(event, el('cancel-model-test'))) ctl.connectionTest?.abort(); };
         el('models').onclick = event => { if (trustedAssistantActivation(event, el('models'))) ctl.loadModels(); };
         el('extract').onclick = () => ctl.extractOnly();
         el('solve').onclick = event => { if (trustedAssistantActivation(event, el('solve'))) ctl.runAnswerFlow({ autoPrefill: false }); };
@@ -1091,9 +1093,15 @@
             launcher.dataset.phase = state.phase;
             launcher.setAttribute('aria-busy', String(busy));
             launcher.title = busy ? '任务运行中，点击恢复助手；拖动调整位置' : '恢复学习通AI助手；拖动调整位置';
-            for (const id of ['extract', 'solve', 'models', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
+            for (const id of ['extract', 'solve', 'models', 'detect-model', 'detect-images', 'provider', 'model', 'thinking', 'effort', 'search', 'custom-base', 'custom-model', 'custom-images', 'save-custom', 'auto-context', 'info-model', 'info-interval']) s.getElementById(id).disabled = busy;
             s.getElementById('cancel-images').hidden=!controller?.capabilityTest;
             s.getElementById('cancel-images').disabled=controller?.capabilityTest?.signal.aborted===true;
+            s.getElementById('cancel-model-test').hidden=!controller?.connectionTest;
+            s.getElementById('cancel-model-test').disabled=controller?.connectionTest?.signal.aborted===true;
+            const connection=controller?.connectionResult;
+            const currentConnection=connection?.signature===modelConnectionSignature(configuration)?connection:null;
+            s.getElementById('model-test-status').textContent=currentConnection?.message||'尚未检测';
+            s.getElementById('model-test-status').dataset.state=currentConnection?.state||'idle';
             refreshModelCapabilities(s, busy);
             s.getElementById('prefill').disabled = busy || !controller?.last;
             const task=controller?.task;
@@ -1233,7 +1241,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.15',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.16',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1437,6 +1445,29 @@
                     ctl.report(`预填中止：${e.message}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
                 finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }
+            },
+            async testModelConnection() {
+                if(ctl.state.busy || courseRunActive())return;
+                const cfg=readModelConfiguration(),signature=modelConnectionSignature(cfg),abort=new AbortController();
+                ctl.connectionTest=abort;ctl.connectionResult={signature,state:'checking',message:'检测中…'};
+                const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
+                ctl.report('正在向当前模型发送 Hi…','model-check',true);
+                const redact=value=>clean(String(value??'').split(cfg.key||'\u0000').join('[已隐藏]')).slice(0,260);
+                try {
+                    const reply=await detectConfiguredModelConnection(cfg,abort.signal);
+                    throwIfAborted(abort.signal);
+                    if(!panelView?.host.isConnected || modelConnectionSignature(readModelConfiguration())!==signature)
+                        throw requestFailure('模型配置已变化，请重新检测','CONFIG_CHANGED');
+                    ctl.connectionResult={signature,state:'ok',message:`可用 · 回复：${redact(reply)}`};
+                    ctl.report('当前模型可用（已收到文本回复）','done',true);
+                } catch(error) {
+                    const code=Number.isInteger(error?.status)?`HTTP_${error.status}`:redact(error?.code||'REQUEST_FAILED');
+                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · 错误码：${code} · ${redact(error?.message||'请求失败')}`};
+                    ctl.report(ctl.connectionResult.message,'error',true);
+                } finally {
+                    window.removeEventListener('pagehide',cancel);
+                    if(ctl.connectionTest===abort){ctl.connectionTest=null;ctl.state.busy=false;renderRunState(ctl.state);}
+                }
             },
             async loadModels() {
                 if (ctl.state.busy || courseRunActive()) return;
