@@ -93,12 +93,14 @@
         collect(stem?.closest('.Zy_TItle') || stem, 'stem');
         return { media, imageNodes };
     }
-    function rawQuestion(node, index, adapter) {
-        const stem = node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
+    function rawQuestion(node, index, adapter, videoContext = {}) {
+        // 仅视频适配器可传入已验证的局部题干/题型；普通章节选择器保持原样。
+        const local = adapter === 'video-quiz' ? videoContext : {};
+        const stem = local.stem || node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
-        const typeLabel = readQuestionTypeLabel(node, stem, group);
+        const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
         const question = stripQuestionPrefix(stem?.textContent, typeLabel);
         const instructions = clean([node.getAttribute('data-answer-instructions'),
             ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(child=>child.textContent),

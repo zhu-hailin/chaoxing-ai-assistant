@@ -29,6 +29,7 @@ paths += ['tests/answer-policy-dom.cjs', 'tests/answer-policy-mock.cjs', 'tests/
 paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*') if p.is_file()]
 paths += [str(p.relative_to(root)) for p in (root / 'vendor/font').rglob('*') if p.is_file()]
 paths += ['tests/font-dependencies-dom.cjs']
+paths += ['tests/fixtures/video-quiz-tktopic.html']
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]
 if args.skip_readme:

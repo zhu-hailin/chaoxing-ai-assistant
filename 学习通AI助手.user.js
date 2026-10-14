@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.18
+// @version      1.19
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -2895,7 +2895,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.18';
+    const ASSISTANT_VERSION = '1.19';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2943,7 +2943,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
         }
-        return { version: '1.18', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.19', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -3959,12 +3959,14 @@ Typr["U"] = {
         collect(stem?.closest('.Zy_TItle') || stem, 'stem');
         return { media, imageNodes };
     }
-    function rawQuestion(node, index, adapter) {
-        const stem = node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
+    function rawQuestion(node, index, adapter, videoContext = {}) {
+        // 仅视频适配器可传入已验证的局部题干/题型；普通章节选择器保持原样。
+        const local = adapter === 'video-quiz' ? videoContext : {};
+        const stem = local.stem || node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
-        const typeLabel = readQuestionTypeLabel(node, stem, group);
+        const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
         const question = stripQuestionPrefix(stem?.textContent, typeLabel);
         const instructions = clean([node.getAttribute('data-answer-instructions'),
             ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(child=>child.textContent),
@@ -5005,7 +5007,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.18');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.19');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -5361,7 +5363,7 @@ Typr["U"] = {
     }
     // 独立的视频弹题适配：只读可见材料，只操作可确认归属的原生控件。
     const VIDEO_QUIZ_ROOT = '.ans-videoquiz,[data-video-quiz-root]';
-    const VIDEO_QUIZ_FEEDBACK = '[data-video-quiz-result],.videoquiz-result,.videoquiz-feedback,.answer-feedback';
+    const VIDEO_QUIZ_FEEDBACK = '[data-video-quiz-result],.videoquiz-result,.videoquiz-feedback,.answer-feedback,.tkTopic_oper .rightInfo,.tkTopic_oper .spanNot,.tkTopic_oper .spanNotBack';
     const videoQuizCuePositions = new WeakMap();
     function courseVideoQuizVisibleText(node) {
         if(!node||!courseElementVisible(node)||node.matches(MEDIA_EXCLUDED+',script,style'))return '';
@@ -5389,17 +5391,26 @@ Typr["U"] = {
         return candidates.length===1?candidates[0]:null;
     }
     function courseVideoQuizNodes(root) {
-        const nodes=[...root.querySelectorAll('.singleQuesId,.TiMu,.question-item,[data-questionid],fieldset')].filter(courseElementVisible);
+        const nodes=[...root.querySelectorAll('.tkItem,.singleQuesId,.TiMu,.question-item,[data-questionid],fieldset')].filter(courseElementVisible);
         const leaf=nodes.filter(node=>!nodes.some(other=>other!==node&&node.contains(other)));
         return leaf.length?leaf:[root];
     }
     registerPageAdapter({id:'video-quiz',
         collect:(doc,context={})=>context.scope==='video-quiz'&&context.root?.ownerDocument===doc&&context.root.isConnected?courseVideoQuizNodes(context.root):[],
         read:(node,index,context={})=>{
-            const stems=[...node.querySelectorAll(STEM_SELECTOR+',legend')].filter(courseElementVisible);
+            const nativeTopic=node.matches('.tkItem');
+            const stems=[...node.querySelectorAll(nativeTopic?':scope > .tkItem_title':STEM_SELECTOR+',legend')].filter(courseElementVisible);
             const unique=stems.filter(stem=>!stems.some(other=>other!==stem&&stem.contains(other)));
             if(unique.length!==1)throw new Error('视频弹题题干无法唯一定位，需人工处理');
-            const raw=rawQuestion(node,index,'video-quiz');
+            let typeLabel;
+            if(nativeTopic){
+                const topic=node.closest('.tkTopic');
+                const titles=topic&&context.root?.contains(topic)?[...topic.querySelectorAll('.tkTopic_title')].filter(title=>courseElementVisible(title)&&title.closest('.tkTopic')===topic):[];
+                const label=titles.length===1?courseVideoQuizVisibleText(titles[0]):'';
+                // 原生格式必须有唯一、明确的题型；不能仅凭 radio/checkbox 猜测。
+                typeLabel=/^(?:单选|单项选择|多选|多项选择|判断|是非|填空|简答|问答|论述)题?$/.test(label)?label:'视频弹题题型不明确';
+            }
+            const raw=rawQuestion(node,index,'video-quiz',{stem:unique[0],typeLabel});
             raw.question=stripQuestionPrefix(courseVideoQuizVisibleText(unique[0]),raw.typeLabel);
             for(const option of raw.options){const input=raw.binding.optionTargets.get(option.key);option.text=courseVideoQuizVisibleText(optionContentRoot(node,input)).replace(new RegExp('^'+option.key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[、.．:：)）]\\s*'),'');}
             raw.media=raw.media.filter(item=>courseElementVisible(raw.binding.imageNodes.get(item.id)));
@@ -5438,23 +5449,34 @@ Typr["U"] = {
         return {key,questionIdentity,videoIdentity,cueSeconds,fingerprint,identitySource:hasPlatformIds?'platform':'content',root,doc,parseContext,...parsed,signature:signature(parsed.questions,parsed.media)};
     }
     function courseVideoQuizButton(candidate,kind='submit') {
-        const selector=kind==='submit'?'#videoquiz-submit,[data-video-quiz-submit]':'[data-video-quiz-continue],.videoquiz-continue';
-        const nodes=[...candidate.root.querySelectorAll(selector)].filter(node=>courseElementVisible(node)&&!node.disabled&&node.getAttribute('aria-disabled')!=='true');
-        return nodes.length===1&&nodes[0].matches('button,input[type="button"],input[type="submit"],a[role="button"]')?nodes[0]:null;
+        if(!candidate?.root?.isConnected||!courseElementVisible(candidate.root))return null;
+        const selector=kind==='submit'?'#videoquiz-submit,[data-video-quiz-submit]':'#videoquiz-continue,.ans-videoquiz-continue,[data-video-quiz-continue],.videoquiz-continue';
+        const nodes=[...candidate.root.querySelectorAll(selector)].filter(node=>courseElementVisible(node)&&!node.disabled&&!node.hasAttribute('disabled')&&!node.matches('.disabled,.x-item-disabled')&&node.getAttribute('aria-disabled')!=='true'
+            && (!node.closest(VIDEO_QUIZ_ROOT)||node.closest(VIDEO_QUIZ_ROOT)===candidate.root));
+        if(nodes.length!==1)return null;
+        const node=nodes[0],nativeAnchor=kind==='submit'?'a#videoquiz-submit.ans-videoquiz-submit':'a#videoquiz-continue.ans-videoquiz-continue';
+        return node.matches('button,input[type="button"],input[type="submit"],a[role="button"]')
+            || candidate.root.matches('.ans-videoquiz')&&node.matches(nativeAnchor)?node:null;
+    }
+    function courseVideoQuizFeedbackText(node) {
+        const text=courseVideoQuizVisibleText(node).slice(0,1200);
+        // 仅原生错误节点的已确认文案可转换为判错；是否属于新轮次由反馈基线判断。
+        if(node.matches('.tkTopic_oper .spanNot,.tkTopic_oper .spanNotBack')&&/^真遗憾[，,]\s*再接再厉[！!。]?(?:\s*回看.*)?$/.test(text))return '回答错误：'+text;
+        return text;
     }
     function courseVideoQuizFeedback(candidate) {
         const scope=candidate.root.isConnected&&courseElementVisible(candidate.root)?candidate.root:candidate.holder;
-        return [...(scope?.querySelectorAll(VIDEO_QUIZ_FEEDBACK)||[])].filter(courseElementVisible).map(node=>courseVideoQuizVisibleText(node).slice(0,1200)).join('；').slice(0,1200);
+        return [...(scope?.querySelectorAll(VIDEO_QUIZ_FEEDBACK)||[])].filter(node=>courseElementVisible(node)&&(!node.closest(VIDEO_QUIZ_ROOT)||node.closest(VIDEO_QUIZ_ROOT)===candidate.root)).map(courseVideoQuizFeedbackText).join('；').slice(0,1200);
     }
     function courseVideoQuizFeedbackEntries(candidate) {
         const nodes=new Set([candidate.root,candidate.holder].filter(Boolean).flatMap(scope=>[...scope.querySelectorAll(VIDEO_QUIZ_FEEDBACK)]));
         return new Map([...nodes].filter(node=>courseElementVisible(node)&&(!node.closest(VIDEO_QUIZ_ROOT)||node.closest(VIDEO_QUIZ_ROOT)===candidate.root))
-            .map(node=>[node,courseVideoQuizVisibleText(node).slice(0,1200)]));
+            .map(node=>[node,courseVideoQuizFeedbackText(node)]));
     }
     function courseVideoQuizOutcome(candidate,attempt) {
         const feedback=typeof attempt?.feedback==='string'?attempt.feedback:courseVideoQuizFeedback(candidate);
         const wrong=/(?:回答|作答|答案|选择|答题)(?:结果)?[：:，,\s]*(?:错误|不正确|不完全正确)|回答不对|答错/.test(feedback);
-        const passed=/(?:回答|作答|答案|答题)(?:结果)?[：:，,\s]*正确|答对|回答成功/.test(feedback);
+        const passed=/(?:回答|作答|答案|答题)(?:结果)?[：:，,\s]*正确|(?:^|[；，。！!\s])答对(?:了)?(?=$|[；，。！!\s])|全部答对|回答成功/.test(feedback);
         if(wrong&&passed)return 'unknown';
         if(wrong)
             return /(?:重新观看|重新播放|回看|重看|返回.{0,8}观看)/.test(feedback)?'replay-required':'wrong';
@@ -5511,7 +5533,8 @@ Typr["U"] = {
             const observer=new video.ownerDocument.defaultView.MutationObserver(mutations=>{
                 for(const mutation of mutations){
                     const target=mutation.target.nodeType===1?mutation.target:mutation.target.parentElement,feedback=target?.closest(VIDEO_QUIZ_FEEDBACK);
-                    if(feedback)feedbackChanges.add(feedback);
+                    // class/style 等属性变化本身不是新判分；显隐变化由可见反馈基线识别。
+                    if(feedback&&mutation.type!=='attributes')feedbackChanges.add(feedback);
                     for(const node of mutation.addedNodes)if(node.nodeType===1){if(node.matches(VIDEO_QUIZ_FEEDBACK))feedbackChanges.add(node);node.querySelectorAll(VIDEO_QUIZ_FEEDBACK).forEach(n=>feedbackChanges.add(n));}
                 }
                 if(child&&!scriptWriting&&snapshot){
@@ -7921,9 +7944,9 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.18</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.19</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.18.08 1.725 1.18 1.725 1.18 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.18-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.183a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.183 3.092-1.183.615 1.55.228 2.695.112 2.98.722.788 1.189 1.79 1.189 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.19.08 1.725 1.19 1.725 1.19 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.19-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.193a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.193 3.092-1.193.615 1.55.228 2.695.112 2.98.722.788 1.199 1.79 1.199 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -8607,7 +8630,7 @@ Typr["U"] = {
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.18',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.19',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

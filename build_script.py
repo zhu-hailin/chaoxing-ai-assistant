@@ -5,7 +5,7 @@ import hashlib
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.18'
+VERSION = '1.19'
 def bundled_font_dependencies():
     # Offline and pinned: never download JavaScript during build or execution.
     directory = ROOT / 'vendor/font'
