@@ -1,4 +1,41 @@
     // 字体解密部分源自 wyn665817 的 MIT 脚本；改为文本节点转换和可重入模块。
+    function initBackgroundPlayback() {
+        if (window.top !== window.self || location.hostname !== 'mooc1.chaoxing.com'
+            || !location.pathname.startsWith('/mycourse/studentstudy')) return null;
+        if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
+        let active = null, closed = false;
+        const onMouseExit = event => {
+            if (closed || event.relatedTarget !== null || !active) return;
+            const context = active;
+            try {
+                if (!context.video.isConnected || context.video.paused || context.video.ended
+                    || !context.canProtect()) return;
+                event.stopImmediatePropagation();
+                event.stopPropagation();
+                context.onSuppressed();
+            } catch { /* 状态无法确认时不拦截，也不在页面事件中抛错。 */ }
+        };
+        const manager = {
+            installedAt: Date.now(), installedReadyState: document.readyState,
+            activate(context) {
+                if (closed || !context?.video || typeof context.canProtect !== 'function'
+                    || typeof context.onSuppressed !== 'function') return () => {};
+                active = context;
+                return () => { if (active === context) active = null; };
+            },
+            close() {
+                if (closed) return;
+                closed = true; active = null;
+                window.removeEventListener('mouseout', onMouseExit, true);
+                window.removeEventListener('pagehide', manager.close);
+            }
+        };
+        window.addEventListener('mouseout', onMouseExit, true);
+        window.addEventListener('pagehide', manager.close, { once: true });
+        initBackgroundPlayback.instance = manager;
+        return manager;
+    }
+
     const fontCache = new Map();
     let fontTable;
     function fontRootNeedsDecoding(root) {
@@ -1034,7 +1071,8 @@
             s.getElementById('generate').setAttribute('aria-busy', String(busy));
             const labels = { decoding: '解密中…', extracting: '提取中…', 'preparing-images':'读取图片…', classifying:'判断作答要求…', searching: '检索中…', generating: '生成中…', prefilling: '预填中…' };
             s.getElementById('label').textContent = state.busy ? (labels[state.phase] || '处理中…') : '一键生成答案';
-            s.getElementById('status').textContent = state.message;
+            s.getElementById('status').textContent = '';
+            s.getElementById('status').hidden = true;
         }
         if (panelView) {
             const s = panelView.shadow;
@@ -1195,7 +1233,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.14',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.15',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

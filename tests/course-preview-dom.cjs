@@ -90,7 +90,7 @@ const logs=[],failures=[];
    const w=dom.window;for(let i=0;i<100&&!w.courseDemo;i++)await delay(10);
    assert(w.courseDemo,'离线页面未初始化');const f=w.courseDemo,s=w.document.getElementById('cx-ai-study-root').shadowRoot;
    assert.equal(s.getElementById('panel').dataset.activeView,'chapters');assert(!s.getElementById('course-start').disabled);
-   assert.equal(f.requests.length,0,'预览自行开始或发起请求');assert.equal(s.getElementById('course-auto-submit').checked,false);if(scene==='normal')s.getElementById('course-auto-submit').click();s.getElementById('course-start').click();
+   assert.equal(f.requests.length,0,'预览自行开始或发起请求');assert.equal(s.getElementById('course-auto-submit').checked,false);if(['normal','unanswered'].includes(scene))s.getElementById('course-auto-submit').click();s.getElementById('course-start').click();
    if(scene==='survey'){await delay(100);assert(!s.getElementById('course-skip').disabled);s.getElementById('course-skip').click();}
    for(let i=0;i<200;i++){await delay(100);if(!f.runner.busy)break;}
    assert(!f.runner.busy,'预览流程超时');const report=f.runner.report;
