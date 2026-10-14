@@ -95,7 +95,7 @@ const logs=[],failures=[];
    for(let i=0;i<200;i++){await delay(100);if(!f.runner.busy)break;}
    assert(!f.runner.busy,'预览流程超时');const report=f.runner.report;
    assert.equal(report.status,['normal','survey','no-task'].includes(scene)?'done':'stopped');assert(s.getElementById('settings-developer-page').hidden,'结束后不应自动切换开发者模式');assert(s.getElementById('view-model').hidden);
-   if(scene==='normal'){assert.equal(report.videos,3);assert.equal(report.quizzes,1);assert.equal(report.documents,1);assert.equal(report.chapters.length,3);assert(s.getElementById('course-report').textContent.includes('全部流程完成'));}
+   if(scene==='normal'){assert.equal(report.videos,3);assert.equal(report.quizzes,1);assert.equal(report.documents,1);assert.equal(report.chapters.length,3);assert.deepEqual(Array.from(report.chapters,chapter=>chapter.status),['done','no-tasks','done']);assert(s.getElementById('course-report').textContent.includes('目录遍历结束'));}
    if(scene==='face'){assert.match(report.reason,/人脸识别/);assert(f.doc.querySelector('.chapterVideoFaceMaskDiv'));}
    if(scene==='unanswered'){assert(s.getElementById('course-report').textContent.includes('第 1 题'));assert.equal(f.submits,0);}
    if(scene==='survey'){assert.equal(report.chapters[0].status,'skipped');assert.equal(report.videos,1);assert(s.getElementById('course-report').textContent.includes('用户跳过'));}

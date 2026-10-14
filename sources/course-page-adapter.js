@@ -70,6 +70,19 @@
                 active:node.classList.contains('active') || node.getAttribute('aria-selected') === 'true',
                 disabled:node.getAttribute('aria-disabled') === 'true' || node.classList.contains('disabled') }));
     }
+    function courseTaskContains(container, node) {
+        // contains 只能比较同一 DOM 树；通过 frameElement 将内层节点投影到祖先文档。
+        // 与 courseTaskContainer 使用相同深度边界；不可访问或无法证明归属时返回 false。
+        if(!container?.contains || !node)return false;
+        for(let depth=0,candidate=node;candidate && depth<12;depth++) {
+            try {
+                if(container===candidate || container.contains(candidate))return true;
+                const doc=candidate.nodeType===9?candidate:candidate.ownerDocument;
+                candidate=doc?.defaultView?.frameElement;
+            } catch {return false;}
+        }
+        return false;
+    }
     function courseTaskContainer(node) {
         // 播放器本身和外层附件 iframe 都可能提供任务状态。
         let candidate = node, container = null;

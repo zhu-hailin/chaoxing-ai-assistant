@@ -1150,7 +1150,7 @@
                             const pendingHere=()=>courseFrameTree(owner).documents.slice(1).some(doc=>[...doc.querySelectorAll('.ans-attach-ct,[data-course-task]')]
                                 .some(node=>courseElementVisible(node)&&courseTaskRequired(node)!==false&&courseTaskComplete(node)===false
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
-                                    && ![...manualNodes].some(quiz=>node.contains(quiz)||quiz.contains(node))));
+                                    && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
                             if(!tasks.length && lastTab && pendingHere() && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
