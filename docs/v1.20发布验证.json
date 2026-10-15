@@ -1,0 +1,27 @@
+{
+  "version": "1.20",
+  "npmVersion": "1.0.20",
+  "date": "2026-10-15",
+  "userAcceptance": "用户明确反馈：上传GitHub。验收完毕",
+  "scriptSha256": "abe5277cbbf328c1b81ac2872e4c130b0f17a2ec6347f83067c5f88ce34543a6",
+  "courseRegression": {
+    "total": 397,
+    "failures": 0
+  },
+  "nativeSpeedRegression": {
+    "total": 25,
+    "failures": 0
+  },
+  "videoQuizRegression": {
+    "total": 78,
+    "failures": 0
+  },
+  "syntaxCheck": "passed",
+  "deterministicBuild": true,
+  "fullNpmTest": {
+    "exitCode": 0,
+    "result": "passed"
+  },
+  "realEnvironmentScope": "用户反馈整体验收通过；未声称每个错误、回看与未知反馈分支均逐项实测",
+  "baseline": "历史390项/21项失败保留；本次补正任务判断/迟到任务发现、跨标签人工待处理等待及夹具契约"
+}

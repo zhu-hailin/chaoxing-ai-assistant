@@ -39,6 +39,12 @@
     }
     const STEM_SELECTOR = '.Zy_TItle .fontLabel,.Zy_TItle,.question-stem,.question-title,.mark_name,.stem,[data-question-text]';
     const MEDIA_EXCLUDED = 'dl,.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.attachment,.cx-ai-ignore';
+    function questionContentText(root) {
+        if (!root) return '';
+        if (root.nodeType === 3) return root.textContent || '';
+        if (root.nodeType !== 1 || root.matches('input,textarea,select,button,script,style,[contenteditable="true"],.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.cx-ai-ignore')) return '';
+        return [...root.childNodes].map(questionContentText).join('');
+    }
     function readQuestionTypeLabel(node, stem, group) {
         const explicit = clean(node.getAttribute('data-question-type') || node.getAttribute('data-type-name'));
         if (explicit) return explicit;
@@ -101,11 +107,11 @@
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
         const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
-        const question = stripQuestionPrefix(stem?.textContent, typeLabel);
+        const question = stripQuestionPrefix(questionContentText(stem), typeLabel);
         const instructions = clean([node.getAttribute('data-answer-instructions'),
-            ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(child=>child.textContent),
-            group?.querySelector(':scope > .type_tit')?.textContent,
-            group?.querySelector(':scope > .question-instructions')?.textContent].filter(Boolean).join('；'));
+            ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(questionContentText),
+            questionContentText(group?.querySelector(':scope > .type_tit')),
+            questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         let optionTargets, options, writer;
@@ -138,7 +144,7 @@
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, inputs, optionTargets, imageNodes, writer } };
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, adapterHints:local.graphHints || {} } };
     }
     registerPageAdapter({
         id: 'chaoxing-chapter',
@@ -242,12 +248,12 @@
     registerQuestionParser({ id: 'unknown', match: () => true, parse: raw => finishQuestion(raw, 'unknown', 'unknown') });
     function parseQuestionDocument(doc = document, parseContext = {}) {
         const raw = collectRawQuestions(doc, parseContext);
-        if (!raw.length) throw new Error('没有检测到题目，请先进入章节测验或作业');
+        if (!raw.length) throw questionParseError('CX-PAR-001', '没有检测到题目，请先进入章节测验或作业');
         const questions = [], media = [], bindings = new Map();
         for (const record of raw) {
             const parser = questionTypeParsers.find(item => item.id !== 'unknown' && item.match(record)) || questionTypeParsers.find(item => item.id === 'unknown');
             const parsed = parser.parse(record);
-            if (bindings.has(parsed.question.id)) throw new Error('题目 ID 重复，已停止');
+            if (bindings.has(parsed.question.id)) throw questionParseError('CX-PAR-007', '题目 ID 重复，已停止');
             questions.push(parsed.question); bindings.set(parsed.question.id, parsed.binding);
             media.push(...(record.media || []));
         }
@@ -260,4 +266,193 @@
         }
         for(const question of questions)question.answerPolicy=questionLocalAnswerPolicy(question);
         return { schemaVersion: 2, questions, media, bindings };
+    }
+
+    // Schema 3 shares the proven adapters and bindings with Schema 2. General layers do
+    // not invent platform selectors or infer a slot from the number of text boxes.
+    function questionParseError(code, message) {
+        if (typeof createCxError === 'function') return createCxError(code, {module:'question-parser',operation:'parse-document'});
+        const error = new Error(message); error.code = code; error.cxCode = code; return error;
+    }
+    function parseQuestionContent(node, context = {}, adapterHints = {}) {
+        const question = context.question || {}, binding = context.binding || {};
+        const blocks = [], slots = [], subquestions = [], imageNodes = binding.imageNodes || new Map();
+        const mediaByNode = new Map([...imageNodes].map(([id, image]) => [image, id]));
+        const text = value => typeof clean === 'function' ? clean(value) : String(value || '').replace(/\s+/g, ' ').trim();
+        const addText = value => { const valueText = text(value); if (valueText) blocks.push({type:'text', text:valueText}); };
+        const walk = current => {
+            if (current.nodeType === 3) { addText(current.textContent); return; }
+            if (current.nodeType !== 1 || current.matches(MEDIA_EXCLUDED + ',script,style,button,input,textarea,select,[contenteditable="true"]')) return;
+            if (context.parseContext?.scope === 'video-quiz' && typeof courseElementVisible === 'function' && !courseElementVisible(current)) return;
+            if (current.matches('.Zy_ulTop,.option,.answer-option,.option-item')) return;
+            if (current.tagName === 'IMG') {
+                const mediaId = mediaByNode.get(current);
+                if (mediaId) blocks.push({type:'image', mediaId});
+                else blocks.push({type:'image', unreadable:true});
+                return;
+            }
+            if (current.localName === 'math') {
+                const expression = text(current.querySelector('annotation[encoding="application/x-tex"]')?.textContent || current.textContent);
+                blocks.push({type:'math', ...(expression ? {expression} : {unreadable:true})}); return;
+            }
+            if (current.tagName === 'TABLE') {
+                blocks.push({type:'table', rows:[...current.rows].map(row => [...row.cells].map(cell => text(questionContentText(cell))))}); return;
+            }
+            if (current.tagName === 'PRE' || current.tagName === 'CODE') { blocks.push({type:'code', text:questionContentText(current)}); return; }
+            for (const child of current.childNodes) walk(child);
+        };
+        const stem = adapterHints.stem || binding.stem;
+        if (stem) walk(stem); else addText(question.question);
+        // Only explicit slot/semantic references supplied by an adapter, or valid
+        // native label references, can create independently addressable text units.
+        if (Array.isArray(adapterHints.slots)) {
+            for (const slot of adapterHints.slots) {
+                if (!slot?.id || !slot.control || !node.contains(slot.control)) continue;
+                slots.push({id:String(slot.id), text:text(slot.text), control:slot.control,
+                    evidence:['adapter-slot-reference'], type:slot.type || question.type});
+            }
+        } else if (['blank','essay'].includes(question.type)) {
+            const labels = [...node.querySelectorAll('label[for]')];
+            const idCounts = new Map();
+            for (const element of node.ownerDocument.querySelectorAll('[id]')) idCounts.set(element.id, (idCounts.get(element.id) || 0) + 1);
+            for (const label of labels) {
+                const targets = (binding.inputs || []).filter(input => input.id && input.id === label.htmlFor);
+                if (targets.length !== 1 || !text(label.textContent)) continue;
+                const control = targets[0];
+                if (label.control !== control || idCounts.get(control.id) !== 1 || typeof courseElementVisible === 'function' && !courseElementVisible(label)) continue;
+                if (labels.filter(other => other.htmlFor === control.id).length !== 1 || slots.some(slot => slot.control === control)) continue;
+                slots.push({id:`label-${slots.length + 1}`, text:text(label.textContent), control, evidence:['native-label-reference'], type:question.type});
+            }
+        }
+        for (const slot of slots) blocks.push({type:'slot', id:slot.id, text:slot.text});
+        if (Array.isArray(adapterHints.subquestions)) {
+            for (const child of adapterHints.subquestions) {
+                if (!child?.id || !child.root || !node.contains(child.root)) continue;
+                // An entire child region may include an existing written answer.
+                // Only adapter-declared content text/stem is eligible material.
+                const label = text(child.text || (child.stem && child.root.contains(child.stem) ? questionContentText(child.stem) : ''));
+                subquestions.push({...child, text:label}); blocks.push({type:'subquestion', id:String(child.id), text:label});
+            }
+        }
+        if (question.instructions) blocks.unshift({type:'instruction', text:question.instructions});
+        return {blocks, slots, subquestions, diagnostics:blocks.some(block => block.unreadable) ? ['unreadable-content'] : []};
+    }
+    function parseQuestionControls(node, context = {}, adapterHints = {}) {
+        const question = context.question || {}, binding = context.binding || {}, controls = [], runtime = new Map();
+        let sequence = 0;
+        const add = (target, kind, writable, extra = {}) => {
+            if (!target || [...runtime.values()].includes(target)) return;
+            const id = `${question.id}:control:${++sequence}`;
+            const descriptor = {id, kind, groupId:question.id, recognized:kind !== 'unknown',
+                writable:Boolean(writable && !target.disabled && !target.readOnly),
+                state:{disabled:Boolean(target.disabled), readOnly:Boolean(target.readOnly)}, diagnostics:[], ...extra};
+            controls.push(descriptor); runtime.set(id, target);
+        };
+        for (const [key, target] of binding.optionTargets || []) add(target,
+            binding.writer === 'chapter-choice' ? 'chapter-choice' : target.type === 'checkbox' ? 'checkbox' : 'radio',
+            binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
+        for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
+            ['blank','essay'].includes(question.type) && !question.controls?.richText);
+        for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
+            if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
+            add(target, target.tagName === 'SELECT' ? 'select' : target.tagName === 'CANVAS' ? 'canvas' : target.type === 'file' ? 'upload' : 'richtext', false);
+        }
+        return {controls, runtime, diagnostics:controls.filter(control => !control.writable).map(control => ({targetId:control.id, code:'no-safe-writer'}))};
+    }
+    function matchQuestionRelations(content, controls, context = {}) {
+        const question = context.question || {}, binding = context.binding || {}, relations = [], responseUnits = [];
+        const all = controls.controls, textControls = all.filter(control => ['text','textarea'].includes(control.kind));
+        const unit = (id, type, controlIds, status, evidence, text = '') => {
+            responseUnits.push({id, questionId:question.id, type, required:true, controlIds, relationStatus:status, question:text});
+            const targetId = controlIds.length === 1 ? controlIds[0] : `${question.id}:options`;
+            relations.push({responseUnitId:id, targetId, targetKind:controlIds.length === 1 ? 'control' : 'group', status, evidence});
+        };
+        if (['single','multiple','judge'].includes(question.type)) {
+            const targets = all.filter(control => control.optionKey);
+            const confirmed = binding.canPrefill && targets.length === question.options.length && targets.every(control => control.writable);
+            unit(question.id, question.type, targets.map(control => control.id), confirmed ? 'confirmed' : 'unsupported',
+                confirmed ? ['adapter-option-key','isolated-option-group'] : ['unverified-option-group']);
+        } else if (['blank','essay'].includes(question.type) && content.slots.length > 1) {
+            for (const slot of content.slots) {
+                const descriptor = textControls.find(control => controls.runtime.get(control.id) === slot.control);
+                const valid = descriptor?.writable && content.slots.filter(other => other.id === slot.id || other.control === slot.control).length === 1;
+                unit(`${question.id}::unit:${slot.id}`, slot.type, descriptor ? [descriptor.id] : [], valid ? 'confirmed' : 'ambiguous', slot.evidence, slot.text);
+            }
+            if (textControls.length !== content.slots.length) unit(`${question.id}::unmapped`, question.type, [], 'ambiguous', ['unmatched-response-controls']);
+        } else {
+            const confirmed = binding.canPrefill && textControls.length === 1 && textControls[0].writable;
+            unit(question.id, question.type, textControls.map(control => control.id), confirmed ? 'confirmed' : question.type === 'unknown' ? 'unsupported' : 'ambiguous',
+                confirmed ? ['adapter-question-boundary','unique-text-response'] : ['missing-unique-response']);
+        }
+        // A writable text/choice area does not make another explicitly present
+        // unsupported response control complete. Preserve partial analysis safely.
+        if (relations.some(relation => relation.status === 'confirmed')) {
+            for (const control of all.filter(control => ['select','upload','richtext','canvas'].includes(control.kind)))
+                unit(`${question.id}::unsupported:${control.id.split(':').at(-1)}`, 'unknown', [control.id], 'unsupported', ['no-safe-writer']);
+        }
+        return {responseUnits, relations};
+    }
+    function parseQuestionGraph(doc = document, parseContext = {}) {
+        const legacy = parseQuestionDocument(doc, parseContext), controls = [], relations = [], materials = [], bindings = new Map(legacy.bindings);
+        const questions = legacy.questions.map(original => {
+            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext};
+            const content = parseQuestionContent(binding.node, context, binding.adapterHints || {});
+            const parsedControls = parseQuestionControls(binding.node, context, binding.adapterHints || {});
+            const matched = matchQuestionRelations(content, parsedControls, context);
+            controls.push(...parsedControls.controls); relations.push(...matched.relations);
+            const composite = matched.responseUnits.length > 1;
+            const question = {...original, structure:composite ? 'composite' : 'simple', blocks:content.blocks,
+                responseUnits:matched.responseUnits, sharedMaterialIds:[], diagnostics:[...original.diagnostics, ...content.diagnostics]};
+            const instruction = binding.group?.querySelector(':scope > .question-instructions');
+            if (instruction && questionContentText(instruction)) {
+                const id = `${original.groupId}:material`;
+                if (!materials.some(material => material.id === id)) materials.push({id, type:'shared-context', text:questionContentText(instruction)});
+                question.sharedMaterialIds.push(id);
+            }
+            for (const unit of matched.responseUnits) {
+                if (!composite || unit.id === original.id) continue;
+                const nodes = unit.controlIds.map(id => parsedControls.runtime.get(id)).filter(Boolean);
+                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:'none', type:unit.type,
+                    canPrefill:unit.relationStatus === 'confirmed'});
+            }
+            const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
+            question.supportLevel = original.answerPolicy.status === 'manual' && original.answerPolicy.category !== 'controls' ? 'Manual Required'
+                : !original.capabilities.analyze ? (original.type === 'unknown' ? 'Unsupported' : 'Unreadable')
+                : confirmed === matched.responseUnits.length ? 'Fully Supported' : confirmed ? 'Partial Support' : 'Analyze Only';
+            return question;
+        });
+        const graph = {schemaVersion:3, questions, materials, media:legacy.media, controls, relations, bindings, lifecycle:null};
+        Object.defineProperty(graph, 'legacySnapshot', {value:legacy});
+        return graph;
+    }
+    function toLegacyQuestionSnapshot(graph) {
+        if (graph?.schemaVersion !== 3 || !graph.legacySnapshot) throw new Error('无效题目图');
+        return graph.legacySnapshot;
+    }
+    function buildQuestionRequestUnits(graph) {
+        const questions = [], bindings = new Map(), parentByUnit = new Map(), unitsByQuestion = new Map();
+        for (const parent of graph.questions) {
+            const ids = [];
+            for (const unit of parent.responseUnits) {
+                const composite = parent.structure === 'composite';
+                const confirmed = unit.relationStatus === 'confirmed';
+                let question = parent;
+                if (composite) {
+                    const count = unit.controlIds.length;
+                    const textUnit = ['blank','essay'].includes(unit.type);
+                    const material = graph.materials.filter(item => parent.sharedMaterialIds.includes(item.id)).map(item => item.text).filter(Boolean).join('\n');
+                    question = {...parent, id:unit.id, parentQuestionId:parent.id, parentNumber:parent.number, type:unit.type,
+                        question:[parent.question, material, unit.question].filter(Boolean).join('\n'),
+                        options:unit.id===parent.id && !textUnit ? parent.options : [],
+                        controls:textUnit ? {...parent.controls, textInputs:count, editableTextInputs:confirmed ? count : 0, richText:parent.controls.richText || 0} : parent.controls,
+                        diagnostics:parent.diagnostics.filter(value => value !== '多个或缺失文本框，暂不自动预填'),
+                        capabilities:{analyze:parent.capabilities.analyze, prefill:confirmed}, responseUnitId:unit.id};
+                    question.answerPolicy = questionLocalAnswerPolicy(question);
+                } else question = {...parent, capabilities:{...parent.capabilities, prefill:parent.capabilities.prefill && confirmed}};
+                questions.push(question); bindings.set(unit.id, graph.bindings.get(unit.id) || graph.bindings.get(parent.id));
+                parentByUnit.set(unit.id, parent.id); ids.push(unit.id);
+            }
+            unitsByQuestion.set(parent.id, ids);
+        }
+        return {questions, media:graph.media, bindings, parentByUnit, unitsByQuestion};
     }

@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-15",
+  "version": "1.19",
+  "scriptSha256": "c0ed58147850c0951dd32f907acd34d24b2611cd39bce38a2f490b036429ddbc",
+  "groups": [
+    {
+      "group": "speed-native",
+      "passed": 25,
+      "failed": 0
+    },
+    {
+      "group": "runner-speed-native",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "group": "runner-background",
+      "passed": 35,
+      "failed": 0
+    }
+  ],
+  "passed": 67,
+  "failed": 0,
+  "oldDetectorWithNewFixture": {
+    "total": 25,
+    "failed": 4
+  },
+  "realDOMCaptured": true,
+  "nativeMenuVerified": {
+    "initialRate": 1,
+    "selectedRate": 2,
+    "stillPlaying": true
+  },
+  "automaticSelectionWithNewScriptVerifiedLive": false,
+  "fullNpmTestRun": false
+}

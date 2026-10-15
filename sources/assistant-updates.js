@@ -1,7 +1,8 @@
     const ASSISTANT_UPDATE_KEY = 'cx_assistant_update';
     const ASSISTANT_UPDATE_SOURCE = 'https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js';
     const assistantUpdateOpen = window.open.bind(window);
-    let assistantUpdatePending = null, assistantUpdateAbort = null, assistantUpdateTimer = null;
+    let assistantUpdatePending = null, assistantUpdateAbort = null;
+    let assistantUpdateStartup = null, assistantUpdateStarted = false;
     let assistantUpdateListener = null, assistantUpdateGeneration = 0, assistantUpdateMessage = '';
 
     function assistantVersionParts(value) {
@@ -105,6 +106,16 @@
         if (!assistantVersionIsNewer(cache.version)) return;
         assistantUpdateOpen(assistantUpdateDownloadURL(cache.version), '_blank', 'noopener,noreferrer');
     }
+    function startAssistantUpdateCheck() {
+        // 每个顶层 Document 一次；面板、iframe 和 BFCache 恢复不另建自动请求。
+        if (window !== window.top || assistantUpdateStarted) return assistantUpdateStartup;
+        assistantUpdateStarted = true;
+        const generation = assistantUpdateGeneration;
+        assistantUpdateStartup = Promise.resolve().then(() => {
+            if (generation === assistantUpdateGeneration) return checkAssistantUpdates(true);
+        }).catch(() => null);
+        return assistantUpdateStartup;
+    }
     function initAssistantUpdates(shadow) {
         if (assistantUpdateListener === null && typeof GM_addValueChangeListener === 'function') {
             assistantUpdateListener = GM_addValueChangeListener(ASSISTANT_UPDATE_KEY, () => renderAssistantUpdates());
@@ -115,17 +126,11 @@
             const button = shadow.getElementById(id);
             button.onclick = event => { if (trustedAssistantActivation(event, button)) openAssistantUpdate(); };
         }
-        // 真正点击助手时进行低频检查；网页派发的点击不会触发后台请求。
-        shadow.addEventListener('click', event => {
-            if (!event.isTrusted || !trustedAssistantActivation(event, shadow) || assistantUpdateTimer !== null) return;
-            assistantUpdateTimer = setTimeout(() => { assistantUpdateTimer = null; if (!assistantUiHidden) checkAssistantUpdates(); }, 400);
-        });
         renderAssistantUpdates();
     }
     window.addEventListener('pagehide', () => {
         assistantUpdateGeneration++;
         assistantUpdateAbort?.abort(); assistantUpdateAbort = null; assistantUpdatePending = null;
-        clearTimeout(assistantUpdateTimer); assistantUpdateTimer = null;
         if (assistantUpdateListener !== null && typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(assistantUpdateListener);
         assistantUpdateListener = null;
     });

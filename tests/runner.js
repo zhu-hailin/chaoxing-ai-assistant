@@ -180,7 +180,7 @@
     });
     await test('无法确认页面选中状态时报告 unverified', async () => {
         const f=await fixture({questions:choice('1','单选',[['A','甲'],['B','乙']])});f.mode='unverified';
-        const q=f.api.extract().questions;const s=await f.api.prefill(q,f.api.normalize({answers},q));assert(s.unverified===1 && s.filled===0,'未确认被计为成功');f.remove();
+        const q=f.api.extract().questions;const s=await f.api.prefill(q,f.api.normalize({answers:answers.filter(a=>q.some(item=>item.id===a.id))},q));assert(s.unverified===1 && s.filled===0,'未确认被计为成功');f.remove();
     });
     await test('字体单次映射、并发重入、保留事件和 HTML、重复解密幂等', async () => {
         const f=await fixture();const style=f.d.createElement('style');style.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}";f.d.head.append(style);
@@ -246,7 +246,7 @@
         try {
             const title=f.d.querySelectorAll('.fontLabel')[1];title.classList.add('font-cxsecret');const before=title.textContent;
             await f.api.runAnswerFlow();
-            assert(f.api.controller.state.phase==='error' && f.api.controller.state.message.includes('Base64'),'真实文字检查被绕过');
+            assert(f.api.controller.state.phase==='error' && f.api.controller.state.message.includes('CX-PAR-005'),'真实文字检查被绕过');
             assert(title.textContent===before && title.classList.contains('font-cxsecret'),'失败修改平台文字或标记');
             assert(f.requests.length===0 && f.submits===0,'字体失败仍请求或提交');
         } finally { f.remove(); }
@@ -254,7 +254,7 @@
     await test('图片容器残留真实题文或未知标签仍要求解密', async () => {
         for(const text of ['【简答题】坁坅','【简答题】请解方程','【教师自创题】']) {
             const f=await fixture({questions:`<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">${text}<img src="https://example.test/question.png"></div></div><textarea></textarea></div>`});
-            try { let failed=false;try{await f.api.ensureFontDecoded();}catch(error){failed=error.message.includes('Base64');}assert(failed,'过度放行 '+text); }
+            try { let failed=false;try{await f.api.ensureFontDecoded();}catch(error){failed=error.cxCode==='CX-PAR-005';}assert(failed,'过度放行 '+text); }
             finally { f.remove(); }
         }
     });

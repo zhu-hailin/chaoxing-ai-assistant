@@ -13,13 +13,18 @@ async function test(name, run) {
 function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account') {
     const dom = new JSDOM(`<div id="mainid"><h1>章节</h1><div id="prev_tab" style="padding:0 100px"><div id="dct1">${type}</div></div><iframe id="iframe"></iframe></div>`, { url, runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    const requests = [];
+    const requests = [], updateRequests = [];
     w.GM_getValue = withModelFixture((_, fallback) => fallback);
     w.GM_setValue = () => {};
     w.GM_getResourceText = () => '{}';
-    w.GM_xmlhttpRequest = request => { requests.push(request); };
+    w.GM_xmlhttpRequest = request => {
+        if (request.method === 'GET' && request.anonymous === true && request.url.startsWith('https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/')) {
+            updateRequests.push(request);queueMicrotask(()=>request.onload({status:200,responseText:source}));
+        } else requests.push(request);
+        return {abort(){request.onabort?.();}};
+    };
     w.eval(source);
-    return { dom, w, requests, close() { w.dispatchEvent(new w.Event('pagehide')); w.close(); } };
+    return { dom, w, requests, updateRequests, close() { w.dispatchEvent(new w.Event('pagehide')); w.close(); } };
 }
 (async () => {
     for (const type of ['视频', '资料']) await test(`${type}页内容上方助手入口，设置可打开关闭，无题目时禁止分析`, async () => {
@@ -54,6 +59,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert(s.getElementById('panel').hidden);
             assert.equal(button.getAttribute('aria-expanded'), 'false');
             assert.equal(f.requests.length, 0);
+            assert.equal(f.updateRequests.length, 1);
         } finally { f.close(); }
     });
     await test('章节内容动态替换后入口重新挂载，面板不重复创建', async () => {
@@ -68,6 +74,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             assert.equal(d.getElementById('cx-ai-study-root'), root);
             assert.equal(d.getElementById('cx-ai-study-toolbar').style.paddingRight, '48px');
             assert.equal(f.requests.length, 0);
+            assert.equal(f.updateRequests.length, 1);
         } finally { f.close(); }
     });
     await test('嵌入播放器和其他页面不额外创建学习页入口', async () => {
@@ -83,6 +90,7 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
             await delay();
             assert.equal(embedded.document.getElementById('cx-ai-study-toolbar'), null);
             assert.equal(f.requests.length, 0);
+            assert.equal(f.updateRequests.length, 1);
         } finally { f.close(); }
     });
     await test('顶部入口打开嵌套测验助手，可提取和分析；测验仅保留生成按钮', async () => {

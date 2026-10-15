@@ -1,0 +1,251 @@
+{
+  "date": "2026-10-15",
+  "baselineCommit": "d2cf0082becf943c64e6b645bafa9db8c72c03cb",
+  "version": "1.19",
+  "npmVersion": "1.0.19",
+  "build": {
+    "sha256": "bc05c536acc7350b2313d07f8c660f174da92067638071654bbc813b4c077e25",
+    "bytes": 650326,
+    "repeatBuildEqual": true,
+    "version": "1.19",
+    "noRemoteJavaScriptRequire": true
+  },
+  "nodeSuites": 26,
+  "suitesPassing": 25,
+  "suitesFailing": 1,
+  "newSuiteCases": 102,
+  "modules": {
+    "UI": {
+      "total": 53,
+      "passed": 53,
+      "failed": 0
+    },
+    "study": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "parser": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "media": {
+      "total": 28,
+      "passed": 28,
+      "failed": 0
+    },
+    "video-quiz": {
+      "total": 78,
+      "passed": 78,
+      "failed": 0
+    },
+    "question-context": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "question-graph": {
+      "total": 17,
+      "passed": 17,
+      "failed": 0
+    },
+    "question-actions": {
+      "total": 22,
+      "passed": 22,
+      "failed": 0
+    },
+    "architecture-integration": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "analysis-task": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0
+    },
+    "course-preview": {
+      "total": 11,
+      "passed": 11,
+      "failed": 0
+    },
+    "answer-policy": {
+      "total": 40,
+      "passed": 40,
+      "failed": 0
+    },
+    "ui-model-fixes": {
+      "total": 12,
+      "passed": 12,
+      "failed": 0
+    },
+    "updates": {
+      "total": 14,
+      "passed": 14,
+      "failed": 0
+    },
+    "errors": {
+      "total": 48,
+      "passed": 48,
+      "failed": 0
+    },
+    "providers": {
+      "total": 53,
+      "passed": 53,
+      "failed": 0
+    },
+    "course-context": {
+      "total": 18,
+      "passed": 18,
+      "failed": 0
+    },
+    "video-info": {
+      "total": 21,
+      "passed": 21,
+      "failed": 0
+    },
+    "model-capability": {
+      "total": 21,
+      "passed": 21,
+      "failed": 0
+    },
+    "course-info-integration": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "panel-window": {
+      "total": 35,
+      "passed": 35,
+      "failed": 0
+    },
+    "credentials": {
+      "total": 12,
+      "passed": 12,
+      "failed": 0
+    },
+    "provider-logos": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    },
+    "course-runner": {
+      "total": 390,
+      "passed": 369,
+      "failed": 21
+    }
+  },
+  "fullNpmExitCode": 1,
+  "baselineCourse": {
+    "total": 390,
+    "passed": 369,
+    "failed": 21
+  },
+  "newCourseFailures": [],
+  "removedCourseFailures": [],
+  "tailCommands": [
+    {
+      "command": "python tests/build_course_preview.py",
+      "exitCode": 0,
+      "seconds": 0.09
+    },
+    {
+      "command": "node tests/course-preview-dom.cjs",
+      "exitCode": 0,
+      "seconds": 18.61
+    },
+    {
+      "command": "node tests/analysis-task-dom.cjs",
+      "exitCode": 0,
+      "seconds": 7.22
+    },
+    {
+      "command": "node tests/model-providers-dom.cjs",
+      "exitCode": 0,
+      "seconds": 3.17
+    },
+    {
+      "command": "node tests/course-context-dom.cjs",
+      "exitCode": 0,
+      "seconds": 1.41
+    },
+    {
+      "command": "node tests/course-video-info-dom.cjs",
+      "exitCode": 0,
+      "seconds": 0.48
+    },
+    {
+      "command": "node tests/model-capability-dom.cjs",
+      "exitCode": 0,
+      "seconds": 0.36
+    },
+    {
+      "command": "node tests/course-info-integration-dom.cjs",
+      "exitCode": 0,
+      "seconds": 5.67
+    },
+    {
+      "command": "node tests/panel-window-dom.cjs",
+      "exitCode": 0,
+      "seconds": 6.25
+    },
+    {
+      "command": "node tests/answer-policy-dom.cjs",
+      "exitCode": 0,
+      "seconds": 4.81
+    },
+    {
+      "command": "node tests/credential-settings-dom.cjs",
+      "exitCode": 0,
+      "seconds": 1.95
+    },
+    {
+      "command": "node tests/provider-logos-dom.cjs",
+      "exitCode": 0,
+      "seconds": 1.75
+    },
+    {
+      "command": "node tests/p0-page-actions-dom.cjs",
+      "exitCode": 0,
+      "seconds": 1.38
+    },
+    {
+      "command": "node tests/ui-model-fixes-dom.cjs",
+      "exitCode": 0,
+      "seconds": 2.03
+    },
+    {
+      "command": "node tests/assistant-updates-dom.cjs",
+      "exitCode": 0,
+      "seconds": 2.23
+    }
+  ],
+  "independentChecks": {
+    "fontDependencies": "passed",
+    "productionActivation": "passed"
+  },
+  "performance": {
+    "baseline": {
+      "questions": 50,
+      "iterations": 10,
+      "documentSelectorScans": 20,
+      "milliseconds": 182
+    },
+    "candidate": {
+      "questions": 50,
+      "iterations": 10,
+      "documentSelectorScans": 20,
+      "milliseconds": 202
+    },
+    "heapDeltaBytes": 14576992,
+    "note": "JSDOM process measurement; heap includes VM/JSDOM caches and does not prove browser memory bounds"
+  },
+  "realCourseVerification": "pending",
+  "releaseReady": false,
+  "notes": [
+    "所有模型、平台结果与媒体反馈均为模拟；未操作真实课程或真实模型。",
+    "课程21项基线失败已分类，未当作通过。",
+    "测试夹具按稳定码、安全复制与可观测状态更新，未缩短生产超时或删除断言。"
+  ]
+}

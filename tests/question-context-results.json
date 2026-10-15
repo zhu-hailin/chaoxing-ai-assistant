@@ -1,0 +1,11 @@
+{
+  "total": 5,
+  "failures": [],
+  "logs": [
+    "PASS Three iframe ancestors prove task ownership without Node.contains",
+    "PASS Same-document, detached and independent documents have distinct evidence",
+    "PASS Unreadable iframe and configured depth limit remain unknown contexts",
+    "PASS Document identities are stable and replaced documents obtain another identity",
+    "PASS Policy exclusion cannot prove excluded context belongs to task"
+  ]
+}

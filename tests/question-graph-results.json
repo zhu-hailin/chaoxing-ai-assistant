@@ -1,0 +1,23 @@
+{
+  "total": 17,
+  "failures": [],
+  "logs": [
+    "PASS Schema2 compatibility and Schema3 confirmed native option relations",
+    "PASS Content blocks retain reading order, images, readable formulas, tables and code",
+    "PASS Only unique explicit label references produce multi-slot request units",
+    "PASS Unlabelled multi-inputs and repeated label references do not receive writable mapping",
+    "PASS Human handwriting rule remains independent of confirmed writable controls",
+    "PASS Shared instructions require proven mark_item group boundary",
+    "PASS Input values and selected state are excluded from content identity",
+    "PASS Identical markup control replacement invalidates existing snapshot",
+    "PASS Content changes, relation changes and cancellation invalidate snapshot",
+    "PASS Graph and model block projection omit DOM, actual answers and media URLs",
+    "PASS Unsupported recognized controls have no writer",
+    "PASS Duplicate DOM ids and shared radio names cannot produce confirmed cross-question targets",
+    "PASS Snapshot detects semantic slot-label change and input reordering",
+    "PASS Late lifecycle guards are honored through request clones without recursion",
+    "PASS Stem tables and code never read nested actual answer controls",
+    "PASS Mixed writable text and unsupported response controls retain unresolved required units",
+    "PASS Instructions and proven shared materials exclude nested answer control defaults"
+  ]
+}

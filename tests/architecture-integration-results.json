@@ -1,0 +1,47 @@
+{
+  "total": 10,
+  "passed": 10,
+  "failed": 0,
+  "results": [
+    {
+      "name": "非JSON HTTP401保留HTTP语义，不复制响应或地址",
+      "passed": true
+    },
+    {
+      "name": "HTTP200非法JSON单独报告RES001",
+      "passed": true
+    },
+    {
+      "name": "同步GM异常保留未知网络语义，不透出部分Key",
+      "passed": true
+    },
+    {
+      "name": "答案遗漏、重复与未知ID全部拒绝",
+      "passed": true
+    },
+    {
+      "name": "安全错误报告携带本地任务和请求关联ID",
+      "passed": true
+    },
+    {
+      "name": "模型列表页面离开后取消，迟到列表不更新模型配置",
+      "passed": true
+    },
+    {
+      "name": "选择题额外存在未适配作答区时仍填写选项且保留人工区域",
+      "passed": true
+    },
+    {
+      "name": "课程复制摘要排除标题、原因、题目、答案和视频弹题历史",
+      "passed": true
+    },
+    {
+      "name": "自定义模型旁提示配置篡改猴请求域名白名单且默认不显示",
+      "passed": true
+    },
+    {
+      "name": "明确label多作答区域经分类、模型请求、统一预填完整贯通",
+      "passed": true
+    }
+  ]
+}

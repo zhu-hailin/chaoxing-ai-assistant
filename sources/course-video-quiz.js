@@ -2,6 +2,10 @@
     const VIDEO_QUIZ_ROOT = '.ans-videoquiz,[data-video-quiz-root]';
     const VIDEO_QUIZ_FEEDBACK = '[data-video-quiz-result],.videoquiz-result,.videoquiz-feedback,.answer-feedback,.tkTopic_oper .rightInfo,.tkTopic_oper .spanNot,.tkTopic_oper .spanNotBack';
     const videoQuizCuePositions = new WeakMap();
+    function courseVideoQuizError(code, message) {
+        if(typeof createCxError==='function')return createCxError(code,{module:'video-quiz',operation:'guard'});
+        const error=new Error(message);error.cxCode=code;error.code=code;return error;
+    }
     function courseVideoQuizVisibleText(node) {
         if(!node||!courseElementVisible(node)||node.matches(MEDIA_EXCLUDED+',script,style'))return '';
         return clean([...node.childNodes].map(child=>child.nodeType===3?child.textContent:child.nodeType===1?courseVideoQuizVisibleText(child):'').join(' '));
@@ -38,7 +42,7 @@
             const nativeTopic=node.matches('.tkItem');
             const stems=[...node.querySelectorAll(nativeTopic?':scope > .tkItem_title':STEM_SELECTOR+',legend')].filter(courseElementVisible);
             const unique=stems.filter(stem=>!stems.some(other=>other!==stem&&stem.contains(other)));
-            if(unique.length!==1)throw new Error('视频弹题题干无法唯一定位，需人工处理');
+            if(unique.length!==1)throw courseVideoQuizError('CX-PAR-002','视频弹题题干无法唯一定位，需人工处理');
             let typeLabel;
             if(nativeTopic){
                 const topic=node.closest('.tkTopic');
@@ -66,8 +70,8 @@
     function courseVideoQuizSnapshot(candidate) {
         const {root,doc,video}=candidate;
         const parseContext={scope:'video-quiz',root};
-        const parsed=parseQuestionDocument(doc,parseContext);
-        if(parsed.questions.some(q=>GARBLED.test(q.question)||q.options.some(o=>GARBLED.test(o.text))))throw new Error('检测到字体混淆，弹题材料尚未还原，需人工处理');
+        const graph=parseQuestionGraph(doc,parseContext),parsed=toLegacyQuestionSnapshot(graph);
+        if(parsed.questions.some(q=>GARBLED.test(q.question)||q.options.some(o=>GARBLED.test(o.text))))throw courseVideoQuizError('CX-PAR-005','检测到字体混淆，弹题材料尚未还原，需人工处理');
         const videoIdentity=video.id || `video-${[...doc.querySelectorAll('video')].indexOf(video)+1}`;
         const cue=Number(root.getAttribute('data-cue-seconds'));
         if(!videoQuizCuePositions.has(root))videoQuizCuePositions.set(root,Number.isFinite(video.currentTime)?Math.round(video.currentTime):null);
@@ -83,7 +87,8 @@
         // 平台题 ID 和弹题位置保存次数；内容指纹只用于快照校验，题目反馈不能生成新额度。
         const questionIdentity=hasPlatformIds?courseVideoQuizHash(JSON.stringify({ids:platformIds,cue:explicitCue?cue:null})):`${cueSeconds ?? 'cue'}:${fingerprint}`;
         const key=`${videoIdentity}:${questionIdentity}`;
-        return {key,questionIdentity,videoIdentity,cueSeconds,fingerprint,identitySource:hasPlatformIds?'platform':'content',root,doc,parseContext,...parsed,signature:signature(parsed.questions,parsed.media)};
+        return Object.assign(createQuestionSnapshot(graph,{doc,parseContext,taskId:key}),
+            {key,questionIdentity,videoIdentity,cueSeconds,fingerprint,identitySource:hasPlatformIds?'platform':'content',root});
     }
     function courseVideoQuizButton(candidate,kind='submit') {
         if(!candidate?.root?.isConnected||!courseElementVisible(candidate.root))return null;
@@ -157,7 +162,7 @@
             return inflight;
         };
         const process=async initial=>{
-            let candidate=initial,record,owned=null,snapshot=null,intervened=false,child=null,scriptWriting=false,nativeWrite=false,feedbackBaseline=null;
+            let candidate=initial,record,owned=null,snapshot=null,intervened=false,child=null,scriptWriting=false,nativeWrite=false,feedbackBaseline=null,snapshotInvalidation=null;
             const feedbackChanges=new Set();
             const freshFeedback=()=>{
                 if(feedbackBaseline)return [...courseVideoQuizFeedbackEntries(candidate)].filter(([node,text])=>!feedbackBaseline.has(node)||feedbackBaseline.get(node)!==text||feedbackChanges.has(node)).map(([,text])=>text).join('；').slice(0,1200);
@@ -175,8 +180,8 @@
                     for(const node of mutation.addedNodes)if(node.nodeType===1){if(node.matches(VIDEO_QUIZ_FEEDBACK))feedbackChanges.add(node);node.querySelectorAll(VIDEO_QUIZ_FEEDBACK).forEach(n=>feedbackChanges.add(n));}
                 }
                 if(child&&!scriptWriting&&snapshot){
-                    try {const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root||courseVideoQuizSnapshot(current).signature!==snapshot.signature){intervened=true;child.abort();}}
-                    catch {intervened=true;child.abort();}
+                    try {const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw courseVideoQuizError('CX-CTL-006','弹题已重新渲染');assertQuestionSnapshot(snapshot);}
+                    catch(error) {snapshotInvalidation=error;child.abort();}
                 }
                 hooks.wake();
             });
@@ -185,7 +190,14 @@
             hooks.waiting(true);
             const guard=()=>{hooks.guard();if(closed)throw new Error('视频弹题处理已取消');if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);};
             const save=()=>{guard();hooks.save();};
-            const manual=reason=>{record.phase='manual-wait';record.reason=String(reason).slice(0,400);save();};
+            const manual=(reason,error)=>{
+                record.phase='manual-wait';record.reason=String(reason).slice(0,400);
+                if(error&&typeof recordCxDiagnostic==='function'){
+                    const diagnostic=recordCxDiagnostic(error,{module:'video-quiz',operation:'guard',taskId:hooks.settings?.diagnosticTaskId,attempt:record.attempts,phase:'manual-wait',submissionStarted:Boolean(record.submissionStarted)});
+                    record.cxCode=diagnostic.code;record.reason=diagnostic.message;
+                }
+                save();
+            };
             const rebind=()=>{
                 const current=courseVideoQuizCandidate(video);
                 if(!current)return null;
@@ -197,7 +209,7 @@
             try {
                 guard();
                 try {await hooks.font(initial.doc,{scope:'video-quiz',root:initial.root});guard();snapshot=courseVideoQuizSnapshot(initial);}
-                catch(error){guard();record=records.find(r=>r.key==='unreadable')||{key:'unreadable',attempts:0,history:[]};if(!records.includes(record))records.push(record);manual(error.message);}
+                catch(error){guard();record=records.find(r=>r.key==='unreadable')||{key:'unreadable',attempts:0,history:[]};if(!records.includes(record))records.push(record);manual(error.message,error);}
                 if(snapshot){
                     record=records.find(r=>r.key===snapshot.key||r.questionIdentity===snapshot.questionIdentity);
                     // 无平台 ID 的未解除题目按内容保守关联；重渲染和回看不能重置计数。
@@ -205,7 +217,7 @@
                     if(!record){record={key:snapshot.key,questionIdentity:snapshot.questionIdentity,videoIdentity:snapshot.videoIdentity,cueSeconds:snapshot.cueSeconds,fingerprint:snapshot.fingerprint,identitySource:snapshot.identitySource,phase:'reading',attempts:0,history:[],submissionStarted:false,outcomeConfirmed:false};records.push(record);}
                     record.questions=snapshot.questions.slice(0,50).map(q=>({id:q.id,number:q.number,type:q.type,question:q.question.slice(0,2000),instructions:(q.instructions||'').slice(0,400),options:q.options.slice(0,30).map(o=>({key:o.key,text:o.text.slice(0,800)}))}));
                     // 已开始但未获结果的动作只等待，不因刷新或新运行重复确认。
-                    if(records.some(r=>r.submissionStarted&&!r.outcomeConfirmed)){hooks.submitting(true);record.submissionStarted=true;record.outcomeConfirmed=false;manual('上次确认结果不明，请人工核对，禁止重复确认');}
+                    if(records.some(r=>r.submissionStarted&&!r.outcomeConfirmed)){hooks.submitting(true);record.submissionStarted=true;record.outcomeConfirmed=false;manual('上次确认结果不明，请人工核对，禁止重复确认',courseVideoQuizError('CX-EXE-006','上次确认结果不明'));}
                     else if(courseVideoQuizHasAnswers(snapshot))manual('弹题已有手工作答，等待人工处理');
                     else if(courseVideoQuizReadOnlyControls(snapshot)||!courseVideoQuizButton(candidate))manual('弹题控件或确认入口尚未可靠适配');
                     else if(record.phase==='replay-wait')record.phase='reading';
@@ -235,14 +247,14 @@
                     candidate=rebind()||candidate;
                     if(!candidate.root.isConnected||!courseElementVisible(candidate.root)){manual('弹题在解答前发生变化，等待人工处理');continue;}
                     try {
-                        snapshot=courseVideoQuizSnapshot(candidate);
+                        snapshot=courseVideoQuizSnapshot(candidate);snapshotInvalidation=null;
                         const before=courseVideoQuizAnswers(snapshot);
                         child=new AbortController();const cancel=()=>child.abort();hooks.signal.addEventListener('abort',cancel,{once:true});
-                        const signatureGuard=()=>{guard();if(intervened)throw new Error('用户已介入弹题，等待人工处理');
-                            const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw new Error('弹题已重新渲染，等待人工处理');
-                            if(courseVideoQuizSnapshot(current).signature!==snapshot.signature)throw new Error('弹题内容已变化，等待人工处理');
+                        const signatureGuard=()=>{guard();if(snapshotInvalidation)throw snapshotInvalidation;if(intervened)throw courseVideoQuizError('CX-EXE-004','用户已介入弹题，等待人工处理');
+                            const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw courseVideoQuizError('CX-CTL-006','弹题已重新渲染，等待人工处理');
+                            assertQuestionSnapshot(snapshot);
                             const actual=courseVideoQuizAnswers(snapshot);
-                            if(!scriptWriting&&[...before].some(([id,value])=>JSON.stringify(value.keys||value.value)!==JSON.stringify(actual.get(id)?.keys||actual.get(id)?.value)))throw new Error('弹题答案已被修改，等待人工处理');};
+                            if(!scriptWriting&&[...before].some(([id,value])=>JSON.stringify(value.keys||value.value)!==JSON.stringify(actual.get(id)?.keys||actual.get(id)?.value)))throw courseVideoQuizError('CX-EXE-004','弹题答案已被修改，等待人工处理');};
                         snapshot.checkCurrent=signatureGuard;
                         record.phase='analyzing';save();
                         const feedback=snapshot.questions.map(q=>({questionId:q.id,previousAttempts:record.history.filter(h=>h.wrong).map(h=>({answer:h.answers.find(a=>a.id===q.id)?.answer||[],feedback:h.feedback}))})).filter(item=>item.previousAttempts.length);
@@ -256,9 +268,12 @@
                         if(repeated){manual('AI 再次返回已经判错的答案，未重复确认');continue;}
                         record.phase='prefilling';save();scriptWriting=true;
                         const summary=await hooks.prefill(snapshot,result.answers,{ownedAnswers:owned,onWrite:value=>{nativeWrite=value;}});
-                        scriptWriting=false;guard();owned=courseVideoQuizAnswers(snapshot);
+                        // Validate the completed script-owned write before ending its authorization.
+                        // The analysis guard still compares the original answer state until replaced below.
+                        guard();assertQuestionSnapshot(snapshot);owned=courseVideoQuizAnswers(snapshot);scriptWriting=false;
                         if(unresolved.length||result.answers.length!==snapshot.questions.length||summary.skipped||summary.unverified||summary.filled+summary.already!==snapshot.questions.length){manual('支持题已填写，仍有题目或控件需人工处理，未确认');continue;}
-                        snapshot.checkCurrent=()=>{guard();if(intervened)throw new Error('用户已介入弹题，等待人工处理');};
+                        snapshot.checkCurrent=()=>{guard();if(intervened)throw courseVideoQuizError('CX-EXE-004','用户已介入弹题，等待人工处理');assertQuestionSnapshot(snapshot);};
+                        snapshot.checkCurrent();
                         const button=courseVideoQuizButton(candidate);
                         if(!button){manual('确认按钮不可用，未确认');continue;}
                         record.phase='submitting';record.submissionStarted=true;record.outcomeConfirmed=false;record.attempts++;
@@ -281,10 +296,10 @@
                                 candidate=next;record.phase='reading';save();break;
                             }
                             if(gateReleased(attemptState)){record.phase='passed';record.gateResult='平台解除门槛并恢复实际播放';record.outcomeConfirmed=true;record.submissionStarted=false;hooks.submitting(false);save();break;}
-                            if(hooks.now()>=deadline){manual('确认结果不明，请人工核对，禁止重复确认');break;}
+                            if(hooks.now()>=deadline){manual('确认结果不明，请人工核对，禁止重复确认',courseVideoQuizError('CX-EXE-003','确认结果不明'));break;}
                             hooks.status(`视频弹题第 ${record.attempts}/6 次确认，等待平台结果`);await hooks.wait();
                         }
-                    }catch(error){scriptWriting=false;guard();manual(error.message);}
+                    }catch(error){scriptWriting=false;guard();const failure=snapshotInvalidation||error;manual(failure.message,failure);}
                 }
             }finally{
                 child?.abort();video.removeEventListener('error',onMediaError);observer.disconnect();initial.root.removeEventListener('input',onEdit,true);initial.root.removeEventListener('change',onEdit,true);initial.root.removeEventListener('click',onEdit,true);

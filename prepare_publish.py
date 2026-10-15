@@ -21,8 +21,9 @@ paths = ['.gitignore', 'AGENTS.md', 'README.md', 'CHANGELOG.md', '学习通AI助
          'tests/analysis-task-dom.cjs', 'tests/model-providers-dom.cjs', 'tests/course-context-dom.cjs', 'tests/course-video-info-dom.cjs', 'tests/model-capability-dom.cjs', 'tests/course-info-integration-dom.cjs', 'tests/panel-window-dom.cjs', 'tests/credential-settings-dom.cjs', 'tests/provider-logos-dom.cjs', 'tests/p0-page-actions-dom.cjs', 'tests/p0-browser-smoke.cjs', 'tests/自动课程模拟.html']
 paths += [str(p.relative_to(root)) for p in (root / 'sources').iterdir() if p.suffix in ('.js', '.html')]
 paths += [str(p.relative_to(root)) for p in (root / 'docs').glob('*.md')]
-paths += ['docs/脚本使用风险分析图.html']
+paths += ['docs/脚本使用风险分析图.html', 'docs/v1.20发布验证.json']
 paths += ['tests/video-quiz-dom.cjs', 'tests/video-quiz-results.json']
+paths += ['tests/video-speed-dom.cjs', 'tests/video-speed-fixture.cjs', 'tests/video-speed-results.json', 'docs/倍速与启动更新回归结果.json']
 paths += ['tests/assistant-updates-dom.cjs', 'tests/assistant-updates-results.json']
 paths += ['tests/model-fixture.cjs', 'tests/ui-model-fixes-dom.cjs', 'tests/ui-model-fixes-results.json']
 paths += ['tests/answer-policy-dom.cjs', 'tests/answer-policy-mock.cjs', 'tests/answer-policy-results.json']
@@ -30,6 +31,13 @@ paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*') if p.is
 paths += [str(p.relative_to(root)) for p in (root / 'vendor/font').rglob('*') if p.is_file()]
 paths += ['tests/font-dependencies-dom.cjs']
 paths += ['tests/fixtures/video-quiz-tktopic.html']
+paths += ['tests/fixtures/video-speed-chaoxing-menu.html', 'docs/倍速菜单兼容回归结果.json']
+paths += ['tests/errors-dom.cjs', 'tests/question-context-dom.cjs',
+          'tests/question-graph-dom.cjs', 'tests/question-actions-dom.cjs',
+          'tests/architecture-integration-dom.cjs',
+          'tests/question-context-results.json', 'tests/question-graph-results.json',
+          'tests/question-actions-results.json', 'tests/architecture-integration-results.json',
+          'docs/架构升级回归结果.json']
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]
 if args.skip_readme:

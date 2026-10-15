@@ -48,7 +48,7 @@ const custom = `<div class="TiMu" questionid="custom"><div class="stem">【教�
   const f=fixture(custom);try{f.api.initQuizAssistant();await f.api.runAnswerFlow();assert.equal(f.requests.length,0);assert.equal(f.api.controller.result.questions[0].type,'unknown');assert.equal(f.api.controller.state.phase,'done');}finally{f.close();}
  });
  await test('嵌套题容器去重、重复 ID 阻止、控件变化影响签名',async()=>{
-  const f=fixture('<div class="TiMu"><div class="stem">容器</div>'+radio('1')+'</div>');try{assert.equal(f.api.extract().total,1);const before=f.api.signature(f.api.extract().questions);f.d.querySelector('input').disabled=true;assert.notEqual(f.api.signature(f.api.extract().questions),before);f.d.body.insertAdjacentHTML('beforeend',radio('1'));assert.throws(()=>f.api.extract(),/ID 重复/);}finally{f.close();}
+  const f=fixture('<div class="TiMu"><div class="stem">容器</div>'+radio('1')+'</div>');try{assert.equal(f.api.extract().total,1);const before=f.api.signature(f.api.extract().questions);f.d.querySelector('input').disabled=true;assert.notEqual(f.api.signature(f.api.extract().questions),before);f.d.body.insertAdjacentHTML('beforeend',radio('1'));assert.throws(()=>f.api.extract(),error=>error.cxCode==='CX-PAR-007');}finally{f.close();}
  });
  await test('跨题共享单选组和重复选项键禁止预填，避免影响其他题目',async()=>{
   const html=(radio('1')+radio('2')).replaceAll('name="r1"','name="shared"').replaceAll('name="r2"','name="shared"');

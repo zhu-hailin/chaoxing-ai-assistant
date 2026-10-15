@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.19
+// @version      1.20
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -22,6 +22,7 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      api.deepseek.com
 // @connect      api.openai.com
 // @connect      dashscope.aliyuncs.com
@@ -43,7 +44,7 @@
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.19';
+    const ASSISTANT_VERSION = '1.20';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -89,9 +90,9 @@
         const parsed = parseQuestionDocument(doc, parseContext);
         const questions = parsed.questions;
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
-            throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
+            throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.19', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.20', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -100,23 +101,30 @@
             media:media.map(item => [item.id,item.groupId,item.sourceQuestionId,item.location,item.optionKey,item.src]) });
     }
 
-    function cancelledError() {
-        const error = new Error('请求已取消'); error.name = 'AbortError'; error.code = 'ABORTED'; return error;
+    let assistantRequestSequence = 0;
+    const assistantResponseContexts = new WeakMap();
+    function requestContextForResponse(response, context) {
+        if (!response || typeof response !== 'object') return {};
+        if (context) assistantResponseContexts.set(response,context);
+        return assistantResponseContexts.get(response) || {};
+    }
+    function cancelledError(context={}) {
+        const error = createCxError('CX-EXE-005', {module:'request',operation:'cancel',...context}, {legacyCode:'ABORTED'}); error.name = 'AbortError'; return error;
     }
     function throwIfAborted(signal) { if (signal?.aborted) throw cancelledError(); }
-    function requestFailure(message, code, status) {
-        const error = new Error(message); error.code = code; if (status !== undefined) error.status = status; return error;
+    function requestFailure(message, code, status, context={}) {
+        const codes = {NETWORK:'CX-NET-001',TIMEOUT:'CX-NET-002',BAD_JSON:'CX-RES-001',NO_API_KEY:'CX-CFG-001',NO_MODEL:'CX-CFG-002',NO_ENDPOINT:'CX-CFG-003',ENDPOINT_NOT_APPROVED:'CX-CFG-005',EMPTY_REPLY:'CX-RES-003',BAD_RESPONSE:'CX-RES-002',MODEL_ERROR:'CX-RES-007'};
+        const cxCode = code === 'HTTP' && Number.isInteger(status) && status >= 100 && status <= 599 ? `CX-HTTP-${status}` : codes[code] || 'CX-EXE-001';
+        return createCxError(cxCode, {module:'request',operation:'request',httpStatus:status,...context}, {legacyCode:code,status});
     }
-    function requestJSON({ method, url, key, data, timeout = 90000, extraHeaders = {}, signal }) {
+    function requestJSON({ method, url, key, data, timeout = 90000, extraHeaders = {}, signal, diagnosticTaskId }) {
         return new Promise((resolve, reject) => {
             if (data !== undefined) assertRequestSize(data);
-            const errorText=value=>{
-                const secret=String(key ?? ''),text=String(value ?? '');
-                return clean(secret ? text.split(secret).join('[已隐藏]') : text).slice(0,220);
-            };
+            const context={module:'request',operation:'request',requestId:`cx-request-${++assistantRequestSequence}`,taskId:diagnosticTaskId,method};
+
             let handle, settled = false;
             const finish = (callback,value) => { if(settled)return;settled=true;signal?.removeEventListener('abort',abort);callback(value); };
-            const abort = () => { finish(reject,cancelledError());handle?.abort?.(); };
+            const abort = () => { finish(reject,cancelledError(context));handle?.abort?.(); };
             if(signal?.aborted) {abort();return;}
             signal?.addEventListener('abort',abort,{once:true});
             try { handle = GM_xmlhttpRequest({
@@ -125,19 +133,22 @@
                 ...(data === undefined ? {} : { data: JSON.stringify(data) }),
                 onload(response) {
                     if(settled)return;
+                    const status = Number(response.status);
+                    // HTTP failure is primary even when its body is HTML or invalid JSON.
+                    if (Number.isInteger(status) && status >= 100 && (status < 200 || status >= 300))
+                        return finish(reject,requestFailure('', 'HTTP', status, context));
+                    if (!Number.isInteger(status) || status < 200 || status >= 300)
+                        return finish(reject,requestFailure('', 'NETWORK', undefined, context));
                     let obj;
-                    try { obj = JSON.parse(response.responseText || '{}'); }
-                    catch { return finish(reject,requestFailure(`服务响应不是 JSON (HTTP ${response.status})`, response.status >= 500 ? 'HTTP' : 'BAD_JSON', response.status)); }
-                    if (response.status < 200 || response.status >= 300) {
-                        const message = errorText(obj?.error?.message || obj?.detail?.error || obj?.detail || '请求失败');
-                        return finish(reject,requestFailure(`HTTP ${response.status}：${message}`, 'HTTP', response.status));
-                    }
+                    try { obj = JSON.parse(response.responseText); }
+                    catch { return finish(reject,requestFailure('', 'BAD_JSON', status, context)); }
+                    requestContextForResponse(obj,context);
                     finish(resolve,obj);
                 },
-                onerror: () => finish(reject,requestFailure('网络请求失败，请检查代理和 API 地址','NETWORK')),
-                ontimeout: () => finish(reject,requestFailure('请求超时，请稍后重试','TIMEOUT')),
-                onabort: () => finish(reject,cancelledError())
-            }); } catch(error) { finish(reject,error); }
+                onerror: () => finish(reject,requestFailure('','NETWORK',undefined,context)),
+                ontimeout: () => finish(reject,requestFailure('','TIMEOUT',undefined,context)),
+                onabort: () => finish(reject,cancelledError(context))
+            }); } catch(error) { finish(reject,createCxError('CX-NET-001',context,{legacyCode:'NETWORK',cause:error})); }
             if(signal?.aborted) abort();
         });
     }
@@ -147,13 +158,19 @@
     }
 
     function normalize(raw, questions) {
-        if (!raw || !Array.isArray(raw.answers)) throw new Error('AI 未返回 answers 数组');
-        const answers = new Map();
+        const context={...requestContextForResponse(raw),module:'model',operation:'answers'};
+        if (!raw || !Array.isArray(raw.answers)) throw createCxError('CX-RES-002',context,{legacyCode:'BAD_RESPONSE'});
+        const answers = new Map(), expected = new Set(questions.map(q=>String(q.id)));
         for (const entry of raw.answers) {
-            if (entry && typeof entry === 'object' && !answers.has(String(entry.id))) {
-                answers.set(String(entry.id), entry);
-            }
+            if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !Array.isArray(entry.answer) || !entry.answer.every(x=>typeof x==='string'))
+                throw createCxError('CX-RES-005',context,{legacyCode:'BAD_ANSWER'});
+            const id=String(entry.id);
+            if (!expected.has(id) || answers.has(id))
+                throw createCxError('CX-RES-006',context,{legacyCode:'BAD_ANSWER_IDS'});
+            answers.set(id,entry);
         }
+        if (answers.size !== expected.size)
+            throw createCxError('CX-RES-006',context,{legacyCode:'BAD_ANSWER_IDS'});
         return questions.map(q => {
             const item = answers.get(q.id);
             let answer = item?.answer;
@@ -288,134 +305,7 @@
 
     // 只操作课程已有的选项点击事件；不触碰提交按钮、不伪造网络请求。
     async function prefill(questions, answers, checkCurrent = () => {}, doc = document, options = {}) {
-        const parsed = parseQuestionDocument(doc, options.parseContext), byId = parsed.bindings;
-        // 覆盖授权只属于显式的视频弹题上下文和原 DOM 绑定；默认入口继续保护已有答案。
-        const owned = options.parseContext?.scope === 'video-quiz' ? options.ownedAnswers : null;
-        const write = action => {options.onWrite?.(true);try {action();}finally {options.onWrite?.(false);}};
-        const currentQuestions=new Map(parsed.questions.map(q=>[q.id,q]));
-        const questionMap = new Map(questions.map(q => [q.id, q]));
-        const summary = { filled: 0, already: 0, skipped: 0, unverified: 0, details: [] };
-        try {
-        for (const entry of answers) {
-            checkCurrent();
-            const q = questionMap.get(entry.id);
-            const binding = byId.get(entry.id);
-            const el = binding?.node;
-            const previous = owned?.get(entry.id);
-            const owns = previous && previous.node === el;
-            if (!q || !el) {
-                summary.skipped++;
-                summary.details.push(`第${entry.number}题：无有效答案或题目不存在`);
-                continue;
-            }
-            const policy=questionPrefillPolicy(currentQuestions.get(entry.id) || q,entry);
-            if(!questionCanAutoAnswer(q,policy)) {
-                summary.skipped++;summary.details.push(`第${q.number}题：${policy.reason || '需人工处理'}，跳过`);continue;
-            }
-            if(!entry.answer.length) {
-                summary.skipped++;summary.details.push(`第${q.number}题：${entry.reason || '无有效答案，需人工核对'}`);continue;
-            }
-            if (!binding.canPrefill) {
-                summary.skipped++; summary.details.push(`第${q.number}题：${q.diagnostics?.join('；') || '控件映射不可靠'}，跳过`);
-                continue;
-            }
-            if (['blank','essay'].includes(q.type)) {
-                // 仅支持恰好一个可编辑文本框；保留手工填写内容。
-                const inputs = binding.inputs.filter(input => !input.disabled && !input.readOnly);
-                if (inputs.length !== 1) {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：填空结构不确定，跳过`);
-                    continue;
-                }
-                const input = inputs[0];
-                if (owns && (previous.input !== input || input.value !== previous.value)) throw new Error('用户已修改弹题答案，等待人工处理');
-                if (clean(input.value) && !owns) {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：已有填写内容，跳过`);
-                    continue;
-                }
-                input.focus();
-                const realm = input.ownerDocument.defaultView;
-                const proto = input instanceof realm.HTMLTextAreaElement ? realm.HTMLTextAreaElement.prototype : realm.HTMLInputElement.prototype;
-                const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-                if (descriptor?.set) descriptor.set.call(input, entry.answer[0]);
-                else input.value = entry.answer[0];
-                input.dispatchEvent(new realm.Event('input', { bubbles: true }));
-                input.dispatchEvent(new realm.Event('change', { bubbles: true }));
-                await waitFor(() => input.value === entry.answer[0]);
-                checkCurrent();
-                if (input.value === entry.answer[0]) summary.filled++;
-                else { summary.unverified++; summary.details.push(`第${q.number}题：已填写，请核对控件状态`); }
-                continue;
-            }
-            const optionMap = binding.optionTargets;
-            const targetKeys = new Set(entry.answer);
-            if (!targetKeys.size || [...targetKeys].some(k => !optionMap.has(k))) {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：选项无法对应，跳过`);
-                continue;
-            }
-            const activeKeys = new Set([...optionMap].filter(([, li]) => selected(li)).map(([key]) => key));
-            // 一些版本的 aria-checked 不会立即更新；额外检查学习通原有隐藏答案输入框。
-            const hiddenAnswer = options.parseContext?.scope === 'video-quiz' ? null : [...el.querySelectorAll('input[type="hidden"]')]
-                .find(input => input.name === `answer${q.id}`);
-            const saved = clean(hiddenAnswer?.value);
-            if (saved && activeKeys.size === 0) {
-                const keys = savedKeys(saved, optionMap);
-                if (keys.length && keys.every(key => optionMap.has(key))) {
-                    keys.forEach(key => activeKeys.add(key));
-                } else {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：已有无法识别的手工答案，跳过`);
-                    continue;
-                }
-            }
-            // 重试前再核对上一轮脚本实际填入的选项；用户介入不能获得覆盖授权。
-            if (owns && (previous.keys.length !== activeKeys.size || previous.keys.some(k => !activeKeys.has(k)))) throw new Error('用户已修改弹题答案，等待人工处理');
-            if (options.parseContext?.scope === 'video-quiz' && activeKeys.size && !owns) {
-                summary.skipped++;summary.details.push(`第${q.number}题：已有手工作答，等待人工处理`);continue;
-            }
-            if (owns && q.type === 'multiple') for (const key of activeKeys) {
-                if (!targetKeys.has(key)) {checkCurrent();write(()=>optionMap.get(key).click());}
-            }
-            // 普通入口不覆盖手工选择的不同答案。
-            if (!owns && [...activeKeys].some(k => !targetKeys.has(k))) {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：已有不同选项，未覆盖`);
-                continue;
-            }
-            const needed = [...targetKeys].filter(k => !activeKeys.has(k));
-            if (!needed.length) { summary.already++; continue; }
-            if ((q.type === 'single' || q.type === 'judge') && needed.length !== 1) {
-                summary.skipped++; continue;
-            }
-            let clicked = 0;
-            for (const key of needed) {
-                const li = optionMap.get(key);
-                if (!li || li.disabled || li.hasAttribute('disabled') || li.classList.contains('disabled') || li.getAttribute('aria-disabled') === 'true') continue;
-                checkCurrent();
-                write(()=>li.click());
-                clicked++;
-            }
-            // 有些版本异步更新选中状态，所以无法实时确认时单独报告。
-            const isVerified = () => {
-                const current = new Set([...optionMap].filter(([, li]) => selected(li)).map(([key]) => key));
-                const savedNow = clean(hiddenAnswer?.value);
-                if (savedNow) savedKeys(savedNow, optionMap).forEach(key => current.add(key));
-                return current.size === targetKeys.size && [...targetKeys].every(k => current.has(k));
-            };
-            await waitFor(isVerified);
-            checkCurrent();
-            const verified = isVerified();
-            if (verified && clicked === needed.length) summary.filled++;
-            else if (clicked) {
-                summary.unverified++;
-                summary.details.push(`第${q.number}题：已触发点击，请手动检查是否选中`);
-            } else {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：控件不可用，跳过`);
-            }
-        }
-        } catch(error) { error.prefillSummary = { ...summary, details:[...summary.details] }; throw error; }
-        return summary;
+        const snapshot = options.snapshot || {questions,doc,parseContext:options.parseContext};
+        const plan = planQuestionActions(snapshot,answers,{...options,checkCurrent});
+        return executeQuestionActions(plan,{...options,checkCurrent});
     }

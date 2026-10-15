@@ -73,16 +73,9 @@
     function courseTaskContains(container, node) {
         // contains 只能比较同一 DOM 树；通过 frameElement 将内层节点投影到祖先文档。
         // 与 courseTaskContainer 使用相同深度边界；不可访问或无法证明归属时返回 false。
-        if(!container?.contains || !node)return false;
-        for(let depth=0,candidate=node;candidate && depth<12;depth++) {
-            try {
-                if(container===candidate || container.contains(candidate))return true;
-                const doc=candidate.nodeType===9?candidate:candidate.ownerDocument;
-                candidate=doc?.defaultView?.frameElement;
-            } catch {return false;}
-        }
-        return false;
+        return describeNodeRelation(container,node).status === 'inside';
     }
+
     function courseTaskContainer(node) {
         // 播放器本身和外层附件 iframe 都可能提供任务状态。
         let candidate = node, container = null;
@@ -122,6 +115,108 @@
         let focused=false;
         try {focused=typeof owner.hasFocus==='function'&&owner.hasFocus();}catch{}
         return {visible:owner.visibilityState==='visible',focused};
+    }
+    function courseVideoPlayerWindow(doc) {
+        // DOM 沙箱未必能直接看到页面的 Video.js；只读取同源页面实例，不向页面写变量。
+        if (typeof unsafeWindow === 'undefined') return doc.defaultView;
+        const frames=[];
+        for(let current=doc;current!==document;) {
+            if(frames.length>=12)return null;
+            const frame=current.defaultView?.frameElement;
+            if(!frame)return null;
+            frames.unshift(frame);current=frame.ownerDocument;
+        }
+        let view=unsafeWindow;
+        for(const frame of frames) {
+            const actual=[...view.document.querySelectorAll('iframe,frame')].find(node=>node.isSameNode(frame));
+            if(!actual)return null;
+            view=actual.contentWindow;
+        }
+        return view;
+    }
+    function courseVideoSpeedCapability(video) {
+        const result = (status, evidence, extra = {}) => ({status, rates:[], evidence, ...extra});
+        try {
+            const root = video?.closest('.video-js');
+            if (!root || !video.isConnected || !courseElementVisible(video)) return result('unknown','player-unavailable');
+            const view = courseVideoPlayerWindow(video.ownerDocument);
+            const pageRoot = [...(view?.document.querySelectorAll('.video-js') || [])].find(node=>node.isSameNode(root));
+            // 只查询已有实例，传真实 Element 而非 id；绝不调用会初始化播放器的 videojs()。
+            const players = [...new Set([pageRoot?.player, view?.videojs?.getPlayer?.(pageRoot)].filter(Boolean))];
+            if (players.length !== 1) return result('unknown','player-unavailable');
+            const player = players[0];
+            if (player.isDisposed?.() || !player.el?.()?.isSameNode(root) || root.querySelectorAll('video').length !== 1
+                || root.querySelector('video') !== video) return result('unknown','player-mismatch');
+            const options = typeof player.options === 'function' ? player.options() : player.options_;
+            const configured = options?.playbackRates;
+            const bar = player.getChild?.('controlBar') || player.controlBar;
+            const button = bar?.getChild?.('playbackRateMenuButton') || bar?.playbackRateMenuButton;
+            const buttonNode = button?.el?.();
+            const menuAvailable = buttonNode?.ownerDocument?.isSameNode(video.ownerDocument) && root.contains(buttonNode)
+                && courseElementVisible(buttonNode) && !buttonNode.closest('.vjs-hidden,.vjs-disabled,[disabled],[aria-disabled="true"]');
+            if (configured === false) return result(menuAvailable ? 'unknown' : 'disabled',menuAvailable ? 'configuration-conflict' : 'native-disabled');
+            if (!Array.isArray(configured) || !configured.length || configured.length > 64
+                || configured.some(rate => typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0)) return result('unknown','configuration-unavailable');
+            const rates = [...new Set(configured)].sort((a,b)=>a-b);
+            if (video.readyState < 2 || player.isReady_ === false) return result('unknown','player-unready');
+            // 只读取当前任务附近的明确限制，不用任务完成状态推测权限。
+            for (const scope of new Set([root, courseTaskContainer(video)].filter(Boolean))) {
+                for (const node of scope.querySelectorAll('p,span,div,li')) {
+                    if (node.childElementCount || !courseElementVisible(node) || node.closest(`${QUESTION_SELECTOR},.ans-videoquiz,#${ROOT_ID}`)) continue;
+                    const text = clean(node.textContent);
+                    if (text.length <= 160 && /(?:不可|禁止|不得|不允许|不支持|无法).{0,8}(?:倍速|变速)|(?:倍速|变速).{0,8}(?:禁止|关闭|不可用)/.test(text)) return result('disabled','explicit-restriction');
+                }
+            }
+            if (!menuAvailable || button.player?.() !== player || button.playbackRateSupported?.() === false) return result('unknown','menu-unavailable');
+            const parseRate = value => /^\d+(?:\.\d+)?\s*[x×倍]?$/i.test(String(value).trim()) ? Number.parseFloat(value) : NaN;
+            // 现场 7.2.2 使用这个原生菜单结构。标签 + 当前实例配置即可确认档位，
+            // 不要求平台定制的每个 MenuItem 都暴露 options().rate 等内部字段。
+            const nativeNodes = [...buttonNode.querySelectorAll('.vjs-menu-content[role="menu"] > .vjs-menu-item[role="menuitemradio"]')];
+            const items = nativeNodes.length ? nativeNodes.map(node => {
+                const labels = node.querySelectorAll('.vjs-menu-item-text');
+                return {node, rate:labels.length===1 ? parseRate(clean(labels[0].textContent)) : NaN};
+            }) : (Array.isArray(button.items) ? button.items : []).map(item => ({node:item.el?.(),
+                rate:parseRate(item.options?.()?.rate ?? item.rate), player:item.player?.()}));
+            if (items.length !== rates.length || items.some(item => (!nativeNodes.length && item.player !== player) || !item.node?.matches('.vjs-menu-item')
+                || !buttonNode.contains(item.node) || item.node.closest('.vjs-disabled,[disabled],[aria-disabled="true"]') || !rates.includes(item.rate))
+                || new Set(items.map(item=>item.rate)).size !== rates.length) return result('unknown','menu-conflict');
+            if (typeof player.playbackRates === 'function') {
+                const actual = player.playbackRates();
+                if (!Array.isArray(actual) || JSON.stringify([...new Set(actual)].sort((a,b)=>a-b)) !== JSON.stringify(rates)) return result('unknown','configuration-conflict');
+            }
+            return result('allowed',nativeNodes.length?'native-configuration-and-dom-menu':'native-configuration-and-menu',{rates, player, button, items});
+        } catch { return result('unknown','player-unreadable'); }
+    }
+    function courseApplyVideoSpeed(video, attempts, {enabled=true, disabledReason='switch-off'} = {}) {
+        const capability = courseVideoSpeedCapability(video);
+        const state = {status:capability.status, rates:capability.rates, evidence:capability.evidence, selectedRate:null, outcome:'unchanged'};
+        if (!enabled) return {...state,outcome:disabledReason};
+        if (capability.status !== 'allowed') return state;
+        const target = capability.rates.filter(rate=>rate>1 && rate<=2).at(-1);
+        if (!target) return {...state,outcome:'no-faster-rate'};
+        state.selectedRate = target;
+        if (video.playbackRate >= target) return {...state,outcome:'already-selected'};
+        const item = capability.items.find(item=>item.rate===target), signature = capability.rates.join(',');
+        const tried = attempts.get(item.node) || new Set();
+        if (tried.has(signature)) return {...state,outcome:'not-retained'};
+        const button = capability.button, menu = button.menu, buttonNode = button.el();
+        let opened = false;
+        try {
+            if (!courseElementVisible(item.node)) {
+                if (typeof menu?.show !== 'function' || typeof menu?.hide !== 'function'
+                    || typeof button.addClass !== 'function' || typeof button.removeClass !== 'function') return {...state,outcome:'menu-unavailable'};
+                // 使用播放器自己的菜单显示接口；不点会循环切换速率的菜单按钮，也不抢焦点。
+                menu.show(); button.addClass('vjs-hover'); opened = true;
+            }
+            const fresh = courseVideoSpeedCapability(video);
+            if (fresh.status !== 'allowed' || fresh.player !== capability.player || fresh.button !== button
+                || !fresh.items.some(current=>current.node===item.node && current.rate===target) || !courseElementVisible(item.node)
+                || !courseElementVisible(buttonNode)) return {...state,status:'unknown',outcome:'menu-changed'};
+            tried.add(signature); attempts.set(item.node,tried);
+            item.node.click();
+            return {...state,outcome:video.playbackRate===target?'selected':'not-retained'};
+        } catch { return {...state,status:'unknown',outcome:'selection-failed'}; }
+        finally { if (opened) { try {button.removeClass('vjs-hover');menu.hide();} catch {} } }
     }
     function courseVisibleMarker(container, selector) {
         return Boolean(container && (container.matches(selector)&&courseElementVisible(container)
@@ -262,7 +357,7 @@
             || courseVisibleMarker(doc.body,'.ans-job-icon'));
     }
     function coursePageWithoutTasks(tree,tasks) {
-        if(tasks.some(task=>courseTaskRequired(task.node)===true))return false;
+        if(tasks.some(task=>courseTaskRequired(task.node)!==false))return false;
         if(coursePageHasTaskPoints(tree))return false;
         // 先完成加载等待，再按可见任务标记判断；不依赖标签名称或固定标签数量。
         // 空白、不可读框架仍不能证明无任务；无任务仅表示跳过，不写平台完成状态。

@@ -1,4 +1,8 @@
     // 图片只在用户启动分析后读取；请求内容不包含页面 URL、资源 URL 或 DOM。
+    function questionMediaError(message, operation = 'prepare-media') {
+        if (typeof createCxError === 'function') return createCxError('CX-PAR-006', {module:'question-media', operation});
+        const error = new Error(message); error.code = 'CX-PAR-006'; error.cxCode = 'CX-PAR-006'; return error;
+    }
     const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
     const MAX_REQUEST_BODY_BYTES = 44 * 1024 * 1024;
     const MAX_REQUEST_IMAGES = 600;
@@ -18,19 +22,19 @@
     }
     function readMediaBytes(src, doc = document, signal) {
         if(signal?.aborted)return Promise.reject(cancelledError());
-        if (!mediaAddressAllowed(src, doc)) return Promise.reject(new Error('图片地址缺失或不在已支持的资源域名内'));
+        if (!mediaAddressAllowed(src, doc)) return Promise.reject(questionMediaError('图片地址缺失或不在已支持的资源域名内'));
         const url = new URL(src, doc.baseURI);
         if (url.protocol === 'data:') {
             try {
                 const comma = src.indexOf(',');
                 const data = /;base64$/i.test(src.slice(0, comma)) ? atob(src.slice(comma + 1).replace(/\s/g, '')) : decodeURIComponent(src.slice(comma + 1));
                 return Promise.resolve(Uint8Array.from(data, character => character.charCodeAt(0)));
-            } catch { return Promise.reject(new Error('图片内联数据损坏')); }
+            } catch { return Promise.reject(questionMediaError('图片内联数据损坏')); }
         }
         if (url.protocol === 'blob:' || url.origin === new URL(doc.URL).origin) {
             return (async () => {
                 const view = doc.defaultView;
-                if (typeof view.fetch !== 'function') throw new Error('当前环境无法读取同源图片');
+                if (typeof view.fetch !== 'function') throw questionMediaError('当前环境无法读取同源图片');
                 const abort = new view.AbortController();
                 let timedOut = false;
                 const cancel = () => abort.abort();
@@ -41,7 +45,7 @@
                     const response = await view.fetch(src, { credentials:'same-origin', signal:abort.signal });
                     throwIfAborted(signal);
                     if (!response.ok) throw requestFailure(`图片读取失败 (HTTP ${response.status})`,'HTTP',response.status);
-                    if (response.url && !mediaAddressAllowed(response.url, doc)) throw new Error('图片重定向到未支持的资源域名');
+                    if (response.url && !mediaAddressAllowed(response.url, doc)) throw questionMediaError('图片重定向到未支持的资源域名');
                     const bytes = new Uint8Array(await response.arrayBuffer());
                     throwIfAborted(signal); return bytes;
                 } catch (error) {
@@ -63,8 +67,8 @@
                 onload(response) {
                     if(settled)return;
                     if (response.status < 200 || response.status >= 300) return finish(reject,requestFailure(`图片读取失败 (HTTP ${response.status})`,'HTTP',response.status));
-                    if (response.finalUrl && !mediaAddressAllowed(response.finalUrl, doc)) return finish(reject,new Error('图片重定向到未支持的资源域名'));
-                    try { finish(resolve,new Uint8Array(response.response)); } catch { finish(reject,new Error('图片响应格式不正确')); }
+                    if (response.finalUrl && !mediaAddressAllowed(response.finalUrl, doc)) return finish(reject,questionMediaError('图片重定向到未支持的资源域名'));
+                    try { finish(resolve,new Uint8Array(response.response)); } catch { finish(reject,questionMediaError('图片响应格式不正确')); }
                 },
                 onerror:()=>finish(reject,requestFailure('图片网络请求失败','NETWORK')),
                 ontimeout:()=>finish(reject,requestFailure('图片读取超时','TIMEOUT')),
@@ -80,7 +84,7 @@
         const ascii = (from,to) => String.fromCharCode(...bytes.slice(from,to));
         if (bytes.length >= 10 && ['GIF87a','GIF89a'].includes(ascii(0,6))) return 'image/gif';
         if (bytes.length >= 12 && ascii(0,4) === 'RIFF' && ascii(8,12) === 'WEBP') return 'image/webp';
-        throw new Error('图片文件损坏或格式不支持（支持 PNG、JPEG、GIF、WebP）');
+        throw questionMediaError('图片文件损坏或格式不支持（支持 PNG、JPEG、GIF、WebP）');
     }
     function bytesDataUrl(bytes, mime) {
         let binary = '';
@@ -100,9 +104,9 @@
             };
             if(signal?.aborted){cancel();return;}
             signal?.addEventListener('abort',cancel,{once:true});
-            timer = setTimeout(() => finish(new Error('图片解码超时')), 10000);
-            image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0 ? finish() : finish(new Error('图片尺寸无效'));
-            image.onerror = () => finish(new Error('图片解码失败'));
+            timer = setTimeout(() => finish(questionMediaError('图片解码超时')), 10000);
+            image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0 ? finish() : finish(questionMediaError('图片尺寸无效'));
+            image.onerror = () => finish(questionMediaError('图片解码失败'));
             image.src = dataUrl;
         });
     }
@@ -119,11 +123,11 @@
                     if (!cache.has(descriptor.src)) {
                         const pending = (async () => {
                             const bytes = await readMediaBytes(descriptor.src, doc, signal); check();
-                            if (!bytes.length) throw new Error('图片响应为空');
-                            if (bytes.length > MAX_IMAGE_BYTES) throw new Error('单张图片超过 32 MiB');
+                            if (!bytes.length) throw questionMediaError('图片响应为空');
+                            if (bytes.length > MAX_IMAGE_BYTES) throw questionMediaError('单张图片超过 32 MiB');
                             const mime = sniffImageMime(bytes), dataUrl = bytesDataUrl(bytes, mime);
                             const { width, height } = await decodeMediaSize(dataUrl, doc, signal); check();
-                            if (width > 8192 || height > 8192) throw new Error('图片单边尺寸超过 8192 像素');
+                            if (width > 8192 || height > 8192) throw questionMediaError('图片单边尺寸超过 8192 像素');
                             const subtle = doc.defaultView.crypto?.subtle;
                             const digest = subtle ? [...new Uint8Array(await subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2,'0')).join('') : null;
                             check();return { mime, dataUrl, byteLength:bytes.length, width, height, digest };
@@ -145,18 +149,32 @@
         } finally { cache.clear(); }
     }
 
+    function questionRequestBlocks(question) {
+        // Structured content is copied through a fixed field list; never serialize
+        // adapter hints, runtime nodes, controls, actual input values or resource URLs.
+        return (question.blocks || []).map(block => {
+            const output = {type:block.type};
+            if (['text','code','instruction','shared-context','slot','subquestion'].includes(block.type) && typeof block.text === 'string') output.text = block.text;
+            if (block.type === 'image' && typeof block.mediaId === 'string') output.mediaId = block.mediaId;
+            if (block.type === 'math' && typeof block.expression === 'string') output.expression = block.expression;
+            if (block.type === 'table' && Array.isArray(block.rows)) output.rows = block.rows.map(row => row.map(value => String(value)));
+            if (block.unreadable) output.unreadable = true;
+            return output;
+        });
+    }
     function toAIQuestion(question) {
         return { id:question.id, number:question.number, type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
-            imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [] };
+            imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [],
+            ...(question.blocks ? {blocks:questionRequestBlocks(question)} : {}) };
     }
     function requestMedia(questions, preparedMedia) {
         const byContent = new Map();
         for (const question of questions) {
             for (const id of questionImageIds(question)) {
                 const asset = preparedMedia.get(id);
-                if (!asset) throw new Error(`第 ${question.number} 题图片未准备完整`);
+                if (!asset) throw questionMediaError(`第 ${question.number} 题图片未准备完整`);
                 // 以完整内容去重，不依赖短摘要或 URL 判断两张图片是否相同。
                 let record = byContent.get(asset.dataUrl);
                 if (!record) { record = { asset, imageIds:[], sources:[], questionIds:[] }; byContent.set(asset.dataUrl, record); }
@@ -165,9 +183,9 @@
             }
         }
         const records = [...byContent.values()];
-        if (records.length > MAX_REQUEST_IMAGES) throw new Error('单次请求超过 600 张图片');
+        if (records.length > MAX_REQUEST_IMAGES) throw questionMediaError('单次请求超过 600 张图片');
         const edge = records.length >= 15 ? 4096 : 8192;
-        if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw new Error(`本批图片单边尺寸超过 ${edge} 像素`);
+        if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw questionMediaError(`本批图片单边尺寸超过 ${edge} 像素`);
         return records;
     }
     function buildChatContent(questions, evidence = {}, preparedMedia = new Map(), courseContext = [], answerFeedback = []) {
@@ -195,7 +213,7 @@
         return content;
     }
     function assertRequestSize(payload) {
-        if (new Blob([JSON.stringify(payload)]).size > MAX_REQUEST_BODY_BYTES) throw new Error('本次图文请求超过 44 MiB，请减少单题或同题组的图片材料');
+        if (new Blob([JSON.stringify(payload)]).size > MAX_REQUEST_BODY_BYTES) throw questionMediaError('本次图文请求超过 44 MiB，请减少单题或同题组的图片材料');
     }
     function normalizeMediaAnalysis(raw, questions, preparedMedia) {
         const records = requestMedia(questions, preparedMedia), entries = Array.isArray(raw.mediaAnalysis) ? raw.mediaAnalysis : [];

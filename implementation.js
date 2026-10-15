@@ -62,10 +62,10 @@
             const declaresSecretFont = styles.some(el => /@font-face[\s\S]*?font-cxsecret/.test(el.textContent));
             if (completed && !declaresSecretFont && roots.every(root => !GARBLED.test(root.textContent))) return;
         }
-        if (!base64) throw new Error('存在加密题目，但未找到可解析的 Base64 字体');
+        if (!base64) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
-                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('内置字体解析模块不可用，请重新安装完整脚本');
+                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw createCxError('CX-CFG-006',{module:'parser',operation:'font'});
                 if (!fontTable) fontTable = JSON.parse(GM_getResourceText('Table'));
                 const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                 const font = Typr.parse(bytes)[0];
@@ -82,7 +82,7 @@
                     }
                 }
                 return { mapping, encodedCodes };
-            });
+            }).catch(error=>{throw error.cxCode?error:createCxError('CX-PAR-005',{module:'parser',operation:'font'},{cause:error});});
             fontCache.set(base64, pending);
             pending.catch(() => fontCache.delete(base64));
         }
@@ -100,7 +100,7 @@
                     // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
                     if (!encodedCodes.has(code)) return char;
                     const decoded = mapping.get(code);
-                    if (decoded === undefined) throw new Error(`字体表缺少字形映射（U+${code.toString(16).toUpperCase()}），已保留原文并停止分析`);
+                    if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
                     return decoded;
                 });
                 edits.set(node, next);
@@ -297,7 +297,7 @@
 
     function formatResultText(data) {
         if (!data?.questions?.length) return '';
-        const answers = new Map((data.answers || []).map(entry => [entry.id, entry]));
+        const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
         const lines = [`题目列表（共 ${data.questions.length} 题）`];
         const appendImages = ids => {
             for (const id of ids) {
@@ -383,8 +383,8 @@
         if (!data?.questions?.length) {
             fragment.append(node('p', 'result-empty', '提取后将在这里显示题目列表'));
         } else {
-            const answers = new Map((data.answers || []).map(entry => [entry.id, entry]));
-            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
+            const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
+            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
             const list = node('ol', 'question-list');
             for (const question of data.questions) {
                 const entry = answers.get(question.id);
@@ -393,7 +393,7 @@
                 const heading = node('div', 'question-heading');
                 heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
                 card.append(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
-                const policy=data.answerPolicies?.[question.id] || entry?.answerPolicy || question.answerPolicy;
+                const policy=entry?.answerPolicy || data.answerPolicies?.[question.id] || question.answerPolicy;
                 if(policy)card.append(node('p','note answer-policy',policy.status==='auto'?'可一键答题':
                     `${policy.status==='manual'?'需人工处理':policy.status==='needs-classification'?'待判断作答要求':'需人工确认'}：${policy.reason || '请核对作答要求'}`));
                 if (question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
@@ -678,6 +678,10 @@
         initPanelNavigation();
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
+        el('copy-error-report').onclick = async () => {
+            try {await navigator.clipboard.writeText(exportCxDiagnostics());ctl.report('错误安全报告已复制');}
+            catch {ctl.report('无法访问剪贴板，请检查浏览器复制权限');}
+        };
         initAssistantUpdates(shadow);
         initCredentialEditor(el('api-key-editor'));
         el('model-setup-open').onclick = () => {
@@ -1066,6 +1070,8 @@
     function renderRunState(state) {
         if (!document?.defaultView || document.defaultView.document !== document) return;
         const busy = state.busy || courseRunActive();
+        const errorCode=panelView?.shadow.getElementById('last-error-code');
+        if(errorCode)errorCode.textContent=state.lastErrorCode || '';
         if (toolbarView) {
             const s = toolbarView.shadow;
             s.getElementById('generate').disabled = busy;
@@ -1118,16 +1124,63 @@
         }
     }
 
+    function extractQuestionSnapshot(doc = document, parseContext = {}, runtime = {}) {
+        const graph = parseQuestionGraph(doc,parseContext);
+        if (graph.questions.some(q=>GARBLED.test(q.question) || q.options.some(o=>GARBLED.test(o.text))))
+            throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+        return createQuestionSnapshot(graph,{...runtime,doc,parseContext});
+    }
     function checkSnapshot(snapshot) {
+        if(snapshot.graph) return assertQuestionSnapshot(snapshot.rootSnapshot || snapshot);
         snapshot.checkCurrent?.();
         const current = extract(snapshot.doc || document, snapshot.parseContext);
-        if (signature(current.questions, current.media) !== snapshot.signature) throw new Error('题目或图片与分析时不一致，已中止预填，请重新生成');
+        if (signature(current.questions, current.media) !== snapshot.signature)
+            throw createCxError('CX-PAR-008',{module:'parser',operation:'snapshot'},{legacyCode:'SNAPSHOT_CHANGED'});
+    }
+    function questionAnswerSnapshot(snapshot) {
+        if(snapshot.requestUnits)return snapshot;
+        checkSnapshot(snapshot);
+        const rootSnapshot=snapshot.graph?snapshot:extractQuestionSnapshot(snapshot.doc||document,snapshot.parseContext,{checkCurrent:snapshot.checkCurrent,signal:snapshot.signal,taskId:snapshot.taskId});
+        const requestUnits=buildQuestionRequestUnits(rootSnapshot.graph);
+        return {...rootSnapshot,rootSnapshot,courseContext:snapshot.courseContext,
+            sourceQuestions:rootSnapshot.questions,questions:requestUnits.questions,media:requestUnits.media,requestUnits};
+    }
+    function questionResultProjection(snapshot,result) {
+        const working=questionAnswerSnapshot(snapshot), byId=new Map(result.answers.map(a=>[a.id,a]));
+        const questionAnswers=(working.sourceQuestions||snapshot.questions).map(q=>{
+            const ids=working.requestUnits.unitsByQuestion.get(q.id)||[q.id],entries=ids.map(id=>byId.get(id)).filter(Boolean);
+            if(ids.length===1&&ids[0]===q.id)return entries[0];
+            if(!entries.length)return null;
+            const restricted=entries.find(a=>a.answerPolicy?.status==='manual')||entries.find(a=>a.answerPolicy?.status==='uncertain');
+            return {id:q.id,number:q.number,type:q.type,
+                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${i+1}. ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
+                reason:restricted?.answerPolicy?.reason||'按已确认的作答区域分别分析',
+                ...(restricted?{answerPolicy:restricted.answerPolicy}:{}),responseUnitIds:ids};
+        }).filter(Boolean);
+        return {...result,questionAnswers,responseUnitCount:working.questions.length};
+    }
+    function assistantErrorMessage(error,context={}) {
+        const batchIndex=error?.batchIndex,batchCount=error?.batchCount;
+        const hasBatch=Number.isSafeInteger(batchIndex)&&Number.isSafeInteger(batchCount)&&batchIndex>0&&batchIndex<=batchCount;
+        const diagnostic=recordCxDiagnostic(error,{...context,...(hasBatch?{batchIndex,batchCount}:{})});
+        if(controller)controller.state.lastErrorCode=diagnostic.code;
+        return `${hasBatch?`第 ${batchIndex}/${batchCount} 批：`:''}${diagnostic.message}（${diagnostic.code}）`;
+    }
+    function safeCourseDiagnosticReport(report) {
+        // Strict projection: no title/reason/question/answer/history, URL or account fields.
+        const states=new Set(['running','done','stopped','timed-out','manual-pending','unvisited','already','no-tasks','skipped']);
+        const counts={};
+        for(const chapter of report?.chapters||[])if(states.has(chapter.status))counts[chapter.status]=(counts[chapter.status]||0)+1;
+        const count=value=>Number.isSafeInteger(value)&&value>=0?value:0;
+        return JSON.stringify({schemaVersion:1,summary:{status:states.has(report?.status)?report.status:'unknown',
+            chapters:counts,videos:count(report?.videos),documents:count(report?.documents),quizzes:count(report?.quizzes)},
+            diagnostics:JSON.parse(exportCxDiagnostics())},null,2);
     }
     async function prefillChecked(snapshot, answers, options = {}) {
         await ensureFontDecoded(snapshot.doc || document, snapshot.parseContext);
         checkSnapshot(snapshot);
         if (!answers.some(a => a.answer.length)) throw new Error('没有有效答案可以预填');
-        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,parseContext:snapshot.parseContext});
+        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,snapshot:snapshot.rootSnapshot || snapshot,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
         return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
@@ -1165,8 +1218,10 @@
     function currentAnalysisSettings() {
         return readModelConfiguration();
     }
+    let assistantTaskSequence=0;
+    function newAssistantDiagnosticTaskId() {return `cx-task-${++assistantTaskSequence}`;}
     function createAnalysisTask(snapshot, settings, autoPrefill) {
-        return {id:Symbol('analysis'),snapshot,configuration:analysisConfiguration(settings),settings,
+        return {id:Symbol('analysis'),diagnosticTaskId:newAssistantDiagnosticTaskId(),snapshot,configuration:analysisConfiguration(settings),settings,
             autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
     }
     function checkAnalysisTask(task) {
@@ -1237,11 +1292,11 @@
     }
     function renderAnalysisProgress(task, complete=false) {
         if(controller?.task!==task || !task.snapshot)return;
-        const result=collectBatchResults(task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies);
+        const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies));
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
-        const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.19',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
+        controller.output({version: '1.20',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1268,6 +1323,8 @@
         }
     }
     async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},retryTransient=false}={}) {
+        snapshot=questionAnswerSnapshot(snapshot);
+        if(progress)progress.requestSnapshot=snapshot;
         const check=()=>{throwIfAborted(settings.signal);checkSnapshot(snapshot);};
         const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
@@ -1308,10 +1365,11 @@
                     onBatchComplete(record,i);
                 } catch(error) {
                     record.status=settings.signal?.aborted?'pending':'failed';record.error=error.message;
+                    error.batchIndex=i+1;error.batchCount=records.length;
                     error.message=`第 ${i+1}/${records.length} 批未完成：${error.message}；本次尚未预填`;throw error;
                 }
             }
-            return collectBatchResults(snapshot,records,skippedQuestions,true,policies);
+            return questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,true,policies));
         } finally {if(!progress)prepared.clear();}
     }
     function invalidateAnalysisTask(reason) {
@@ -1329,10 +1387,11 @@
         if(!task?.snapshot || ctl.state.busy || courseRunActive() || !['failed','stopped'].includes(task.status))return;
         const settings=currentAnalysisSettings();
         if(!settings.key){ctl.openPanel('model');ctl.report('请先保存 API Key，再重试未完成批次','error');return;}
+        // Explicit retry replaces the cancelled signal before validating the same frozen content.
+        task.abortController=new AbortController();
         try {
             if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(settings)))throw new Error('分析配置已变化，请重新分析');
-            const data=extract(task.snapshot.doc);
-            if(signature(data.questions,data.media)!==task.snapshot.signature)throw new Error('题目或图片已变化，请重新分析');
+            checkSnapshot(task.snapshot);
         } catch(error) {invalidateAnalysisTask(error.message);ctl.report(error.message,'error');return;}
         task.settings=settings;task.abortController=new AbortController();
         await executeAnalysisTask(task);
@@ -1345,21 +1404,20 @@
             checkAnalysisTask(task);await ensureFontDecoded(task.snapshot?.doc || document);checkAnalysisTask(task);
             if(!task.snapshot) {
                 ctl.report('正在提取题目…','extracting');
-                const data=extract();
-                task.snapshot={doc:document,schemaVersion:data.schemaVersion,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),
-                    courseContext:task.settings.videoInfoEnabled?captureCurrentCourseContext(document):[]};
+                task.snapshot=extractQuestionSnapshot(document,{}, {taskId:task.diagnosticTaskId,checkCurrent:()=>checkAnalysisTask(task)});
+                task.snapshot.courseContext=task.settings.videoInfoEnabled?captureCurrentCourseContext(document):[];
             }
             task.snapshot.checkCurrent=()=>checkAnalysisTask(task);
-            checkSnapshot(task.snapshot);task.status='preparing';task.skippedQuestions=analysisSkipped(task.snapshot,task.settings);renderAnalysisProgress(task);
+            checkSnapshot(task.snapshot);task.requestSnapshot=questionAnswerSnapshot(task.snapshot);task.status='preparing';task.skippedQuestions=analysisSkipped(task.requestSnapshot,task.settings);renderAnalysisProgress(task);
             if(!task.snapshot.questions.some(q=>q.capabilities.analyze)) {
                 task.status='complete';renderAnalysisProgress(task);ctl.report('已保留原始题目：当前题型尚未适配，请查看题目列表','done');return;
             }
-            const result=await solveQuestionBatches(task.snapshot,{...task.settings,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
+            const result=await solveQuestionBatches(task.snapshot,{...task.settings,diagnosticTaskId:task.diagnosticTaskId,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
             checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('没有有效答案可以预填，请核对题目与模型结果');ctl.report(`没有可自动填写的答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
-            ctl.last={...task.snapshot,answers:result.answers};
+            ctl.last={...task.snapshot,rootSnapshot:task.snapshot,answers:result.answers};
             if(task.autoPrefill) {
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
@@ -1369,13 +1427,13 @@
         } catch(error) {
             if(ctl.task!==task)return;
             ctl.last=null;task.error=error.message;
-            const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{const data=extract(task.snapshot.doc);return signature(data.questions,data.media)!==task.snapshot.signature;}catch{return true;}})();
+            const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{checkSnapshot(task.snapshot);return false;}catch(e){return e.code!=='ABORTED';}})();
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
             if(changed)task.preparedMedia.clear();
             renderAnalysisProgress(task);
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
             const prefill=error.prefillSummary?`；已确认填写 ${error.prefillSummary.filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
-            ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+error.message}；保留 ${completed} 道已分析结果${prefill}`,
+            ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
                 task.status==='stopped'?'stopped':'error');
         } finally {
             task.active=false;
@@ -1426,7 +1484,7 @@
                 switchPanelView('questions');
                 invalidateAnalysisTask('已重新提取题目'); ctl.task = null; ctl.last = null; ctl.clearOutput(); ctl.report('正在还原字体并提取…', 'decoding', true);
                 try { await ensureFontDecoded(); const data = extract(); ctl.output(data); ctl.report(`已提取 ${data.total} 道题`, 'done'); }
-                catch (e) { ctl.report(`提取失败：${e.message}`, 'error'); }
+                catch (e) { ctl.report(`提取失败：${assistantErrorMessage(e,{module:'parser',operation:'extract'})}`, 'error'); }
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async prefillLast() {
@@ -1442,13 +1500,13 @@
                 catch (e) {
                     ctl.last = null;
                     if(task){task.status=task.abortController.signal.aborted?'stopped':'stale';task.preparedMedia.clear();renderAnalysisProgress(task,true);}
-                    ctl.report(`预填中止：${e.message}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
+                    ctl.report(`预填中止：${assistantErrorMessage(e,{module:'actions',operation:'prefill'})}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
                 finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async testModelConnection() {
                 if(ctl.state.busy || courseRunActive())return;
-                const cfg=readModelConfiguration(),signature=modelConnectionSignature(cfg),abort=new AbortController();
+                const cfg={...readModelConfiguration(),diagnosticTaskId:newAssistantDiagnosticTaskId()},signature=modelConnectionSignature(cfg),abort=new AbortController();
                 ctl.connectionTest=abort;ctl.connectionResult={signature,state:'checking',message:'检测中…'};
                 const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
                 ctl.report('正在向当前模型发送 Hi…','model-check',true);
@@ -1461,8 +1519,8 @@
                     ctl.connectionResult={signature,state:'ok',message:`可用 · 回复：${redact(reply)}`};
                     ctl.report('当前模型可用（已收到文本回复）','done',true);
                 } catch(error) {
-                    const code=Number.isInteger(error?.status)?`HTTP_${error.status}`:redact(error?.code||'REQUEST_FAILED');
-                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · 错误码：${code} · ${redact(error?.message||'请求失败')}`};
+                    const diagnostic=recordCxDiagnostic(error,{module:'model',operation:'detect'});
+                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · ${diagnostic.code} · ${diagnostic.message}`};
                     ctl.report(ctl.connectionResult.message,'error',true);
                 } finally {
                     window.removeEventListener('pagehide',cancel);
@@ -1471,24 +1529,36 @@
             },
             async loadModels() {
                 if (ctl.state.busy || courseRunActive()) return;
-                const configuration = readModelConfiguration();
+                const configuration = {...readModelConfiguration(),diagnosticTaskId:newAssistantDiagnosticTaskId()};
                 if (!configuration.key) return ctl.report('请先保存 API Key');
                 if (!configuration.baseURL) return ctl.report('请先保存有效接口地址');
+                const owner=panelView?.host.ownerDocument,body=owner?.body,abort=new AbortController();
+                ctl.modelListTest=abort;
+                const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
                 ctl.report('正在获取模型列表…', 'idle', true);
                 try {
-                    const models = await fetchConfiguredModels(configuration);
+                    const models = await fetchConfiguredModels(configuration,abort.signal);
+                    throwIfAborted(abort.signal);
+                    if(!owner || owner.body!==body || owner.defaultView?.document!==owner || !panelView?.host.isConnected || panelView.host.ownerDocument!==owner)
+                        throw cancelledError();
                     if (!models.length) throw new Error('模型列表没有有效条目');
                     const current=readModelConfiguration();
                     if(current.provider!==configuration.provider || current.baseURL!==configuration.baseURL || current.key!==configuration.key)
-                        throw new Error('配置已变化，请重新获取模型列表');
+                        throw requestFailure('','CONFIG_CHANGED');
                     renderModelSettings(ctl, models);
                     invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
                     ctl.report(`获取成功：${models.length} 个模型`, 'done');
-                } catch (e) { ctl.report(`获取模型失败：${e.message}`, 'error'); }
-                finally { ctl.state.busy = false; renderRunState(ctl.state); }
+                } catch (e) { ctl.report(`获取模型失败：${e.code==='CONFIG_CHANGED'?'配置已变化，请重新获取模型列表；':''}${assistantErrorMessage(e,{module:'model',operation:'list'})}`, 'error'); }
+                finally {
+                    window.removeEventListener('pagehide',cancel);
+                    if(ctl.modelListTest===abort)ctl.modelListTest=null;
+                    ctl.state.busy = false;
+                    if(panelView?.host.isConnected && owner?.defaultView?.document===owner)renderRunState(ctl.state);
+                }
             }
         };
         document.defaultView.addEventListener('pagehide', () => {
+            ctl.modelListTest?.abort();
             if(ctl.task){ctl.task.abortController.abort();ctl.task.preparedMedia.clear();ctl.task=null;ctl.last=null;}
         });
         return ctl;
@@ -1549,6 +1619,7 @@
         renderRunState(controller.state);
     }
     function startQuizObserver() {
+        startAssistantUpdateCheck();
         let scheduled = false;
         const refresh = () => {
             if (scheduled) return;
@@ -1558,7 +1629,7 @@
                 initQuizAssistant();
                 initStudyAssistant();
                 ensureFontDecoded().catch(error => {
-                    if (controller && !controller.state.busy) controller.report(`字体解密失败：${error.message}`, 'error');
+                    if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
             }, 40);
         };

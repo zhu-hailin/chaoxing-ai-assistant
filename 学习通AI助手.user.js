@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.19
+// @version      1.20
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -22,6 +22,7 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      api.deepseek.com
 // @connect      api.openai.com
 // @connect      dashscope.aliyuncs.com
@@ -2895,7 +2896,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.19';
+    const ASSISTANT_VERSION = '1.20';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2941,9 +2942,9 @@ Typr["U"] = {
         const parsed = parseQuestionDocument(doc, parseContext);
         const questions = parsed.questions;
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
-            throw new Error('检测到字体混淆，内置字体解密未能还原题目，已停止分析');
+            throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.19', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.20', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -2952,23 +2953,30 @@ Typr["U"] = {
             media:media.map(item => [item.id,item.groupId,item.sourceQuestionId,item.location,item.optionKey,item.src]) });
     }
 
-    function cancelledError() {
-        const error = new Error('请求已取消'); error.name = 'AbortError'; error.code = 'ABORTED'; return error;
+    let assistantRequestSequence = 0;
+    const assistantResponseContexts = new WeakMap();
+    function requestContextForResponse(response, context) {
+        if (!response || typeof response !== 'object') return {};
+        if (context) assistantResponseContexts.set(response,context);
+        return assistantResponseContexts.get(response) || {};
+    }
+    function cancelledError(context={}) {
+        const error = createCxError('CX-EXE-005', {module:'request',operation:'cancel',...context}, {legacyCode:'ABORTED'}); error.name = 'AbortError'; return error;
     }
     function throwIfAborted(signal) { if (signal?.aborted) throw cancelledError(); }
-    function requestFailure(message, code, status) {
-        const error = new Error(message); error.code = code; if (status !== undefined) error.status = status; return error;
+    function requestFailure(message, code, status, context={}) {
+        const codes = {NETWORK:'CX-NET-001',TIMEOUT:'CX-NET-002',BAD_JSON:'CX-RES-001',NO_API_KEY:'CX-CFG-001',NO_MODEL:'CX-CFG-002',NO_ENDPOINT:'CX-CFG-003',ENDPOINT_NOT_APPROVED:'CX-CFG-005',EMPTY_REPLY:'CX-RES-003',BAD_RESPONSE:'CX-RES-002',MODEL_ERROR:'CX-RES-007'};
+        const cxCode = code === 'HTTP' && Number.isInteger(status) && status >= 100 && status <= 599 ? `CX-HTTP-${status}` : codes[code] || 'CX-EXE-001';
+        return createCxError(cxCode, {module:'request',operation:'request',httpStatus:status,...context}, {legacyCode:code,status});
     }
-    function requestJSON({ method, url, key, data, timeout = 90000, extraHeaders = {}, signal }) {
+    function requestJSON({ method, url, key, data, timeout = 90000, extraHeaders = {}, signal, diagnosticTaskId }) {
         return new Promise((resolve, reject) => {
             if (data !== undefined) assertRequestSize(data);
-            const errorText=value=>{
-                const secret=String(key ?? ''),text=String(value ?? '');
-                return clean(secret ? text.split(secret).join('[已隐藏]') : text).slice(0,220);
-            };
+            const context={module:'request',operation:'request',requestId:`cx-request-${++assistantRequestSequence}`,taskId:diagnosticTaskId,method};
+
             let handle, settled = false;
             const finish = (callback,value) => { if(settled)return;settled=true;signal?.removeEventListener('abort',abort);callback(value); };
-            const abort = () => { finish(reject,cancelledError());handle?.abort?.(); };
+            const abort = () => { finish(reject,cancelledError(context));handle?.abort?.(); };
             if(signal?.aborted) {abort();return;}
             signal?.addEventListener('abort',abort,{once:true});
             try { handle = GM_xmlhttpRequest({
@@ -2977,19 +2985,22 @@ Typr["U"] = {
                 ...(data === undefined ? {} : { data: JSON.stringify(data) }),
                 onload(response) {
                     if(settled)return;
+                    const status = Number(response.status);
+                    // HTTP failure is primary even when its body is HTML or invalid JSON.
+                    if (Number.isInteger(status) && status >= 100 && (status < 200 || status >= 300))
+                        return finish(reject,requestFailure('', 'HTTP', status, context));
+                    if (!Number.isInteger(status) || status < 200 || status >= 300)
+                        return finish(reject,requestFailure('', 'NETWORK', undefined, context));
                     let obj;
-                    try { obj = JSON.parse(response.responseText || '{}'); }
-                    catch { return finish(reject,requestFailure(`服务响应不是 JSON (HTTP ${response.status})`, response.status >= 500 ? 'HTTP' : 'BAD_JSON', response.status)); }
-                    if (response.status < 200 || response.status >= 300) {
-                        const message = errorText(obj?.error?.message || obj?.detail?.error || obj?.detail || '请求失败');
-                        return finish(reject,requestFailure(`HTTP ${response.status}：${message}`, 'HTTP', response.status));
-                    }
+                    try { obj = JSON.parse(response.responseText); }
+                    catch { return finish(reject,requestFailure('', 'BAD_JSON', status, context)); }
+                    requestContextForResponse(obj,context);
                     finish(resolve,obj);
                 },
-                onerror: () => finish(reject,requestFailure('网络请求失败，请检查代理和 API 地址','NETWORK')),
-                ontimeout: () => finish(reject,requestFailure('请求超时，请稍后重试','TIMEOUT')),
-                onabort: () => finish(reject,cancelledError())
-            }); } catch(error) { finish(reject,error); }
+                onerror: () => finish(reject,requestFailure('','NETWORK',undefined,context)),
+                ontimeout: () => finish(reject,requestFailure('','TIMEOUT',undefined,context)),
+                onabort: () => finish(reject,cancelledError(context))
+            }); } catch(error) { finish(reject,createCxError('CX-NET-001',context,{legacyCode:'NETWORK',cause:error})); }
             if(signal?.aborted) abort();
         });
     }
@@ -2999,13 +3010,19 @@ Typr["U"] = {
     }
 
     function normalize(raw, questions) {
-        if (!raw || !Array.isArray(raw.answers)) throw new Error('AI 未返回 answers 数组');
-        const answers = new Map();
+        const context={...requestContextForResponse(raw),module:'model',operation:'answers'};
+        if (!raw || !Array.isArray(raw.answers)) throw createCxError('CX-RES-002',context,{legacyCode:'BAD_RESPONSE'});
+        const answers = new Map(), expected = new Set(questions.map(q=>String(q.id)));
         for (const entry of raw.answers) {
-            if (entry && typeof entry === 'object' && !answers.has(String(entry.id))) {
-                answers.set(String(entry.id), entry);
-            }
+            if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !Array.isArray(entry.answer) || !entry.answer.every(x=>typeof x==='string'))
+                throw createCxError('CX-RES-005',context,{legacyCode:'BAD_ANSWER'});
+            const id=String(entry.id);
+            if (!expected.has(id) || answers.has(id))
+                throw createCxError('CX-RES-006',context,{legacyCode:'BAD_ANSWER_IDS'});
+            answers.set(id,entry);
         }
+        if (answers.size !== expected.size)
+            throw createCxError('CX-RES-006',context,{legacyCode:'BAD_ANSWER_IDS'});
         return questions.map(q => {
             const item = answers.get(q.id);
             let answer = item?.answer;
@@ -3140,136 +3157,294 @@ Typr["U"] = {
 
     // 只操作课程已有的选项点击事件；不触碰提交按钮、不伪造网络请求。
     async function prefill(questions, answers, checkCurrent = () => {}, doc = document, options = {}) {
-        const parsed = parseQuestionDocument(doc, options.parseContext), byId = parsed.bindings;
-        // 覆盖授权只属于显式的视频弹题上下文和原 DOM 绑定；默认入口继续保护已有答案。
-        const owned = options.parseContext?.scope === 'video-quiz' ? options.ownedAnswers : null;
-        const write = action => {options.onWrite?.(true);try {action();}finally {options.onWrite?.(false);}};
-        const currentQuestions=new Map(parsed.questions.map(q=>[q.id,q]));
-        const questionMap = new Map(questions.map(q => [q.id, q]));
-        const summary = { filled: 0, already: 0, skipped: 0, unverified: 0, details: [] };
-        try {
-        for (const entry of answers) {
-            checkCurrent();
-            const q = questionMap.get(entry.id);
-            const binding = byId.get(entry.id);
-            const el = binding?.node;
-            const previous = owned?.get(entry.id);
-            const owns = previous && previous.node === el;
-            if (!q || !el) {
-                summary.skipped++;
-                summary.details.push(`第${entry.number}题：无有效答案或题目不存在`);
-                continue;
+        const snapshot = options.snapshot || {questions,doc,parseContext:options.parseContext};
+        const plan = planQuestionActions(snapshot,answers,{...options,checkCurrent});
+        return executeQuestionActions(plan,{...options,checkCurrent});
+    }
+    // Public diagnostics contain catalog text and bounded facts only. Raw causes stay private.
+    const CX_ERROR_CATALOG = Object.freeze({
+        'CX-NET-001':'网络请求失败，具体原因未知',
+        'CX-NET-002':'网络请求超时',
+        'CX-NET-003':'已确认网络处于离线状态',
+        'CX-NET-004':'已确认网络请求权限被拒绝',
+        'CX-NET-005':'已确认 DNS 解析失败',
+        'CX-NET-006':'已确认 TLS/SSL 握手失败',
+        'CX-NET-007':'已确认连接被拒绝或重置',
+        'CX-CFG-001':'API Key 未配置，请先保存 API Key',
+        'CX-CFG-002':'未选择模型，请先选择或保存模型',
+        'CX-CFG-003':'API 基础地址无效，请保存有效的 HTTPS API 基础地址',
+        'CX-CFG-004':'所选模型不支持请求的能力',
+        'CX-CFG-005':'自定义接口尚未获得必要授权，请重新保存 Key',
+        'CX-CFG-006':'缺少运行所需权限或依赖',
+        'CX-RES-001':'服务响应不是合法 JSON',
+        'CX-RES-002':'接口没有返回有效的必要响应字段',
+        'CX-RES-003':'模型返回空答案或空消息',
+        'CX-RES-004':'模型输出被截断，请减少单次题量',
+        'CX-RES-005':'AI 答案结构不符合协议',
+        'CX-RES-006':'AI 答案与请求的题目数量或 ID 不匹配',
+        'CX-RES-007':'服务商返回业务错误，请检查模型和服务配置',
+        'CX-PAR-001':'未发现可识别的题目容器',
+        'CX-PAR-002':'无法唯一定位题干',
+        'CX-PAR-003':'无法可靠判断题型',
+        'CX-PAR-004':'题目材料不完整',
+        'CX-PAR-005':'字体混淆未成功还原',
+        'CX-PAR-006':'图片或公式材料无法读取',
+        'CX-PAR-007':'题目结构存在歧义',
+        'CX-PAR-008':'页面题目解析快照已失效',
+        'CX-CTL-001':'未发现答案控件',
+        'CX-CTL-002':'答案控件类型暂不支持',
+        'CX-CTL-003':'无法可靠识别提交按钮',
+        'CX-CTL-004':'控件处于禁用或不可编辑状态',
+        'CX-CTL-005':'存在多个可能的操作入口',
+        'CX-CTL-006':'原生控件已被动态替换',
+        'CX-CTL-007':'无法可靠识别继续按钮',
+        'CX-MAT-001':'题目与答案控件无法建立关联',
+        'CX-MAT-002':'存在多个同等可信的关联候选',
+        'CX-MAT-003':'子问题与填空槽位数量不匹配',
+        'CX-MAT-004':'跨 iframe 任务归属无法确认',
+        'CX-MAT-005':'关联证据在执行前发生变化',
+        'CX-EXE-001':'执行前校验失败',
+        'CX-EXE-002':'原生控件写入失败',
+        'CX-EXE-003':'提交结果无法确认，请人工核对',
+        'CX-EXE-004':'执行时页面或控件发生变化',
+        'CX-EXE-005':'操作已取消',
+        'CX-EXE-006':'已存在未确认提交，禁止重复执行',
+        'CX-EXE-007':'执行阶段等待超时',
+        'CX-EXE-008':'连续章节失败保护已触发',
+        'CX-SYS-001':'任务运行环境不符合要求',
+        'CX-SYS-002':'未分类程序异常',
+        'CX-SYS-003':'页面生命周期已结束',
+        'CX-SYS-004':'必需模块或依赖不可用'
+    });
+    const CX_HTTP_MESSAGES = Object.freeze({400:'请求参数错误',401:'API 身份认证失败',402:'服务商要求处理计费或付款',
+        403:'服务器拒绝访问',404:'接口、模型或资源不存在',408:'服务器返回请求超时',413:'请求体过大',422:'请求数据无法处理',
+        429:'触发请求频率限制',500:'服务端内部错误',502:'上游网关异常',503:'服务暂不可用',504:'网关超时'});
+    const CX_LEGACY_CODES = Object.freeze({NETWORK:'CX-NET-001',TIMEOUT:'CX-NET-002',BAD_JSON:'CX-RES-001',
+        BAD_RESPONSE:'CX-RES-002',EMPTY_REPLY:'CX-RES-003',MODEL_ERROR:'CX-RES-007',NO_API_KEY:'CX-CFG-001',
+        NO_MODEL:'CX-CFG-002',NO_ENDPOINT:'CX-CFG-003',ENDPOINT_NOT_APPROVED:'CX-CFG-005',
+        BAD_ANSWER:'CX-RES-005',BAD_ANSWER_IDS:'CX-RES-006',SNAPSHOT_CHANGED:'CX-PAR-008',CONFIG_CHANGED:'CX-EXE-001',
+        ABORTED:'CX-EXE-005',COURSE_TIMEOUT:'CX-EXE-007',COURSE_FAILURE_LIMIT:'CX-EXE-008',
+        COURSE_FRAME_UNAVAILABLE:'CX-MAT-004',COURSE_MANUAL_ANSWER_REQUIRED:'CX-CTL-002'});
+    const cxPrivateErrors = new WeakMap();
+    const cxRecordedErrors = new WeakMap();
+    const cxDiagnosticBuffer = [];
+    let cxDiagnosticSequence = 0;
+    const cxInstanceId = Math.random().toString(36).slice(2,12);
+    function cxKnownCode(code,status) {
+        if (typeof code === 'string' && Object.prototype.hasOwnProperty.call(CX_ERROR_CATALOG,code)) return code;
+        if (typeof code === 'string' && /^CX-HTTP-[1-5]\d\d$/.test(code)) return code;
+        if (code === 'HTTP' && Number.isInteger(status) && status >= 100 && status <= 599) return `CX-HTTP-${status}`;
+        return Object.prototype.hasOwnProperty.call(CX_LEGACY_CODES,code) ? CX_LEGACY_CODES[code] : 'CX-SYS-002';
+    }
+    function cxCatalogMessage(code) {
+        return CX_ERROR_CATALOG[code] || (/^CX-HTTP-/.test(code) ? `HTTP ${Number(code.slice(8))}：${CX_HTTP_MESSAGES[Number(code.slice(8))] || '服务器返回非成功 HTTP 状态'}` : CX_ERROR_CATALOG['CX-SYS-002']);
+    }
+    function cxSafeLocalId(value) {
+        return typeof value === 'string' && /^cx-(?:local|task|request|snapshot|document|run|diag)-[a-z0-9-]{1,96}$/i.test(value) ? value : undefined;
+    }
+    const CX_MODULES = new Set(['request','model','provider','parser','media','context','actions','controller','course','video-quiz','system','settings','analysis','question-parser','question-context','question-media']);
+    const CX_OPERATIONS = new Set(['request','fetch','parse','validate','normalize','classify','answer','answers','answer-ids','analyze','solve','prepare','extract','match','snapshot','plan','execute','prefill','submit','continue','wait','cancel','copy','export','initialize','detect','models','list','configure','retry','guard','lifecycle','font','run','protection','parse-document','validate-snapshot','prepare-media']);
+    const CX_PHASES = new Set(['reading','analyzing','prefilling','submitting','replay-wait','manual-wait','passed','pending','running','stopped','failed','complete','cancelled','stale','idle','preflight']);
+    const CX_EVIDENCE = new Set(['same-document','same-node','ancestor','frame-ancestor','frame-chain','outside','unknown','inside','same-task','confirmed','probable','ambiguous','unsupported','label-for','label-wrapper','unique-control','explicit-slot','explicit-subquestion','adapter-option-group','adapter-group','adapter-verified','node-replaced','document-changed','content-changed','relation-changed','aborted','timeout','http-status','explicit-permission-denied','explicit-offline','dns-failure','tls-failure','connection-refused','connection-reset',
+        'missing-node','detached-node','frame-cycle','ancestor-frame-container','same-document-container','same-document-outside','unreadable-parent','independent-document','stale-document','outside-context-policy','frame-element','depth-limit',
+        'adapter-slot-reference','native-label-reference','adapter-option-key','isolated-option-group','unverified-option-group','adapter-question-boundary','unique-text-response','missing-unique-response']);
+    function cxSafeFacts(context) {
+        const result = {};
+        if (!context || typeof context !== 'object') return result;
+        // There is deliberately no arbitrary string/message/reason/URL/response field here.
+        for (const name of ['questionCount','answerCount','unitCount','controlCount','relationCount','mediaCount','materialCount','batchIndex','batchCount','attempt','retryCount','frameDepth','count','expectedCount','actualCount','maxAttempts','bindingGeneration','elapsedMs','bytes','limit','suppressedCount','recoveryAttempts']) {
+            const value=context[name];
+            if (typeof value==='number' && Number.isFinite(value) && value>=0 && value<=Number.MAX_SAFE_INTEGER) result[name]=value;
+        }
+        for (const name of ['images','writable','recognized','online','cancelled','visible','focused','configured','submissionStarted','outcomeConfirmed','automatic','manual','installed','truncated','json','hasMessage','hasContent','hasBusinessError','required','bindingValid'])
+            if (typeof context[name]==='boolean') result[name]=context[name];
+        if (CX_PHASES.has(context.phase)) result.phase=context.phase;
+        if (['GET','POST'].includes(context.method)) result.method=context.method;
+        if (['auto','manual','uncertain','needs-classification'].includes(context.policyStatus)) result.policyStatus=context.policyStatus;
+        if (['confirmed','probable','ambiguous','unsupported','inside','outside','unknown'].includes(context.relationStatus)) result.relationStatus=context.relationStatus;
+        if (Array.isArray(context.evidence)) result.evidence=[...new Set(context.evidence.filter(item=>CX_EVIDENCE.has(item)))].slice(0,20);
+        // Only a parsed host is retained, never credentials, paths, query strings or fragments.
+        if (typeof context.endpoint==='string') {
+            try {const value=new URL(context.endpoint);if (value.protocol==='https:' && !value.username && !value.password) result.endpointHost=value.hostname;} catch {}
+        }
+        return result;
+    }
+    function createCxError(cxCode,context={},options={}) {
+        const code=cxKnownCode(cxCode,options.status),error=new Error(cxCatalogMessage(code));
+        error.code=options.legacyCode || code;
+        error.cxCode=code;
+        if (options.status!==undefined) error.status=options.status;
+        if (error.code==='ABORTED' || code==='CX-EXE-005') error.name='AbortError';
+        cxPrivateErrors.set(error,{context:cxSafeFacts(context),module:context.module,operation:context.operation,
+            taskId:cxSafeLocalId(context.taskId),requestId:cxSafeLocalId(context.requestId),severity:options.severity,cause:options.cause});
+        return error;
+    }
+    function normalizeCxError(error,context={}) {
+        const source=error && typeof error==='object'?error:{},stored=cxPrivateErrors.get(source) || {};
+        const status=Number.isInteger(source.status)?source.status:Number.isInteger(source.httpStatus)?source.httpStatus:undefined;
+        const code=cxKnownCode(source.cxCode || source.code || (source.name==='AbortError'?'ABORTED':undefined),status);
+        const legacy=typeof source.code==='string' && (Object.prototype.hasOwnProperty.call(CX_LEGACY_CODES,source.code) || source.code==='HTTP') ? source.code :
+            typeof source.legacyCode==='string' && (Object.prototype.hasOwnProperty.call(CX_LEGACY_CODES,source.legacyCode) || source.legacyCode==='HTTP') ? source.legacyCode : undefined;
+        const severity=code==='CX-EXE-005' || code==='CX-SYS-003' || legacy==='COURSE_MANUAL_ANSWER_REQUIRED' ? 'info' :
+            ['info','warning','error'].includes(stored.severity)?stored.severity:'error';
+        const module=CX_MODULES.has(context.module)?context.module:CX_MODULES.has(stored.module)?stored.module:CX_MODULES.has(source.module)?source.module:'system';
+        const operation=CX_OPERATIONS.has(context.operation)?context.operation:CX_OPERATIONS.has(stored.operation)?stored.operation:CX_OPERATIONS.has(source.operation)?source.operation:'validate';
+        const diagnostics={...stored.context,...cxSafeFacts(source.diagnostics),...cxSafeFacts(context)};
+        const elapsedMs=diagnostics.elapsedMs;
+        return {id:`cx-diag-${cxInstanceId}-${++cxDiagnosticSequence}`,code,...(legacy?{legacyCode:legacy}:{}),severity,module,operation,
+            message:cxCatalogMessage(code),...(cxSafeLocalId(context.taskId) || stored.taskId || cxSafeLocalId(source.taskId) ? {taskId:cxSafeLocalId(context.taskId) || stored.taskId || cxSafeLocalId(source.taskId)}:{}),
+            ...(cxSafeLocalId(context.requestId) || stored.requestId || cxSafeLocalId(source.requestId)?{requestId:cxSafeLocalId(context.requestId) || stored.requestId || cxSafeLocalId(source.requestId)}:{}),
+            timestamp:new Date().toISOString(),...(elapsedMs!==undefined?{elapsedMs}:{}),
+            ...(status>=100 && status<=599?{httpStatus:status}:{}),
+            retryable:code==='CX-NET-001' || code==='CX-NET-002' || ['CX-HTTP-502','CX-HTTP-503','CX-HTTP-504'].includes(code),
+            recoverable:!['CX-EXE-003','CX-EXE-006','CX-SYS-003'].includes(code),diagnostics};
+    }
+    function recordCxDiagnostic(errorOrDiagnostic,context={}) {
+        const object=errorOrDiagnostic && typeof errorOrDiagnostic==='object'?errorOrDiagnostic:null;
+        if (object && cxRecordedErrors.has(object)) return cxRecordedErrors.get(object);
+        const diagnostic=normalizeCxError(errorOrDiagnostic,context);
+        if(diagnostic.diagnostics.evidence)Object.freeze(diagnostic.diagnostics.evidence);
+        Object.freeze(diagnostic.diagnostics);Object.freeze(diagnostic);
+        cxDiagnosticBuffer.push(diagnostic);
+        if (cxDiagnosticBuffer.length>100) cxDiagnosticBuffer.shift();
+        if (object) cxRecordedErrors.set(object,diagnostic);
+        cxRecordedErrors.set(diagnostic,diagnostic);
+        return diagnostic;
+    }
+    function exportCxDiagnostics() {
+        return JSON.stringify({schemaVersion:1,diagnostics:cxDiagnosticBuffer},null,2);
+    }
+    // Document/Node 身份只留在本页面；公开关联证据不含地址、内容或答案。
+    const questionDocumentIds = new WeakMap();
+    const questionSnapshotRuntime = new WeakMap();
+    let questionDocumentSequence = 0, questionSnapshotSequence = 0;
+    function questionDocumentId(doc) {
+        if (!questionDocumentIds.has(doc)) questionDocumentIds.set(doc, `doc-${++questionDocumentSequence}`);
+        return questionDocumentIds.get(doc);
+    }
+    function questionContextError(code, message, legacyCode) {
+        if (typeof createCxError === 'function') return createCxError(code, { module:'question-context', operation:'validate-snapshot' }, {legacyCode});
+        const error = new Error(message); error.code = legacyCode || code; error.cxCode = code; return error;
+    }
+    function collectDocumentContexts(owner = document, policy = {}) {
+        const contexts = [], documents = [], inaccessible = [], byDocument = new Map(), visited = new Set();
+        const maxDepth = Math.min(12, Math.max(0, policy.maxDepth ?? 12));
+        const visit = (doc, frame, parentId, depth) => {
+            if (!doc?.documentElement || visited.has(doc)) return;
+            visited.add(doc);
+            const context = {id:questionDocumentId(doc), document:doc, frame, parentId, depth};
+            contexts.push(context); documents.push(doc); byDocument.set(doc, context);
+            const frames = depth === 0 && policy.root ? [policy.root] : [...doc.querySelectorAll('iframe')];
+            for (const child of frames) {
+                if (typeof policy.includeFrame === 'function' && !policy.includeFrame(child)) continue;
+                if (typeof courseAnswerEditorFrame === 'function' && courseAnswerEditorFrame(child)) continue;
+                if (depth >= maxDepth) { inaccessible.push({frame:child, reason:'depth-limit'}); continue; }
+                try {
+                    const inner = child.contentDocument;
+                    if (!inner?.documentElement) {
+                        if (!(typeof courseRemoteReaderFrame === 'function' && courseRemoteReaderFrame(child))) inaccessible.push({frame:child, reason:'unreadable'});
+                        continue;
+                    }
+                    visit(inner, child, context.id, depth + 1);
+                } catch { inaccessible.push({frame:child, reason:'unreadable'}); }
             }
-            const policy=questionPrefillPolicy(currentQuestions.get(entry.id) || q,entry);
-            if(!questionCanAutoAnswer(q,policy)) {
-                summary.skipped++;summary.details.push(`第${q.number}题：${policy.reason || '需人工处理'}，跳过`);continue;
-            }
-            if(!entry.answer.length) {
-                summary.skipped++;summary.details.push(`第${q.number}题：${entry.reason || '无有效答案，需人工核对'}`);continue;
-            }
-            if (!binding.canPrefill) {
-                summary.skipped++; summary.details.push(`第${q.number}题：${q.diagnostics?.join('；') || '控件映射不可靠'}，跳过`);
-                continue;
-            }
-            if (['blank','essay'].includes(q.type)) {
-                // 仅支持恰好一个可编辑文本框；保留手工填写内容。
-                const inputs = binding.inputs.filter(input => !input.disabled && !input.readOnly);
-                if (inputs.length !== 1) {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：填空结构不确定，跳过`);
-                    continue;
+        };
+        visit(owner, null, null, 0);
+        return {owner, contexts, documents, inaccessible, byDocument};
+    }
+    function describeNodeRelation(container, node, contexts) {
+        if (!container || !node || typeof container.contains !== 'function') return {status:'unknown', evidence:['missing-node']};
+        if (container.nodeType !== 9 && !container.isConnected || node.nodeType !== 9 && !node.isConnected) return {status:'unknown', evidence:['detached-node']};
+        const targetDoc = container.nodeType === 9 ? container : container.ownerDocument;
+        const visited = new Set(), evidence = [];
+        let candidate = node;
+        for (let depth = 0; candidate && depth <= 12; depth++) {
+            try {
+                const doc = candidate.nodeType === 9 ? candidate : candidate.ownerDocument;
+                if (!doc || visited.has(doc)) return {status:'unknown', evidence:[...evidence,'frame-cycle']};
+                visited.add(doc);
+                if (candidate === container || container.contains(candidate)) return {status:'inside', evidence:[...evidence, depth ? 'ancestor-frame-container' : 'same-document-container']};
+                if (doc === targetDoc) return {status:'outside', evidence:[...evidence,'same-document-outside']};
+                if (candidate.nodeType !== 9 && !candidate.isConnected) return {status:'unknown', evidence:[...evidence,'detached-node']};
+                const frame = doc.defaultView?.frameElement;
+                if (!frame) {
+                    const view = doc.defaultView;
+                    if (!view || view.parent !== view) return {status:'unknown', evidence:[...evidence,'unreadable-parent']};
+                    return {status:'outside', evidence:[...evidence,'independent-document']};
                 }
-                const input = inputs[0];
-                if (owns && (previous.input !== input || input.value !== previous.value)) throw new Error('用户已修改弹题答案，等待人工处理');
-                if (clean(input.value) && !owns) {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：已有填写内容，跳过`);
-                    continue;
-                }
-                input.focus();
-                const realm = input.ownerDocument.defaultView;
-                const proto = input instanceof realm.HTMLTextAreaElement ? realm.HTMLTextAreaElement.prototype : realm.HTMLInputElement.prototype;
-                const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-                if (descriptor?.set) descriptor.set.call(input, entry.answer[0]);
-                else input.value = entry.answer[0];
-                input.dispatchEvent(new realm.Event('input', { bubbles: true }));
-                input.dispatchEvent(new realm.Event('change', { bubbles: true }));
-                await waitFor(() => input.value === entry.answer[0]);
-                checkCurrent();
-                if (input.value === entry.answer[0]) summary.filled++;
-                else { summary.unverified++; summary.details.push(`第${q.number}题：已填写，请核对控件状态`); }
-                continue;
-            }
-            const optionMap = binding.optionTargets;
-            const targetKeys = new Set(entry.answer);
-            if (!targetKeys.size || [...targetKeys].some(k => !optionMap.has(k))) {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：选项无法对应，跳过`);
-                continue;
-            }
-            const activeKeys = new Set([...optionMap].filter(([, li]) => selected(li)).map(([key]) => key));
-            // 一些版本的 aria-checked 不会立即更新；额外检查学习通原有隐藏答案输入框。
-            const hiddenAnswer = options.parseContext?.scope === 'video-quiz' ? null : [...el.querySelectorAll('input[type="hidden"]')]
-                .find(input => input.name === `answer${q.id}`);
-            const saved = clean(hiddenAnswer?.value);
-            if (saved && activeKeys.size === 0) {
-                const keys = savedKeys(saved, optionMap);
-                if (keys.length && keys.every(key => optionMap.has(key))) {
-                    keys.forEach(key => activeKeys.add(key));
-                } else {
-                    summary.skipped++;
-                    summary.details.push(`第${q.number}题：已有无法识别的手工答案，跳过`);
-                    continue;
-                }
-            }
-            // 重试前再核对上一轮脚本实际填入的选项；用户介入不能获得覆盖授权。
-            if (owns && (previous.keys.length !== activeKeys.size || previous.keys.some(k => !activeKeys.has(k)))) throw new Error('用户已修改弹题答案，等待人工处理');
-            if (options.parseContext?.scope === 'video-quiz' && activeKeys.size && !owns) {
-                summary.skipped++;summary.details.push(`第${q.number}题：已有手工作答，等待人工处理`);continue;
-            }
-            if (owns && q.type === 'multiple') for (const key of activeKeys) {
-                if (!targetKeys.has(key)) {checkCurrent();write(()=>optionMap.get(key).click());}
-            }
-            // 普通入口不覆盖手工选择的不同答案。
-            if (!owns && [...activeKeys].some(k => !targetKeys.has(k))) {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：已有不同选项，未覆盖`);
-                continue;
-            }
-            const needed = [...targetKeys].filter(k => !activeKeys.has(k));
-            if (!needed.length) { summary.already++; continue; }
-            if ((q.type === 'single' || q.type === 'judge') && needed.length !== 1) {
-                summary.skipped++; continue;
-            }
-            let clicked = 0;
-            for (const key of needed) {
-                const li = optionMap.get(key);
-                if (!li || li.disabled || li.hasAttribute('disabled') || li.classList.contains('disabled') || li.getAttribute('aria-disabled') === 'true') continue;
-                checkCurrent();
-                write(()=>li.click());
-                clicked++;
-            }
-            // 有些版本异步更新选中状态，所以无法实时确认时单独报告。
-            const isVerified = () => {
-                const current = new Set([...optionMap].filter(([, li]) => selected(li)).map(([key]) => key));
-                const savedNow = clean(hiddenAnswer?.value);
-                if (savedNow) savedKeys(savedNow, optionMap).forEach(key => current.add(key));
-                return current.size === targetKeys.size && [...targetKeys].every(k => current.has(k));
-            };
-            await waitFor(isVerified);
-            checkCurrent();
-            const verified = isVerified();
-            if (verified && clicked === needed.length) summary.filled++;
-            else if (clicked) {
-                summary.unverified++;
-                summary.details.push(`第${q.number}题：已触发点击，请手动检查是否选中`);
-            } else {
-                summary.skipped++;
-                summary.details.push(`第${q.number}题：控件不可用，跳过`);
+                if (!frame.isConnected || frame.contentDocument !== doc) return {status:'unknown', evidence:[...evidence,'stale-document']};
+                if (contexts?.byDocument && !contexts.byDocument.has(doc)) return {status:'unknown', evidence:[...evidence,'outside-context-policy']};
+                evidence.push('frame-element'); candidate = frame;
+            } catch { return {status:'unknown', evidence:[...evidence,'unreadable-parent']}; }
+        }
+        return {status:'unknown', evidence:[...evidence,'depth-limit']};
+    }
+    function questionGraphContentSignature(graph) {
+        // Descriptor state/selection and runtime bindings deliberately do not form content identity.
+        const questions = graph.questions.map(question => ({
+            id:question.id, type:question.type, question:question.question, instructions:question.instructions,
+            options:question.options, blocks:question.blocks, responseUnits:question.responseUnits,
+            sharedMaterialIds:question.sharedMaterialIds, answerPolicy:question.answerPolicy,
+            capabilities:question.capabilities, structure:question.structure
+        }));
+        return JSON.stringify({questions, materials:graph.materials, media:graph.media, relations:graph.relations});
+    }
+    function questionBindingNodes(binding) {
+        return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
+            ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()]].filter(Boolean))];
+    }
+    function createQuestionSnapshot(graph, runtime = {}) {
+        if (graph?.schemaVersion !== 3) throw questionContextError('CX-PAR-008', '题目快照结构不匹配');
+        const doc = runtime.doc || [...graph.bindings.values()][0]?.node?.ownerDocument || document;
+        const snapshotId = `snapshot-${++questionSnapshotSequence}`;
+        const signature = questionGraphContentSignature(graph);
+        const lifecycle = {snapshotId, documentId:questionDocumentId(doc), taskId:runtime.taskId || null,
+            contentSignature:signature, bindingGeneration:snapshotId};
+        graph.lifecycle = lifecycle;
+        const snapshot = {schemaVersion:3, graph, doc, parseContext:runtime.parseContext || {}, questions:graph.questions,
+            media:graph.media, bindings:graph.bindings, total:graph.questions.length, signature, lifecycle, snapshotId};
+        const nodes = [...graph.bindings.values()].flatMap(questionBindingNodes);
+        const documents = new Map();
+        for (const node of nodes) {
+            const nodeDoc = node.ownerDocument;
+            if (!documents.has(nodeDoc)) {
+                let frame = null; try { frame = nodeDoc.defaultView?.frameElement || null; } catch {}
+                documents.set(nodeDoc, {body:nodeDoc.body, root:nodeDoc.documentElement, frame});
             }
         }
-        } catch(error) { error.prefillSummary = { ...summary, details:[...summary.details] }; throw error; }
-        return summary;
+        questionSnapshotRuntime.set(snapshot, {graph, doc, nodes, documents, signature,
+            signal:runtime.signal, checkCurrent:runtime.checkCurrent, parseContext:snapshot.parseContext, checking:false});
+        // Allow an execution/request projection to retain .graph and the public snapshot lifetime.
+        Object.defineProperty(snapshot, '_contextSnapshot', {value:snapshot});
+        return snapshot;
+    }
+    function assertQuestionSnapshot(snapshot, requirements = {}) {
+        const source = snapshot?.rootSnapshot || snapshot?._contextSnapshot || snapshot;
+        const state = questionSnapshotRuntime.get(source);
+        if (!state) throw questionContextError('CX-PAR-008', '题目快照已失效');
+        if (state.checking) return true;
+        state.checking = true;
+        try {
+            if (state.signal?.aborted || source.signal?.aborted || requirements.signal?.aborted) {
+                if (typeof cancelledError === 'function') throw cancelledError();
+                throw questionContextError('CX-EXE-005', '操作已取消', 'ABORTED');
+            }
+            for (const check of new Set([state.checkCurrent, source.checkCurrent, requirements.checkCurrent])) if (typeof check === 'function') check();
+            if (requirements.taskId !== undefined && source.lifecycle.taskId !== requirements.taskId) throw questionContextError('CX-PAR-008', '任务已变化');
+            for (const [doc, identity] of state.documents) {
+                if (doc.body !== identity.body || doc.documentElement !== identity.root) throw questionContextError('CX-PAR-008', '页面已变化');
+                if (identity.frame && (!identity.frame.isConnected || identity.frame.contentDocument !== doc)) throw questionContextError('CX-PAR-008', '页面已导航');
+            }
+            for (const node of state.nodes) if (!node.isConnected || !state.documents.has(node.ownerDocument)) throw questionContextError('CX-CTL-006', '作答控件已替换');
+            const current = parseQuestionGraph(state.doc, state.parseContext);
+            if (questionGraphContentSignature(current) !== state.signature) throw questionContextError('CX-PAR-008', '题干、选项或关联已变化');
+            for (const [id, binding] of state.graph.bindings) {
+                const live = current.bindings.get(id);
+                const before = questionBindingNodes(binding), after = live ? questionBindingNodes(live) : [];
+                if (before.length !== after.length || before.some((node, index) => node !== after[index])) throw questionContextError('CX-CTL-006', '作答控件已替换');
+            }
+            return true;
+        } finally { state.checking = false; }
     }
     // 官方原始平台标识；来源、原始文件与校验值见 assets/provider-logos/provenance.json。
     // 仅将 ICO 的最大帧无损编码为 PNG；无绘制、无运行时网络请求。
@@ -3322,12 +3497,12 @@ Typr["U"] = {
     function normalizeModelBaseURL(value) {
         let url;
         try {url=new URL(String(value ?? '').trim());}
-        catch {throw new Error('请输入有效的 API 地址');}
+        catch {throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});}
         if(url.protocol!=='https:' || !url.hostname || url.username || url.password || url.search || url.hash)
-            throw new Error('API 地址需使用 HTTPS，且不包含账号、密码、查询参数或锚点');
+            throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});
         const base=url.href.replace(/\/+$/,'');
         if(/\/(?:chat\/completions|models)$/i.test(url.pathname.replace(/\/+$/,'')))
-            throw new Error('请输入 API 基础地址，末尾不要包含 /chat/completions 或 /models');
+            throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});
         return base;
     }
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
@@ -3437,6 +3612,10 @@ Typr["U"] = {
         const entries=Array.isArray(raw?.classifications)?raw.classifications:[];
         const counts=new Map(),byId=new Map();
         for(const entry of entries)if(entry && typeof entry.id==='string'){counts.set(entry.id,(counts.get(entry.id)||0)+1);byId.set(entry.id,entry);}
+        const expected=questions.filter(q=>questionLocalAnswerPolicy(q).status!=='manual'),requestedIds=new Set(expected.map(q=>q.id));
+        if(!Array.isArray(raw?.classifications))recordCxDiagnostic(createCxError('CX-RES-002',{module:'provider',operation:'classify',questionCount:expected.length,actualCount:0},{severity:'warning'}));
+        else if(entries.length!==expected.length || [...counts].some(([id,count])=>!requestedIds.has(id) || count!==1) || expected.some(q=>!counts.has(q.id)))
+            recordCxDiagnostic(createCxError('CX-RES-006',{module:'provider',operation:'classify',questionCount:expected.length,actualCount:entries.length},{severity:'warning'}));
         const allowedAuto=new Set(['objective','knowledge','text-blank','code']);
         return new Map(questions.map(q=>{
             const local=questionLocalAnswerPolicy(q),item=byId.get(q.id);
@@ -3467,46 +3646,58 @@ Typr["U"] = {
         const baseURL=platform.id==='custom' ? normalizeModelBaseURL(settings.baseURL) : platform.baseURL;
         return `${baseURL}/${path}`;
     }
-    async function fetchConfiguredModels(settings) {
-        if(!settings.key)throw new Error('请先保存 API Key');
-        const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000});
-        if(!Array.isArray(data.data) || !data.data.length)throw new Error('模型列表为空');
+    async function fetchConfiguredModels(settings,signal) {
+        assertConfiguredCredentials(settings,false);
+        const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000,signal,diagnosticTaskId:settings.diagnosticTaskId});
+        if(data?.error)throw createCxError('CX-RES-007',{module:'provider',operation:'models',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
+        if(!Array.isArray(data?.data) || !data.data.length)throw createCxError('CX-RES-002',{module:'provider',operation:'models',count:0},{legacyCode:'BAD_RESPONSE'});
         const models=new Map();
         for(const item of data.data) {
             if(!item || typeof item.id!=='string' || !item.id.trim() || item.id.trim().length>200)continue;
             const id=item.id.trim();if(models.has(id))continue;
             models.set(id,{id,name:typeof item.name==='string' && item.name.trim()?item.name.trim().slice(0,500):id});
         }
-        if(!models.size)throw new Error('模型列表没有有效条目');
+        if(!models.size)throw createCxError('CX-RES-002',{module:'provider',operation:'models',count:0},{legacyCode:'BAD_RESPONSE'});
         return [...models.values()];
     }
     function modelConnectionSignature(settings) {
         return JSON.stringify([settings.provider,settings.baseURL,settings.model,endpointFingerprint(settings.key)]);
     }
+    function assertConfiguredCredentials(settings,requireModel=true) {
+        const context={module:'provider',operation:'configure'};
+        if(settings.credentialNeedsApproval)throw createCxError('CX-CFG-005',context,{legacyCode:'ENDPOINT_NOT_APPROVED'});
+        if(!settings.key)throw createCxError('CX-CFG-001',context,{legacyCode:'NO_API_KEY'});
+        if(requireModel && !settings.model)throw createCxError('CX-CFG-002',context,{legacyCode:'NO_MODEL'});
+        if(getModelProvider(settings.provider || 'deepseek').id==='custom' && !settings.baseURL)
+            throw createCxError('CX-CFG-003',context,{legacyCode:'NO_ENDPOINT'});
+    }
+    function configuredResponseContext(response,settings) {
+        return {...(typeof requestContextForResponse==='function'?requestContextForResponse(response):{}),taskId:settings.diagnosticTaskId};
+    }
     async function detectConfiguredModelConnection(settings,signal) {
         throwIfAborted(signal);
-        if(settings.credentialNeedsApproval)throw requestFailure('自定义接口尚未授权，请重新保存 Key','ENDPOINT_NOT_APPROVED');
-        if(!settings.key)throw requestFailure('请先保存 API Key','NO_API_KEY');
-        if(!settings.model)throw requestFailure('请先选择或保存模型','NO_MODEL');
-        if(!settings.baseURL)throw requestFailure('请先保存有效接口地址','NO_ENDPOINT');
+        assertConfiguredCredentials(settings);
+        if(!settings.baseURL)throw createCxError('CX-CFG-003',{module:'provider',operation:'detect'},{legacyCode:'NO_ENDPOINT'});
         const payload=adaptConfiguredPayload({...settings,thinking:false},{model:settings.model,messages:[{role:'user',content:'Hi'}]});
         assertConfiguredRequestSize(settings,payload);
         const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
-            data:payload,timeout:60000,signal});
+            data:payload,timeout:60000,signal,diagnosticTaskId:settings.diagnosticTaskId});
         throwIfAborted(signal);
-        if(response?.error)throw requestFailure(String(response.error.message||'模型返回错误'),'MODEL_ERROR');
+        if(response?.error)throw createCxError('CX-RES-007',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
         const message=response?.choices?.[0]?.message;
-        if(!message || typeof message!=='object')throw requestFailure('接口没有返回有效的模型消息','BAD_RESPONSE');
+        if(!message || typeof message!=='object')throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasMessage:false},{legacyCode:'BAD_RESPONSE'});
+        if(!Object.prototype.hasOwnProperty.call(message,'content') && !Object.prototype.hasOwnProperty.call(message,'refusal'))
+            throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasContent:false},{legacyCode:'BAD_RESPONSE'});
         const content=message.content;
         const text=typeof content==='string'?content:Array.isArray(content)?content.filter(part=>part?.type==='text'&&typeof part.text==='string').map(part=>part.text).join(''):
             typeof message.refusal==='string'?message.refusal:'';
-        if(!text.trim())throw requestFailure('模型没有返回消息','EMPTY_REPLY');
+        if(!text.trim())throw createCxError('CX-RES-003',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasContent:false},{legacyCode:'EMPTY_REPLY'});
         return text.trim().slice(0,200);
     }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
-        if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
+        assertConfiguredCredentials(settings);
         if(questions.some(question=>questionImageIds(question).length) && !modelSupportsImages(settings.model,settings))
-            throw new Error('所选模型不支持图片，此类题目暂不能分析');
+            throw createCxError('CX-CFG-004',{module:'provider',operation:'answer',images:true});
         const payload=buildConfiguredAnswerPayload(settings,questions,evidence,preparedMedia);
         const {parsed,usage}=await configuredModelJSON(settings,payload,signal);
         return {answers:normalize(parsed,questions),mediaAnalysis:normalizeMediaAnalysis(parsed,questions,preparedMedia),usage:usage || null};
@@ -3514,18 +3705,27 @@ Typr["U"] = {
 
     async function configuredModelJSON(settings,payload,signal) {
         throwIfAborted(signal || settings.signal);
-        if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
+        assertConfiguredCredentials(settings);
         assertConfiguredRequestSize(settings,payload);
         settings.onModelRequest?.();
         const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
-            data:payload,timeout:settings.thinking?180000:90000,signal:signal || settings.signal});
-        const choice=response.choices?.[0];
-        if(!choice || choice.finish_reason!=='stop')throw new Error('模型输出不完整，建议减小题量或降低推理强度');
+            data:payload,timeout:settings.thinking?180000:90000,signal:signal || settings.signal,diagnosticTaskId:settings.diagnosticTaskId});
+        throwIfAborted(signal || settings.signal);
+        if(response?.error)throw createCxError('CX-RES-007',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
+        const choice=response?.choices?.[0];
+        if(!choice || !choice.message || typeof choice.message!=='object' || typeof choice.finish_reason!=='string' || !Object.prototype.hasOwnProperty.call(choice.message,'content'))
+            throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasMessage:Boolean(choice?.message && typeof choice.message==='object')},{legacyCode:'BAD_RESPONSE'});
+        if(choice.finish_reason==='length' || choice.finish_reason==='max_tokens')
+            throw createCxError('CX-RES-004',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',truncated:true});
+        if(choice.finish_reason!=='stop')throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
         const text=choice.message?.content;
-        if(typeof text!=='string' || !text.trim())throw new Error('AI 返回空答案');
+        if(text!==null && typeof text!=='string')throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
+        if(typeof text!=='string' || !text.trim())throw createCxError('CX-RES-003',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasContent:false},{legacyCode:'EMPTY_REPLY'});
         let parsed;
         try {parsed=JSON.parse(text);}
-        catch {throw new Error('AI 返回内容不是合法 JSON');}
+        catch {throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',json:false});}
+        if(!parsed || typeof parsed!=='object' || Array.isArray(parsed))throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
+        if(typeof requestContextForResponse==='function')requestContextForResponse(parsed,configuredResponseContext(response,settings));
         return {parsed,usage:response.usage || null};
     }
     // Key 输入就地显示；闭合 Shadow DOM 不向课程页面暴露输入节点。
@@ -3615,7 +3815,8 @@ Typr["U"] = {
     const ASSISTANT_UPDATE_KEY = 'cx_assistant_update';
     const ASSISTANT_UPDATE_SOURCE = 'https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js';
     const assistantUpdateOpen = window.open.bind(window);
-    let assistantUpdatePending = null, assistantUpdateAbort = null, assistantUpdateTimer = null;
+    let assistantUpdatePending = null, assistantUpdateAbort = null;
+    let assistantUpdateStartup = null, assistantUpdateStarted = false;
     let assistantUpdateListener = null, assistantUpdateGeneration = 0, assistantUpdateMessage = '';
 
     function assistantVersionParts(value) {
@@ -3719,6 +3920,16 @@ Typr["U"] = {
         if (!assistantVersionIsNewer(cache.version)) return;
         assistantUpdateOpen(assistantUpdateDownloadURL(cache.version), '_blank', 'noopener,noreferrer');
     }
+    function startAssistantUpdateCheck() {
+        // 每个顶层 Document 一次；面板、iframe 和 BFCache 恢复不另建自动请求。
+        if (window !== window.top || assistantUpdateStarted) return assistantUpdateStartup;
+        assistantUpdateStarted = true;
+        const generation = assistantUpdateGeneration;
+        assistantUpdateStartup = Promise.resolve().then(() => {
+            if (generation === assistantUpdateGeneration) return checkAssistantUpdates(true);
+        }).catch(() => null);
+        return assistantUpdateStartup;
+    }
     function initAssistantUpdates(shadow) {
         if (assistantUpdateListener === null && typeof GM_addValueChangeListener === 'function') {
             assistantUpdateListener = GM_addValueChangeListener(ASSISTANT_UPDATE_KEY, () => renderAssistantUpdates());
@@ -3729,17 +3940,11 @@ Typr["U"] = {
             const button = shadow.getElementById(id);
             button.onclick = event => { if (trustedAssistantActivation(event, button)) openAssistantUpdate(); };
         }
-        // 真正点击助手时进行低频检查；网页派发的点击不会触发后台请求。
-        shadow.addEventListener('click', event => {
-            if (!event.isTrusted || !trustedAssistantActivation(event, shadow) || assistantUpdateTimer !== null) return;
-            assistantUpdateTimer = setTimeout(() => { assistantUpdateTimer = null; if (!assistantUiHidden) checkAssistantUpdates(); }, 400);
-        });
         renderAssistantUpdates();
     }
     window.addEventListener('pagehide', () => {
         assistantUpdateGeneration++;
         assistantUpdateAbort?.abort(); assistantUpdateAbort = null; assistantUpdatePending = null;
-        clearTimeout(assistantUpdateTimer); assistantUpdateTimer = null;
         if (assistantUpdateListener !== null && typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(assistantUpdateListener);
         assistantUpdateListener = null;
     });
@@ -3905,6 +4110,12 @@ Typr["U"] = {
     }
     const STEM_SELECTOR = '.Zy_TItle .fontLabel,.Zy_TItle,.question-stem,.question-title,.mark_name,.stem,[data-question-text]';
     const MEDIA_EXCLUDED = 'dl,.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.attachment,.cx-ai-ignore';
+    function questionContentText(root) {
+        if (!root) return '';
+        if (root.nodeType === 3) return root.textContent || '';
+        if (root.nodeType !== 1 || root.matches('input,textarea,select,button,script,style,[contenteditable="true"],.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.cx-ai-ignore')) return '';
+        return [...root.childNodes].map(questionContentText).join('');
+    }
     function readQuestionTypeLabel(node, stem, group) {
         const explicit = clean(node.getAttribute('data-question-type') || node.getAttribute('data-type-name'));
         if (explicit) return explicit;
@@ -3967,11 +4178,11 @@ Typr["U"] = {
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
         const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
-        const question = stripQuestionPrefix(stem?.textContent, typeLabel);
+        const question = stripQuestionPrefix(questionContentText(stem), typeLabel);
         const instructions = clean([node.getAttribute('data-answer-instructions'),
-            ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(child=>child.textContent),
-            group?.querySelector(':scope > .type_tit')?.textContent,
-            group?.querySelector(':scope > .question-instructions')?.textContent].filter(Boolean).join('；'));
+            ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(questionContentText),
+            questionContentText(group?.querySelector(':scope > .type_tit')),
+            questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         let optionTargets, options, writer;
@@ -4004,7 +4215,7 @@ Typr["U"] = {
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, inputs, optionTargets, imageNodes, writer } };
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, adapterHints:local.graphHints || {} } };
     }
     registerPageAdapter({
         id: 'chaoxing-chapter',
@@ -4108,12 +4319,12 @@ Typr["U"] = {
     registerQuestionParser({ id: 'unknown', match: () => true, parse: raw => finishQuestion(raw, 'unknown', 'unknown') });
     function parseQuestionDocument(doc = document, parseContext = {}) {
         const raw = collectRawQuestions(doc, parseContext);
-        if (!raw.length) throw new Error('没有检测到题目，请先进入章节测验或作业');
+        if (!raw.length) throw questionParseError('CX-PAR-001', '没有检测到题目，请先进入章节测验或作业');
         const questions = [], media = [], bindings = new Map();
         for (const record of raw) {
             const parser = questionTypeParsers.find(item => item.id !== 'unknown' && item.match(record)) || questionTypeParsers.find(item => item.id === 'unknown');
             const parsed = parser.parse(record);
-            if (bindings.has(parsed.question.id)) throw new Error('题目 ID 重复，已停止');
+            if (bindings.has(parsed.question.id)) throw questionParseError('CX-PAR-007', '题目 ID 重复，已停止');
             questions.push(parsed.question); bindings.set(parsed.question.id, parsed.binding);
             media.push(...(record.media || []));
         }
@@ -4127,7 +4338,200 @@ Typr["U"] = {
         for(const question of questions)question.answerPolicy=questionLocalAnswerPolicy(question);
         return { schemaVersion: 2, questions, media, bindings };
     }
+
+    // Schema 3 shares the proven adapters and bindings with Schema 2. General layers do
+    // not invent platform selectors or infer a slot from the number of text boxes.
+    function questionParseError(code, message) {
+        if (typeof createCxError === 'function') return createCxError(code, {module:'question-parser',operation:'parse-document'});
+        const error = new Error(message); error.code = code; error.cxCode = code; return error;
+    }
+    function parseQuestionContent(node, context = {}, adapterHints = {}) {
+        const question = context.question || {}, binding = context.binding || {};
+        const blocks = [], slots = [], subquestions = [], imageNodes = binding.imageNodes || new Map();
+        const mediaByNode = new Map([...imageNodes].map(([id, image]) => [image, id]));
+        const text = value => typeof clean === 'function' ? clean(value) : String(value || '').replace(/\s+/g, ' ').trim();
+        const addText = value => { const valueText = text(value); if (valueText) blocks.push({type:'text', text:valueText}); };
+        const walk = current => {
+            if (current.nodeType === 3) { addText(current.textContent); return; }
+            if (current.nodeType !== 1 || current.matches(MEDIA_EXCLUDED + ',script,style,button,input,textarea,select,[contenteditable="true"]')) return;
+            if (context.parseContext?.scope === 'video-quiz' && typeof courseElementVisible === 'function' && !courseElementVisible(current)) return;
+            if (current.matches('.Zy_ulTop,.option,.answer-option,.option-item')) return;
+            if (current.tagName === 'IMG') {
+                const mediaId = mediaByNode.get(current);
+                if (mediaId) blocks.push({type:'image', mediaId});
+                else blocks.push({type:'image', unreadable:true});
+                return;
+            }
+            if (current.localName === 'math') {
+                const expression = text(current.querySelector('annotation[encoding="application/x-tex"]')?.textContent || current.textContent);
+                blocks.push({type:'math', ...(expression ? {expression} : {unreadable:true})}); return;
+            }
+            if (current.tagName === 'TABLE') {
+                blocks.push({type:'table', rows:[...current.rows].map(row => [...row.cells].map(cell => text(questionContentText(cell))))}); return;
+            }
+            if (current.tagName === 'PRE' || current.tagName === 'CODE') { blocks.push({type:'code', text:questionContentText(current)}); return; }
+            for (const child of current.childNodes) walk(child);
+        };
+        const stem = adapterHints.stem || binding.stem;
+        if (stem) walk(stem); else addText(question.question);
+        // Only explicit slot/semantic references supplied by an adapter, or valid
+        // native label references, can create independently addressable text units.
+        if (Array.isArray(adapterHints.slots)) {
+            for (const slot of adapterHints.slots) {
+                if (!slot?.id || !slot.control || !node.contains(slot.control)) continue;
+                slots.push({id:String(slot.id), text:text(slot.text), control:slot.control,
+                    evidence:['adapter-slot-reference'], type:slot.type || question.type});
+            }
+        } else if (['blank','essay'].includes(question.type)) {
+            const labels = [...node.querySelectorAll('label[for]')];
+            const idCounts = new Map();
+            for (const element of node.ownerDocument.querySelectorAll('[id]')) idCounts.set(element.id, (idCounts.get(element.id) || 0) + 1);
+            for (const label of labels) {
+                const targets = (binding.inputs || []).filter(input => input.id && input.id === label.htmlFor);
+                if (targets.length !== 1 || !text(label.textContent)) continue;
+                const control = targets[0];
+                if (label.control !== control || idCounts.get(control.id) !== 1 || typeof courseElementVisible === 'function' && !courseElementVisible(label)) continue;
+                if (labels.filter(other => other.htmlFor === control.id).length !== 1 || slots.some(slot => slot.control === control)) continue;
+                slots.push({id:`label-${slots.length + 1}`, text:text(label.textContent), control, evidence:['native-label-reference'], type:question.type});
+            }
+        }
+        for (const slot of slots) blocks.push({type:'slot', id:slot.id, text:slot.text});
+        if (Array.isArray(adapterHints.subquestions)) {
+            for (const child of adapterHints.subquestions) {
+                if (!child?.id || !child.root || !node.contains(child.root)) continue;
+                // An entire child region may include an existing written answer.
+                // Only adapter-declared content text/stem is eligible material.
+                const label = text(child.text || (child.stem && child.root.contains(child.stem) ? questionContentText(child.stem) : ''));
+                subquestions.push({...child, text:label}); blocks.push({type:'subquestion', id:String(child.id), text:label});
+            }
+        }
+        if (question.instructions) blocks.unshift({type:'instruction', text:question.instructions});
+        return {blocks, slots, subquestions, diagnostics:blocks.some(block => block.unreadable) ? ['unreadable-content'] : []};
+    }
+    function parseQuestionControls(node, context = {}, adapterHints = {}) {
+        const question = context.question || {}, binding = context.binding || {}, controls = [], runtime = new Map();
+        let sequence = 0;
+        const add = (target, kind, writable, extra = {}) => {
+            if (!target || [...runtime.values()].includes(target)) return;
+            const id = `${question.id}:control:${++sequence}`;
+            const descriptor = {id, kind, groupId:question.id, recognized:kind !== 'unknown',
+                writable:Boolean(writable && !target.disabled && !target.readOnly),
+                state:{disabled:Boolean(target.disabled), readOnly:Boolean(target.readOnly)}, diagnostics:[], ...extra};
+            controls.push(descriptor); runtime.set(id, target);
+        };
+        for (const [key, target] of binding.optionTargets || []) add(target,
+            binding.writer === 'chapter-choice' ? 'chapter-choice' : target.type === 'checkbox' ? 'checkbox' : 'radio',
+            binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
+        for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
+            ['blank','essay'].includes(question.type) && !question.controls?.richText);
+        for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
+            if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
+            add(target, target.tagName === 'SELECT' ? 'select' : target.tagName === 'CANVAS' ? 'canvas' : target.type === 'file' ? 'upload' : 'richtext', false);
+        }
+        return {controls, runtime, diagnostics:controls.filter(control => !control.writable).map(control => ({targetId:control.id, code:'no-safe-writer'}))};
+    }
+    function matchQuestionRelations(content, controls, context = {}) {
+        const question = context.question || {}, binding = context.binding || {}, relations = [], responseUnits = [];
+        const all = controls.controls, textControls = all.filter(control => ['text','textarea'].includes(control.kind));
+        const unit = (id, type, controlIds, status, evidence, text = '') => {
+            responseUnits.push({id, questionId:question.id, type, required:true, controlIds, relationStatus:status, question:text});
+            const targetId = controlIds.length === 1 ? controlIds[0] : `${question.id}:options`;
+            relations.push({responseUnitId:id, targetId, targetKind:controlIds.length === 1 ? 'control' : 'group', status, evidence});
+        };
+        if (['single','multiple','judge'].includes(question.type)) {
+            const targets = all.filter(control => control.optionKey);
+            const confirmed = binding.canPrefill && targets.length === question.options.length && targets.every(control => control.writable);
+            unit(question.id, question.type, targets.map(control => control.id), confirmed ? 'confirmed' : 'unsupported',
+                confirmed ? ['adapter-option-key','isolated-option-group'] : ['unverified-option-group']);
+        } else if (['blank','essay'].includes(question.type) && content.slots.length > 1) {
+            for (const slot of content.slots) {
+                const descriptor = textControls.find(control => controls.runtime.get(control.id) === slot.control);
+                const valid = descriptor?.writable && content.slots.filter(other => other.id === slot.id || other.control === slot.control).length === 1;
+                unit(`${question.id}::unit:${slot.id}`, slot.type, descriptor ? [descriptor.id] : [], valid ? 'confirmed' : 'ambiguous', slot.evidence, slot.text);
+            }
+            if (textControls.length !== content.slots.length) unit(`${question.id}::unmapped`, question.type, [], 'ambiguous', ['unmatched-response-controls']);
+        } else {
+            const confirmed = binding.canPrefill && textControls.length === 1 && textControls[0].writable;
+            unit(question.id, question.type, textControls.map(control => control.id), confirmed ? 'confirmed' : question.type === 'unknown' ? 'unsupported' : 'ambiguous',
+                confirmed ? ['adapter-question-boundary','unique-text-response'] : ['missing-unique-response']);
+        }
+        // A writable text/choice area does not make another explicitly present
+        // unsupported response control complete. Preserve partial analysis safely.
+        if (relations.some(relation => relation.status === 'confirmed')) {
+            for (const control of all.filter(control => ['select','upload','richtext','canvas'].includes(control.kind)))
+                unit(`${question.id}::unsupported:${control.id.split(':').at(-1)}`, 'unknown', [control.id], 'unsupported', ['no-safe-writer']);
+        }
+        return {responseUnits, relations};
+    }
+    function parseQuestionGraph(doc = document, parseContext = {}) {
+        const legacy = parseQuestionDocument(doc, parseContext), controls = [], relations = [], materials = [], bindings = new Map(legacy.bindings);
+        const questions = legacy.questions.map(original => {
+            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext};
+            const content = parseQuestionContent(binding.node, context, binding.adapterHints || {});
+            const parsedControls = parseQuestionControls(binding.node, context, binding.adapterHints || {});
+            const matched = matchQuestionRelations(content, parsedControls, context);
+            controls.push(...parsedControls.controls); relations.push(...matched.relations);
+            const composite = matched.responseUnits.length > 1;
+            const question = {...original, structure:composite ? 'composite' : 'simple', blocks:content.blocks,
+                responseUnits:matched.responseUnits, sharedMaterialIds:[], diagnostics:[...original.diagnostics, ...content.diagnostics]};
+            const instruction = binding.group?.querySelector(':scope > .question-instructions');
+            if (instruction && questionContentText(instruction)) {
+                const id = `${original.groupId}:material`;
+                if (!materials.some(material => material.id === id)) materials.push({id, type:'shared-context', text:questionContentText(instruction)});
+                question.sharedMaterialIds.push(id);
+            }
+            for (const unit of matched.responseUnits) {
+                if (!composite || unit.id === original.id) continue;
+                const nodes = unit.controlIds.map(id => parsedControls.runtime.get(id)).filter(Boolean);
+                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:'none', type:unit.type,
+                    canPrefill:unit.relationStatus === 'confirmed'});
+            }
+            const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
+            question.supportLevel = original.answerPolicy.status === 'manual' && original.answerPolicy.category !== 'controls' ? 'Manual Required'
+                : !original.capabilities.analyze ? (original.type === 'unknown' ? 'Unsupported' : 'Unreadable')
+                : confirmed === matched.responseUnits.length ? 'Fully Supported' : confirmed ? 'Partial Support' : 'Analyze Only';
+            return question;
+        });
+        const graph = {schemaVersion:3, questions, materials, media:legacy.media, controls, relations, bindings, lifecycle:null};
+        Object.defineProperty(graph, 'legacySnapshot', {value:legacy});
+        return graph;
+    }
+    function toLegacyQuestionSnapshot(graph) {
+        if (graph?.schemaVersion !== 3 || !graph.legacySnapshot) throw new Error('无效题目图');
+        return graph.legacySnapshot;
+    }
+    function buildQuestionRequestUnits(graph) {
+        const questions = [], bindings = new Map(), parentByUnit = new Map(), unitsByQuestion = new Map();
+        for (const parent of graph.questions) {
+            const ids = [];
+            for (const unit of parent.responseUnits) {
+                const composite = parent.structure === 'composite';
+                const confirmed = unit.relationStatus === 'confirmed';
+                let question = parent;
+                if (composite) {
+                    const count = unit.controlIds.length;
+                    const textUnit = ['blank','essay'].includes(unit.type);
+                    const material = graph.materials.filter(item => parent.sharedMaterialIds.includes(item.id)).map(item => item.text).filter(Boolean).join('\n');
+                    question = {...parent, id:unit.id, parentQuestionId:parent.id, parentNumber:parent.number, type:unit.type,
+                        question:[parent.question, material, unit.question].filter(Boolean).join('\n'),
+                        options:unit.id===parent.id && !textUnit ? parent.options : [],
+                        controls:textUnit ? {...parent.controls, textInputs:count, editableTextInputs:confirmed ? count : 0, richText:parent.controls.richText || 0} : parent.controls,
+                        diagnostics:parent.diagnostics.filter(value => value !== '多个或缺失文本框，暂不自动预填'),
+                        capabilities:{analyze:parent.capabilities.analyze, prefill:confirmed}, responseUnitId:unit.id};
+                    question.answerPolicy = questionLocalAnswerPolicy(question);
+                } else question = {...parent, capabilities:{...parent.capabilities, prefill:parent.capabilities.prefill && confirmed}};
+                questions.push(question); bindings.set(unit.id, graph.bindings.get(unit.id) || graph.bindings.get(parent.id));
+                parentByUnit.set(unit.id, parent.id); ids.push(unit.id);
+            }
+            unitsByQuestion.set(parent.id, ids);
+        }
+        return {questions, media:graph.media, bindings, parentByUnit, unitsByQuestion};
+    }
     // 图片只在用户启动分析后读取；请求内容不包含页面 URL、资源 URL 或 DOM。
+    function questionMediaError(message, operation = 'prepare-media') {
+        if (typeof createCxError === 'function') return createCxError('CX-PAR-006', {module:'question-media', operation});
+        const error = new Error(message); error.code = 'CX-PAR-006'; error.cxCode = 'CX-PAR-006'; return error;
+    }
     const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
     const MAX_REQUEST_BODY_BYTES = 44 * 1024 * 1024;
     const MAX_REQUEST_IMAGES = 600;
@@ -4147,19 +4551,19 @@ Typr["U"] = {
     }
     function readMediaBytes(src, doc = document, signal) {
         if(signal?.aborted)return Promise.reject(cancelledError());
-        if (!mediaAddressAllowed(src, doc)) return Promise.reject(new Error('图片地址缺失或不在已支持的资源域名内'));
+        if (!mediaAddressAllowed(src, doc)) return Promise.reject(questionMediaError('图片地址缺失或不在已支持的资源域名内'));
         const url = new URL(src, doc.baseURI);
         if (url.protocol === 'data:') {
             try {
                 const comma = src.indexOf(',');
                 const data = /;base64$/i.test(src.slice(0, comma)) ? atob(src.slice(comma + 1).replace(/\s/g, '')) : decodeURIComponent(src.slice(comma + 1));
                 return Promise.resolve(Uint8Array.from(data, character => character.charCodeAt(0)));
-            } catch { return Promise.reject(new Error('图片内联数据损坏')); }
+            } catch { return Promise.reject(questionMediaError('图片内联数据损坏')); }
         }
         if (url.protocol === 'blob:' || url.origin === new URL(doc.URL).origin) {
             return (async () => {
                 const view = doc.defaultView;
-                if (typeof view.fetch !== 'function') throw new Error('当前环境无法读取同源图片');
+                if (typeof view.fetch !== 'function') throw questionMediaError('当前环境无法读取同源图片');
                 const abort = new view.AbortController();
                 let timedOut = false;
                 const cancel = () => abort.abort();
@@ -4170,7 +4574,7 @@ Typr["U"] = {
                     const response = await view.fetch(src, { credentials:'same-origin', signal:abort.signal });
                     throwIfAborted(signal);
                     if (!response.ok) throw requestFailure(`图片读取失败 (HTTP ${response.status})`,'HTTP',response.status);
-                    if (response.url && !mediaAddressAllowed(response.url, doc)) throw new Error('图片重定向到未支持的资源域名');
+                    if (response.url && !mediaAddressAllowed(response.url, doc)) throw questionMediaError('图片重定向到未支持的资源域名');
                     const bytes = new Uint8Array(await response.arrayBuffer());
                     throwIfAborted(signal); return bytes;
                 } catch (error) {
@@ -4192,8 +4596,8 @@ Typr["U"] = {
                 onload(response) {
                     if(settled)return;
                     if (response.status < 200 || response.status >= 300) return finish(reject,requestFailure(`图片读取失败 (HTTP ${response.status})`,'HTTP',response.status));
-                    if (response.finalUrl && !mediaAddressAllowed(response.finalUrl, doc)) return finish(reject,new Error('图片重定向到未支持的资源域名'));
-                    try { finish(resolve,new Uint8Array(response.response)); } catch { finish(reject,new Error('图片响应格式不正确')); }
+                    if (response.finalUrl && !mediaAddressAllowed(response.finalUrl, doc)) return finish(reject,questionMediaError('图片重定向到未支持的资源域名'));
+                    try { finish(resolve,new Uint8Array(response.response)); } catch { finish(reject,questionMediaError('图片响应格式不正确')); }
                 },
                 onerror:()=>finish(reject,requestFailure('图片网络请求失败','NETWORK')),
                 ontimeout:()=>finish(reject,requestFailure('图片读取超时','TIMEOUT')),
@@ -4209,7 +4613,7 @@ Typr["U"] = {
         const ascii = (from,to) => String.fromCharCode(...bytes.slice(from,to));
         if (bytes.length >= 10 && ['GIF87a','GIF89a'].includes(ascii(0,6))) return 'image/gif';
         if (bytes.length >= 12 && ascii(0,4) === 'RIFF' && ascii(8,12) === 'WEBP') return 'image/webp';
-        throw new Error('图片文件损坏或格式不支持（支持 PNG、JPEG、GIF、WebP）');
+        throw questionMediaError('图片文件损坏或格式不支持（支持 PNG、JPEG、GIF、WebP）');
     }
     function bytesDataUrl(bytes, mime) {
         let binary = '';
@@ -4229,9 +4633,9 @@ Typr["U"] = {
             };
             if(signal?.aborted){cancel();return;}
             signal?.addEventListener('abort',cancel,{once:true});
-            timer = setTimeout(() => finish(new Error('图片解码超时')), 10000);
-            image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0 ? finish() : finish(new Error('图片尺寸无效'));
-            image.onerror = () => finish(new Error('图片解码失败'));
+            timer = setTimeout(() => finish(questionMediaError('图片解码超时')), 10000);
+            image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0 ? finish() : finish(questionMediaError('图片尺寸无效'));
+            image.onerror = () => finish(questionMediaError('图片解码失败'));
             image.src = dataUrl;
         });
     }
@@ -4248,11 +4652,11 @@ Typr["U"] = {
                     if (!cache.has(descriptor.src)) {
                         const pending = (async () => {
                             const bytes = await readMediaBytes(descriptor.src, doc, signal); check();
-                            if (!bytes.length) throw new Error('图片响应为空');
-                            if (bytes.length > MAX_IMAGE_BYTES) throw new Error('单张图片超过 32 MiB');
+                            if (!bytes.length) throw questionMediaError('图片响应为空');
+                            if (bytes.length > MAX_IMAGE_BYTES) throw questionMediaError('单张图片超过 32 MiB');
                             const mime = sniffImageMime(bytes), dataUrl = bytesDataUrl(bytes, mime);
                             const { width, height } = await decodeMediaSize(dataUrl, doc, signal); check();
-                            if (width > 8192 || height > 8192) throw new Error('图片单边尺寸超过 8192 像素');
+                            if (width > 8192 || height > 8192) throw questionMediaError('图片单边尺寸超过 8192 像素');
                             const subtle = doc.defaultView.crypto?.subtle;
                             const digest = subtle ? [...new Uint8Array(await subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2,'0')).join('') : null;
                             check();return { mime, dataUrl, byteLength:bytes.length, width, height, digest };
@@ -4274,18 +4678,32 @@ Typr["U"] = {
         } finally { cache.clear(); }
     }
 
+    function questionRequestBlocks(question) {
+        // Structured content is copied through a fixed field list; never serialize
+        // adapter hints, runtime nodes, controls, actual input values or resource URLs.
+        return (question.blocks || []).map(block => {
+            const output = {type:block.type};
+            if (['text','code','instruction','shared-context','slot','subquestion'].includes(block.type) && typeof block.text === 'string') output.text = block.text;
+            if (block.type === 'image' && typeof block.mediaId === 'string') output.mediaId = block.mediaId;
+            if (block.type === 'math' && typeof block.expression === 'string') output.expression = block.expression;
+            if (block.type === 'table' && Array.isArray(block.rows)) output.rows = block.rows.map(row => row.map(value => String(value)));
+            if (block.unreadable) output.unreadable = true;
+            return output;
+        });
+    }
     function toAIQuestion(question) {
         return { id:question.id, number:question.number, type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
-            imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [] };
+            imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [],
+            ...(question.blocks ? {blocks:questionRequestBlocks(question)} : {}) };
     }
     function requestMedia(questions, preparedMedia) {
         const byContent = new Map();
         for (const question of questions) {
             for (const id of questionImageIds(question)) {
                 const asset = preparedMedia.get(id);
-                if (!asset) throw new Error(`第 ${question.number} 题图片未准备完整`);
+                if (!asset) throw questionMediaError(`第 ${question.number} 题图片未准备完整`);
                 // 以完整内容去重，不依赖短摘要或 URL 判断两张图片是否相同。
                 let record = byContent.get(asset.dataUrl);
                 if (!record) { record = { asset, imageIds:[], sources:[], questionIds:[] }; byContent.set(asset.dataUrl, record); }
@@ -4294,9 +4712,9 @@ Typr["U"] = {
             }
         }
         const records = [...byContent.values()];
-        if (records.length > MAX_REQUEST_IMAGES) throw new Error('单次请求超过 600 张图片');
+        if (records.length > MAX_REQUEST_IMAGES) throw questionMediaError('单次请求超过 600 张图片');
         const edge = records.length >= 15 ? 4096 : 8192;
-        if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw new Error(`本批图片单边尺寸超过 ${edge} 像素`);
+        if (records.some(({asset}) => asset.width > edge || asset.height > edge)) throw questionMediaError(`本批图片单边尺寸超过 ${edge} 像素`);
         return records;
     }
     function buildChatContent(questions, evidence = {}, preparedMedia = new Map(), courseContext = [], answerFeedback = []) {
@@ -4324,7 +4742,7 @@ Typr["U"] = {
         return content;
     }
     function assertRequestSize(payload) {
-        if (new Blob([JSON.stringify(payload)]).size > MAX_REQUEST_BODY_BYTES) throw new Error('本次图文请求超过 44 MiB，请减少单题或同题组的图片材料');
+        if (new Blob([JSON.stringify(payload)]).size > MAX_REQUEST_BODY_BYTES) throw questionMediaError('本次图文请求超过 44 MiB，请减少单题或同题组的图片材料');
     }
     function normalizeMediaAnalysis(raw, questions, preparedMedia) {
         const records = requestMedia(questions, preparedMedia), entries = Array.isArray(raw.mediaAnalysis) ? raw.mediaAnalysis : [];
@@ -4339,6 +4757,170 @@ Typr["U"] = {
             output.push({ imageIds:record.imageIds, summary:text(entry.summary), columns, rows, items });
         }
         return output;
+    }
+    // Plans are inert data. Live DOM bindings and answer ownership stay private to this page.
+    const questionActionRuntime = new WeakMap();
+    function questionActionError(code, message, legacyCode) {
+        if (typeof createCxError === 'function') return createCxError(code, {module:'actions',operation:'prefill'}, {legacyCode});
+        const error=new Error(message);error.cxCode=code;error.code=legacyCode || code;return error;
+    }
+    function questionActionDisabled(node) {
+        return !node || node.disabled || node.readOnly || node.hasAttribute('disabled') || node.matches('.disabled,.x-item-disabled') || node.getAttribute('aria-disabled')==='true';
+    }
+    function questionActionState(binding, question, parseContext) {
+        const keys=[...binding.optionTargets].filter(([,node])=>selected(node)).map(([key])=>key);
+        // This saved value protects ordinary existing answers. Never read video hidden answers.
+        const hidden=parseContext?.scope==='video-quiz'?null:[...binding.node.querySelectorAll('input[type="hidden"]')].find(node=>node.name===`answer${question.id}`);
+        const saved=clean(hidden?.value),savedParts=saved?savedKeys(saved,binding.optionTargets):[],unknownSaved=Boolean(saved && (!savedParts.length || !savedParts.every(key=>binding.optionTargets.has(key))));
+        if(saved && !keys.length && !unknownSaved) keys.push(...savedParts);
+        return {keys:[...new Set(keys)].sort(),values:binding.inputs.map(input=>String(input.value)),saved,unknownSaved};
+    }
+    function questionActionSameState(a,b) {
+        return JSON.stringify(a)===JSON.stringify(b);
+    }
+    function planQuestionActions(snapshot, answers, options={}) {
+        const doc=snapshot?.doc || document,parseContext=options.parseContext || snapshot?.parseContext || {};
+        const graph=snapshot?.graph || (snapshot?.schemaVersion===3 && snapshot.bindings?snapshot:parseQuestionGraph(doc,parseContext));
+        const projection=buildQuestionRequestUnits(graph);
+        const fence=snapshot?.graph?snapshot:createQuestionSnapshot(graph,{doc,parseContext,signal:options.signal});
+        assertQuestionSnapshot(fence);
+        const questions=new Map((snapshot?.questions || projection.questions).map(question=>[question.id,question]));
+        const liveQuestions=new Map(projection.questions.map(question=>[question.id,question]));
+        const supplied=new Map(),summary={filled:0,already:0,skipped:0,unverified:0,details:[],perUnit:[],perQuestion:[]};
+        const plan={snapshotId:fence.snapshotId || fence.lifecycle?.snapshotId,actions:[]},units=[];
+        const failUnit=(question,entry,reason)=>{
+            summary.skipped++;summary.details.push(`第${question?.number || entry?.number || '?'}题：${reason}`);
+            summary.perUnit.push({responseUnitId:String(entry?.id || ''),questionId:projection.parentByUnit.get(entry?.id) || entry?.id,status:'skipped'});
+        };
+        for(const entry of answers || []) {
+            if(!entry || supplied.has(entry.id))throw questionActionError('CX-RES-006','答案编号重复或缺失');
+            supplied.set(entry.id,entry);
+        }
+        for(const entry of supplied.values()) {
+            const current=liveQuestions.get(entry.id),question=questions.get(entry.id) || current,binding=projection.bindings.get(entry.id);
+            if(!question || !current || !binding?.node){failUnit(question,entry,'无有效答案或题目不存在');continue;}
+            const policy=questionPrefillPolicy(current,entry);
+            if(!questionCanAutoAnswer(current,policy)){failUnit(question,entry,`${policy.reason || '需人工处理'}，跳过`);continue;}
+            if(!Array.isArray(entry.answer) || !entry.answer.length){failUnit(question,entry,`${entry.reason || '无有效答案，需人工核对'}`);continue;}
+            if(!binding.canPrefill || current.capabilities?.prefill===false){failUnit(question,entry,`${current.diagnostics?.join('；') || '控件映射不可靠'}，跳过`);continue;}
+            const responseUnit=graph.questions.flatMap(item=>item.responseUnits).find(item=>item.id===entry.id);
+            if(!responseUnit || !graph.relations.some(relation=>relation.responseUnitId===entry.id&&relation.status==='confirmed')){failUnit(question,entry,'题目与控件缺少已确认的关联，跳过');continue;}
+            const state=questionActionState(binding,current,parseContext),text=['blank','essay'].includes(current.type);
+            const original=parseContext.scope==='video-quiz'?options.ownedAnswers?.get(entry.id):null;
+            const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
+            const owns=Boolean(previous && previous.node===binding.node);
+            const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,text,previous,owns,state,actions:[],targets:new Map()};
+            if(text) {
+                const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
+                if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
+                const input=inputs[0];
+                if(owns && (previous.input!==input || String(input.value)!==previous.value))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
+                if(clean(input.value) && !owns){failUnit(question,entry,'已有填写内容，跳过');continue;}
+                unit.input=input;unit.value=entry.answer[0];
+                unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill',value:entry.answer[0],expectedState:'unchanged'});
+            } else {
+                const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
+                if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
+                if(state.unknownSaved){failUnit(question,entry,'已有无法识别的手工答案，跳过');continue;}
+                if(owns && (!previous.keys || previous.keys.length!==state.keys.length || previous.keys.some(key=>!state.keys.includes(key))))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
+                if(parseContext.scope==='video-quiz' && state.keys.length && !owns){failUnit(question,entry,'已有手工作答，等待人工处理');continue;}
+                if(!owns && state.keys.some(key=>!targetKeys.has(key))){failUnit(question,entry,'已有不同选项，未覆盖');continue;}
+                unit.targetKeys=targetKeys;
+                const choiceAction=(key,type)=>{
+                    const target=graph.controls.find(control=>responseUnit.controlIds.includes(control.id)&&control.optionKey===key);
+                    if(!target)throw questionActionError('CX-MAT-005','选项与控件关联已变化');
+                    unit.targets.set(target.id,binding.optionTargets.get(key));
+                    return {responseUnitId:unit.id,targetId:target.id,type,value:key,expectedState:type==='select'?'unselected':'selected'};
+                };
+                if(owns && current.type==='multiple')for(const key of state.keys)if(!targetKeys.has(key))unit.actions.push(choiceAction(key,'unselect'));
+                for(const key of keys)if(!state.keys.includes(key))unit.actions.push(choiceAction(key,'select'));
+                if(unit.actions.some(action=>questionActionDisabled(unit.targets.get(action.targetId)))){failUnit(question,entry,'控件不可用，跳过');continue;}
+            }
+            units.push(unit);plan.actions.push(...unit.actions);
+        }
+        plan.actions.forEach(Object.freeze);Object.freeze(plan.actions);
+        questionActionRuntime.set(plan,{snapshot:fence,graph,projection,doc,parseContext,units,summary,options:{...options},used:false});
+        return Object.freeze(plan);
+    }
+    async function executeQuestionActions(plan,runtime={}) {
+        const live=questionActionRuntime.get(plan);
+        if(!live || live.used)throw questionActionError('CX-PAR-008','执行计划已失效，请重新分析');
+        live.used=true;
+        const options={...live.options,...runtime},summary={...live.summary,details:[...live.summary.details],perUnit:[...live.summary.perUnit],perQuestion:[]};
+        const signal=options.signal;
+        let userEdited=false,writing=false,activeUnit=null,activeWrites=0,activeRecorded=false;
+        const onEdit=event=>{if(event.isTrusted && !writing)userEdited=true;};
+        const validate=()=>{
+            if(signal?.aborted)throw questionActionError('CX-EXE-005','操作已取消','ABORTED');
+            options.checkCurrent?.();
+            assertQuestionSnapshot(live.snapshot);
+            if(userEdited)throw questionActionError('CX-EXE-004','用户已介入作答，已停止自动填写');
+        };
+        const validateUnit=(unit,state=true)=>{
+            validate();
+            const {binding}=unit,nodes=[binding.node,...binding.inputs,...binding.optionTargets.values()];
+            if(nodes.some(node=>!node?.isConnected || node.ownerDocument!==live.doc || node!==binding.node&&!binding.node.contains(node)))throw questionActionError('CX-CTL-006','作答控件已替换，请重新分析');
+            if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
+            if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
+        };
+        const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
+        const result=(unit,status)=>{summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status});if(unit===activeUnit)activeRecorded=true;};
+        for(const unit of live.units)for(const type of ['input','change','click'])unit.binding.node.addEventListener(type,onEdit,true);
+        try {
+            // Check the complete plan before the first side effect, then each parent before its write.
+            for(const unit of live.units)validateUnit(unit);
+            unitLoop:for(const unit of live.units) {
+                activeUnit=unit;activeWrites=0;activeRecorded=false;
+                validateUnit(unit);
+                if(!unit.actions.length){result(unit,'already');continue;}
+                if(unit.text) {
+                    const input=unit.input;
+                    write(()=>{
+                        input.focus();
+                        // focus handlers may replace a node or update another answer.
+                        validateUnit(unit);
+                        const realm=input.ownerDocument.defaultView,proto=input instanceof realm.HTMLTextAreaElement?realm.HTMLTextAreaElement.prototype:realm.HTMLInputElement.prototype;
+                        const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+                        if(setter)setter.call(input,unit.value);else input.value=unit.value;
+                        activeWrites++;
+                        input.dispatchEvent(new realm.Event('input',{bubbles:true}));
+                        input.dispatchEvent(new realm.Event('change',{bubbles:true}));
+                    });
+                    await waitFor(()=>input.value===unit.value);
+                    validateUnit(unit,false);
+                    if(input.value===unit.value)result(unit,'filled');else{result(unit,'unverified');summary.details.push(`第${unit.question.number}题：已填写，请核对控件状态`);break;}
+                } else {
+                    for(const action of unit.actions) {
+                        validateUnit(unit);
+                        const target=unit.targets.get(action.targetId);
+                        if(questionActionDisabled(target))throw questionActionError('CX-CTL-004','作答控件不可编辑');
+                        write(()=>target.click());
+                        activeWrites++;
+                        await waitFor(()=>selected(target)===(action.type==='select'));
+                        validateUnit(unit,false);
+                        if(selected(target)!==(action.type==='select')){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：控件状态未确认，已停止后续填写`);break unitLoop;}
+                        // Capture only after the script-owned native action; trusted user events still cancel.
+                        unit.state=questionActionState(unit.binding,unit.question,live.parseContext);
+                    }
+                    const verified=()=>{const state=questionActionState(unit.binding,unit.question,live.parseContext);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key));};
+                    await waitFor(verified);validateUnit(unit,false);
+                    if(verified())result(unit,'filled');else{result(unit,'unverified');summary.details.push(`第${unit.question.number}题：已触发点击，请手动检查是否选中`);break;}
+                }
+            }
+            for(const id of new Set(summary.perUnit.map(item=>item.questionId))) {
+                const statuses=summary.perUnit.filter(item=>item.questionId===id).map(item=>item.status);
+                summary.perQuestion.push({questionId:id,status:statuses.includes('skipped')?'skipped':statuses.includes('unverified')?'unverified':statuses.every(value=>value==='already')?'already':'filled'});
+            }
+            return summary;
+        } catch(error) {
+            if(activeUnit&&activeWrites&&!activeRecorded){result(activeUnit,'unverified');summary.details.push(`第${activeUnit.question.number}题：已发生部分填写，后续动作已停止，请核对`);}
+            error.prefillSummary={...summary,details:[...summary.details]};
+            if(typeof recordCxDiagnostic==='function')recordCxDiagnostic(error,{module:'actions',operation:'prefill',taskId:live.snapshot.lifecycle?.taskId});
+            throw error;
+        } finally {
+            for(const unit of live.units)for(const type of ['input','change','click'])unit.binding.node.removeEventListener(type,onEdit,true);
+            questionActionRuntime.delete(plan);
+        }
     }
     const KEY_AUTO_CONTEXT = 'cx_auto_course_context';
     // 课程资料只保存在当前章内存中。仅读取现有字幕/文字，不下载媒体或推断画面内容。
@@ -5007,7 +5589,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.19');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.20');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -5091,16 +5673,9 @@ Typr["U"] = {
     function courseTaskContains(container, node) {
         // contains 只能比较同一 DOM 树；通过 frameElement 将内层节点投影到祖先文档。
         // 与 courseTaskContainer 使用相同深度边界；不可访问或无法证明归属时返回 false。
-        if(!container?.contains || !node)return false;
-        for(let depth=0,candidate=node;candidate && depth<12;depth++) {
-            try {
-                if(container===candidate || container.contains(candidate))return true;
-                const doc=candidate.nodeType===9?candidate:candidate.ownerDocument;
-                candidate=doc?.defaultView?.frameElement;
-            } catch {return false;}
-        }
-        return false;
+        return describeNodeRelation(container,node).status === 'inside';
     }
+
     function courseTaskContainer(node) {
         // 播放器本身和外层附件 iframe 都可能提供任务状态。
         let candidate = node, container = null;
@@ -5140,6 +5715,108 @@ Typr["U"] = {
         let focused=false;
         try {focused=typeof owner.hasFocus==='function'&&owner.hasFocus();}catch{}
         return {visible:owner.visibilityState==='visible',focused};
+    }
+    function courseVideoPlayerWindow(doc) {
+        // DOM 沙箱未必能直接看到页面的 Video.js；只读取同源页面实例，不向页面写变量。
+        if (typeof unsafeWindow === 'undefined') return doc.defaultView;
+        const frames=[];
+        for(let current=doc;current!==document;) {
+            if(frames.length>=12)return null;
+            const frame=current.defaultView?.frameElement;
+            if(!frame)return null;
+            frames.unshift(frame);current=frame.ownerDocument;
+        }
+        let view=unsafeWindow;
+        for(const frame of frames) {
+            const actual=[...view.document.querySelectorAll('iframe,frame')].find(node=>node.isSameNode(frame));
+            if(!actual)return null;
+            view=actual.contentWindow;
+        }
+        return view;
+    }
+    function courseVideoSpeedCapability(video) {
+        const result = (status, evidence, extra = {}) => ({status, rates:[], evidence, ...extra});
+        try {
+            const root = video?.closest('.video-js');
+            if (!root || !video.isConnected || !courseElementVisible(video)) return result('unknown','player-unavailable');
+            const view = courseVideoPlayerWindow(video.ownerDocument);
+            const pageRoot = [...(view?.document.querySelectorAll('.video-js') || [])].find(node=>node.isSameNode(root));
+            // 只查询已有实例，传真实 Element 而非 id；绝不调用会初始化播放器的 videojs()。
+            const players = [...new Set([pageRoot?.player, view?.videojs?.getPlayer?.(pageRoot)].filter(Boolean))];
+            if (players.length !== 1) return result('unknown','player-unavailable');
+            const player = players[0];
+            if (player.isDisposed?.() || !player.el?.()?.isSameNode(root) || root.querySelectorAll('video').length !== 1
+                || root.querySelector('video') !== video) return result('unknown','player-mismatch');
+            const options = typeof player.options === 'function' ? player.options() : player.options_;
+            const configured = options?.playbackRates;
+            const bar = player.getChild?.('controlBar') || player.controlBar;
+            const button = bar?.getChild?.('playbackRateMenuButton') || bar?.playbackRateMenuButton;
+            const buttonNode = button?.el?.();
+            const menuAvailable = buttonNode?.ownerDocument?.isSameNode(video.ownerDocument) && root.contains(buttonNode)
+                && courseElementVisible(buttonNode) && !buttonNode.closest('.vjs-hidden,.vjs-disabled,[disabled],[aria-disabled="true"]');
+            if (configured === false) return result(menuAvailable ? 'unknown' : 'disabled',menuAvailable ? 'configuration-conflict' : 'native-disabled');
+            if (!Array.isArray(configured) || !configured.length || configured.length > 64
+                || configured.some(rate => typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0)) return result('unknown','configuration-unavailable');
+            const rates = [...new Set(configured)].sort((a,b)=>a-b);
+            if (video.readyState < 2 || player.isReady_ === false) return result('unknown','player-unready');
+            // 只读取当前任务附近的明确限制，不用任务完成状态推测权限。
+            for (const scope of new Set([root, courseTaskContainer(video)].filter(Boolean))) {
+                for (const node of scope.querySelectorAll('p,span,div,li')) {
+                    if (node.childElementCount || !courseElementVisible(node) || node.closest(`${QUESTION_SELECTOR},.ans-videoquiz,#${ROOT_ID}`)) continue;
+                    const text = clean(node.textContent);
+                    if (text.length <= 160 && /(?:不可|禁止|不得|不允许|不支持|无法).{0,8}(?:倍速|变速)|(?:倍速|变速).{0,8}(?:禁止|关闭|不可用)/.test(text)) return result('disabled','explicit-restriction');
+                }
+            }
+            if (!menuAvailable || button.player?.() !== player || button.playbackRateSupported?.() === false) return result('unknown','menu-unavailable');
+            const parseRate = value => /^\d+(?:\.\d+)?\s*[x×倍]?$/i.test(String(value).trim()) ? Number.parseFloat(value) : NaN;
+            // 现场 7.2.2 使用这个原生菜单结构。标签 + 当前实例配置即可确认档位，
+            // 不要求平台定制的每个 MenuItem 都暴露 options().rate 等内部字段。
+            const nativeNodes = [...buttonNode.querySelectorAll('.vjs-menu-content[role="menu"] > .vjs-menu-item[role="menuitemradio"]')];
+            const items = nativeNodes.length ? nativeNodes.map(node => {
+                const labels = node.querySelectorAll('.vjs-menu-item-text');
+                return {node, rate:labels.length===1 ? parseRate(clean(labels[0].textContent)) : NaN};
+            }) : (Array.isArray(button.items) ? button.items : []).map(item => ({node:item.el?.(),
+                rate:parseRate(item.options?.()?.rate ?? item.rate), player:item.player?.()}));
+            if (items.length !== rates.length || items.some(item => (!nativeNodes.length && item.player !== player) || !item.node?.matches('.vjs-menu-item')
+                || !buttonNode.contains(item.node) || item.node.closest('.vjs-disabled,[disabled],[aria-disabled="true"]') || !rates.includes(item.rate))
+                || new Set(items.map(item=>item.rate)).size !== rates.length) return result('unknown','menu-conflict');
+            if (typeof player.playbackRates === 'function') {
+                const actual = player.playbackRates();
+                if (!Array.isArray(actual) || JSON.stringify([...new Set(actual)].sort((a,b)=>a-b)) !== JSON.stringify(rates)) return result('unknown','configuration-conflict');
+            }
+            return result('allowed',nativeNodes.length?'native-configuration-and-dom-menu':'native-configuration-and-menu',{rates, player, button, items});
+        } catch { return result('unknown','player-unreadable'); }
+    }
+    function courseApplyVideoSpeed(video, attempts, {enabled=true, disabledReason='switch-off'} = {}) {
+        const capability = courseVideoSpeedCapability(video);
+        const state = {status:capability.status, rates:capability.rates, evidence:capability.evidence, selectedRate:null, outcome:'unchanged'};
+        if (!enabled) return {...state,outcome:disabledReason};
+        if (capability.status !== 'allowed') return state;
+        const target = capability.rates.filter(rate=>rate>1 && rate<=2).at(-1);
+        if (!target) return {...state,outcome:'no-faster-rate'};
+        state.selectedRate = target;
+        if (video.playbackRate >= target) return {...state,outcome:'already-selected'};
+        const item = capability.items.find(item=>item.rate===target), signature = capability.rates.join(',');
+        const tried = attempts.get(item.node) || new Set();
+        if (tried.has(signature)) return {...state,outcome:'not-retained'};
+        const button = capability.button, menu = button.menu, buttonNode = button.el();
+        let opened = false;
+        try {
+            if (!courseElementVisible(item.node)) {
+                if (typeof menu?.show !== 'function' || typeof menu?.hide !== 'function'
+                    || typeof button.addClass !== 'function' || typeof button.removeClass !== 'function') return {...state,outcome:'menu-unavailable'};
+                // 使用播放器自己的菜单显示接口；不点会循环切换速率的菜单按钮，也不抢焦点。
+                menu.show(); button.addClass('vjs-hover'); opened = true;
+            }
+            const fresh = courseVideoSpeedCapability(video);
+            if (fresh.status !== 'allowed' || fresh.player !== capability.player || fresh.button !== button
+                || !fresh.items.some(current=>current.node===item.node && current.rate===target) || !courseElementVisible(item.node)
+                || !courseElementVisible(buttonNode)) return {...state,status:'unknown',outcome:'menu-changed'};
+            tried.add(signature); attempts.set(item.node,tried);
+            item.node.click();
+            return {...state,outcome:video.playbackRate===target?'selected':'not-retained'};
+        } catch { return {...state,status:'unknown',outcome:'selection-failed'}; }
+        finally { if (opened) { try {button.removeClass('vjs-hover');menu.hide();} catch {} } }
     }
     function courseVisibleMarker(container, selector) {
         return Boolean(container && (container.matches(selector)&&courseElementVisible(container)
@@ -5280,7 +5957,7 @@ Typr["U"] = {
             || courseVisibleMarker(doc.body,'.ans-job-icon'));
     }
     function coursePageWithoutTasks(tree,tasks) {
-        if(tasks.some(task=>courseTaskRequired(task.node)===true))return false;
+        if(tasks.some(task=>courseTaskRequired(task.node)!==false))return false;
         if(coursePageHasTaskPoints(tree))return false;
         // 先完成加载等待，再按可见任务标记判断；不依赖标签名称或固定标签数量。
         // 空白、不可读框架仍不能证明无任务；无任务仅表示跳过，不写平台完成状态。
@@ -5365,6 +6042,10 @@ Typr["U"] = {
     const VIDEO_QUIZ_ROOT = '.ans-videoquiz,[data-video-quiz-root]';
     const VIDEO_QUIZ_FEEDBACK = '[data-video-quiz-result],.videoquiz-result,.videoquiz-feedback,.answer-feedback,.tkTopic_oper .rightInfo,.tkTopic_oper .spanNot,.tkTopic_oper .spanNotBack';
     const videoQuizCuePositions = new WeakMap();
+    function courseVideoQuizError(code, message) {
+        if(typeof createCxError==='function')return createCxError(code,{module:'video-quiz',operation:'guard'});
+        const error=new Error(message);error.cxCode=code;error.code=code;return error;
+    }
     function courseVideoQuizVisibleText(node) {
         if(!node||!courseElementVisible(node)||node.matches(MEDIA_EXCLUDED+',script,style'))return '';
         return clean([...node.childNodes].map(child=>child.nodeType===3?child.textContent:child.nodeType===1?courseVideoQuizVisibleText(child):'').join(' '));
@@ -5401,7 +6082,7 @@ Typr["U"] = {
             const nativeTopic=node.matches('.tkItem');
             const stems=[...node.querySelectorAll(nativeTopic?':scope > .tkItem_title':STEM_SELECTOR+',legend')].filter(courseElementVisible);
             const unique=stems.filter(stem=>!stems.some(other=>other!==stem&&stem.contains(other)));
-            if(unique.length!==1)throw new Error('视频弹题题干无法唯一定位，需人工处理');
+            if(unique.length!==1)throw courseVideoQuizError('CX-PAR-002','视频弹题题干无法唯一定位，需人工处理');
             let typeLabel;
             if(nativeTopic){
                 const topic=node.closest('.tkTopic');
@@ -5429,8 +6110,8 @@ Typr["U"] = {
     function courseVideoQuizSnapshot(candidate) {
         const {root,doc,video}=candidate;
         const parseContext={scope:'video-quiz',root};
-        const parsed=parseQuestionDocument(doc,parseContext);
-        if(parsed.questions.some(q=>GARBLED.test(q.question)||q.options.some(o=>GARBLED.test(o.text))))throw new Error('检测到字体混淆，弹题材料尚未还原，需人工处理');
+        const graph=parseQuestionGraph(doc,parseContext),parsed=toLegacyQuestionSnapshot(graph);
+        if(parsed.questions.some(q=>GARBLED.test(q.question)||q.options.some(o=>GARBLED.test(o.text))))throw courseVideoQuizError('CX-PAR-005','检测到字体混淆，弹题材料尚未还原，需人工处理');
         const videoIdentity=video.id || `video-${[...doc.querySelectorAll('video')].indexOf(video)+1}`;
         const cue=Number(root.getAttribute('data-cue-seconds'));
         if(!videoQuizCuePositions.has(root))videoQuizCuePositions.set(root,Number.isFinite(video.currentTime)?Math.round(video.currentTime):null);
@@ -5446,7 +6127,8 @@ Typr["U"] = {
         // 平台题 ID 和弹题位置保存次数；内容指纹只用于快照校验，题目反馈不能生成新额度。
         const questionIdentity=hasPlatformIds?courseVideoQuizHash(JSON.stringify({ids:platformIds,cue:explicitCue?cue:null})):`${cueSeconds ?? 'cue'}:${fingerprint}`;
         const key=`${videoIdentity}:${questionIdentity}`;
-        return {key,questionIdentity,videoIdentity,cueSeconds,fingerprint,identitySource:hasPlatformIds?'platform':'content',root,doc,parseContext,...parsed,signature:signature(parsed.questions,parsed.media)};
+        return Object.assign(createQuestionSnapshot(graph,{doc,parseContext,taskId:key}),
+            {key,questionIdentity,videoIdentity,cueSeconds,fingerprint,identitySource:hasPlatformIds?'platform':'content',root});
     }
     function courseVideoQuizButton(candidate,kind='submit') {
         if(!candidate?.root?.isConnected||!courseElementVisible(candidate.root))return null;
@@ -5520,7 +6202,7 @@ Typr["U"] = {
             return inflight;
         };
         const process=async initial=>{
-            let candidate=initial,record,owned=null,snapshot=null,intervened=false,child=null,scriptWriting=false,nativeWrite=false,feedbackBaseline=null;
+            let candidate=initial,record,owned=null,snapshot=null,intervened=false,child=null,scriptWriting=false,nativeWrite=false,feedbackBaseline=null,snapshotInvalidation=null;
             const feedbackChanges=new Set();
             const freshFeedback=()=>{
                 if(feedbackBaseline)return [...courseVideoQuizFeedbackEntries(candidate)].filter(([node,text])=>!feedbackBaseline.has(node)||feedbackBaseline.get(node)!==text||feedbackChanges.has(node)).map(([,text])=>text).join('；').slice(0,1200);
@@ -5538,8 +6220,8 @@ Typr["U"] = {
                     for(const node of mutation.addedNodes)if(node.nodeType===1){if(node.matches(VIDEO_QUIZ_FEEDBACK))feedbackChanges.add(node);node.querySelectorAll(VIDEO_QUIZ_FEEDBACK).forEach(n=>feedbackChanges.add(n));}
                 }
                 if(child&&!scriptWriting&&snapshot){
-                    try {const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root||courseVideoQuizSnapshot(current).signature!==snapshot.signature){intervened=true;child.abort();}}
-                    catch {intervened=true;child.abort();}
+                    try {const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw courseVideoQuizError('CX-CTL-006','弹题已重新渲染');assertQuestionSnapshot(snapshot);}
+                    catch(error) {snapshotInvalidation=error;child.abort();}
                 }
                 hooks.wake();
             });
@@ -5548,7 +6230,14 @@ Typr["U"] = {
             hooks.waiting(true);
             const guard=()=>{hooks.guard();if(closed)throw new Error('视频弹题处理已取消');if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);};
             const save=()=>{guard();hooks.save();};
-            const manual=reason=>{record.phase='manual-wait';record.reason=String(reason).slice(0,400);save();};
+            const manual=(reason,error)=>{
+                record.phase='manual-wait';record.reason=String(reason).slice(0,400);
+                if(error&&typeof recordCxDiagnostic==='function'){
+                    const diagnostic=recordCxDiagnostic(error,{module:'video-quiz',operation:'guard',taskId:hooks.settings?.diagnosticTaskId,attempt:record.attempts,phase:'manual-wait',submissionStarted:Boolean(record.submissionStarted)});
+                    record.cxCode=diagnostic.code;record.reason=diagnostic.message;
+                }
+                save();
+            };
             const rebind=()=>{
                 const current=courseVideoQuizCandidate(video);
                 if(!current)return null;
@@ -5560,7 +6249,7 @@ Typr["U"] = {
             try {
                 guard();
                 try {await hooks.font(initial.doc,{scope:'video-quiz',root:initial.root});guard();snapshot=courseVideoQuizSnapshot(initial);}
-                catch(error){guard();record=records.find(r=>r.key==='unreadable')||{key:'unreadable',attempts:0,history:[]};if(!records.includes(record))records.push(record);manual(error.message);}
+                catch(error){guard();record=records.find(r=>r.key==='unreadable')||{key:'unreadable',attempts:0,history:[]};if(!records.includes(record))records.push(record);manual(error.message,error);}
                 if(snapshot){
                     record=records.find(r=>r.key===snapshot.key||r.questionIdentity===snapshot.questionIdentity);
                     // 无平台 ID 的未解除题目按内容保守关联；重渲染和回看不能重置计数。
@@ -5568,7 +6257,7 @@ Typr["U"] = {
                     if(!record){record={key:snapshot.key,questionIdentity:snapshot.questionIdentity,videoIdentity:snapshot.videoIdentity,cueSeconds:snapshot.cueSeconds,fingerprint:snapshot.fingerprint,identitySource:snapshot.identitySource,phase:'reading',attempts:0,history:[],submissionStarted:false,outcomeConfirmed:false};records.push(record);}
                     record.questions=snapshot.questions.slice(0,50).map(q=>({id:q.id,number:q.number,type:q.type,question:q.question.slice(0,2000),instructions:(q.instructions||'').slice(0,400),options:q.options.slice(0,30).map(o=>({key:o.key,text:o.text.slice(0,800)}))}));
                     // 已开始但未获结果的动作只等待，不因刷新或新运行重复确认。
-                    if(records.some(r=>r.submissionStarted&&!r.outcomeConfirmed)){hooks.submitting(true);record.submissionStarted=true;record.outcomeConfirmed=false;manual('上次确认结果不明，请人工核对，禁止重复确认');}
+                    if(records.some(r=>r.submissionStarted&&!r.outcomeConfirmed)){hooks.submitting(true);record.submissionStarted=true;record.outcomeConfirmed=false;manual('上次确认结果不明，请人工核对，禁止重复确认',courseVideoQuizError('CX-EXE-006','上次确认结果不明'));}
                     else if(courseVideoQuizHasAnswers(snapshot))manual('弹题已有手工作答，等待人工处理');
                     else if(courseVideoQuizReadOnlyControls(snapshot)||!courseVideoQuizButton(candidate))manual('弹题控件或确认入口尚未可靠适配');
                     else if(record.phase==='replay-wait')record.phase='reading';
@@ -5598,14 +6287,14 @@ Typr["U"] = {
                     candidate=rebind()||candidate;
                     if(!candidate.root.isConnected||!courseElementVisible(candidate.root)){manual('弹题在解答前发生变化，等待人工处理');continue;}
                     try {
-                        snapshot=courseVideoQuizSnapshot(candidate);
+                        snapshot=courseVideoQuizSnapshot(candidate);snapshotInvalidation=null;
                         const before=courseVideoQuizAnswers(snapshot);
                         child=new AbortController();const cancel=()=>child.abort();hooks.signal.addEventListener('abort',cancel,{once:true});
-                        const signatureGuard=()=>{guard();if(intervened)throw new Error('用户已介入弹题，等待人工处理');
-                            const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw new Error('弹题已重新渲染，等待人工处理');
-                            if(courseVideoQuizSnapshot(current).signature!==snapshot.signature)throw new Error('弹题内容已变化，等待人工处理');
+                        const signatureGuard=()=>{guard();if(snapshotInvalidation)throw snapshotInvalidation;if(intervened)throw courseVideoQuizError('CX-EXE-004','用户已介入弹题，等待人工处理');
+                            const current=courseVideoQuizCandidate(video);if(!current||current.root!==snapshot.root)throw courseVideoQuizError('CX-CTL-006','弹题已重新渲染，等待人工处理');
+                            assertQuestionSnapshot(snapshot);
                             const actual=courseVideoQuizAnswers(snapshot);
-                            if(!scriptWriting&&[...before].some(([id,value])=>JSON.stringify(value.keys||value.value)!==JSON.stringify(actual.get(id)?.keys||actual.get(id)?.value)))throw new Error('弹题答案已被修改，等待人工处理');};
+                            if(!scriptWriting&&[...before].some(([id,value])=>JSON.stringify(value.keys||value.value)!==JSON.stringify(actual.get(id)?.keys||actual.get(id)?.value)))throw courseVideoQuizError('CX-EXE-004','弹题答案已被修改，等待人工处理');};
                         snapshot.checkCurrent=signatureGuard;
                         record.phase='analyzing';save();
                         const feedback=snapshot.questions.map(q=>({questionId:q.id,previousAttempts:record.history.filter(h=>h.wrong).map(h=>({answer:h.answers.find(a=>a.id===q.id)?.answer||[],feedback:h.feedback}))})).filter(item=>item.previousAttempts.length);
@@ -5619,9 +6308,12 @@ Typr["U"] = {
                         if(repeated){manual('AI 再次返回已经判错的答案，未重复确认');continue;}
                         record.phase='prefilling';save();scriptWriting=true;
                         const summary=await hooks.prefill(snapshot,result.answers,{ownedAnswers:owned,onWrite:value=>{nativeWrite=value;}});
-                        scriptWriting=false;guard();owned=courseVideoQuizAnswers(snapshot);
+                        // Validate the completed script-owned write before ending its authorization.
+                        // The analysis guard still compares the original answer state until replaced below.
+                        guard();assertQuestionSnapshot(snapshot);owned=courseVideoQuizAnswers(snapshot);scriptWriting=false;
                         if(unresolved.length||result.answers.length!==snapshot.questions.length||summary.skipped||summary.unverified||summary.filled+summary.already!==snapshot.questions.length){manual('支持题已填写，仍有题目或控件需人工处理，未确认');continue;}
-                        snapshot.checkCurrent=()=>{guard();if(intervened)throw new Error('用户已介入弹题，等待人工处理');};
+                        snapshot.checkCurrent=()=>{guard();if(intervened)throw courseVideoQuizError('CX-EXE-004','用户已介入弹题，等待人工处理');assertQuestionSnapshot(snapshot);};
+                        snapshot.checkCurrent();
                         const button=courseVideoQuizButton(candidate);
                         if(!button){manual('确认按钮不可用，未确认');continue;}
                         record.phase='submitting';record.submissionStarted=true;record.outcomeConfirmed=false;record.attempts++;
@@ -5644,10 +6336,10 @@ Typr["U"] = {
                                 candidate=next;record.phase='reading';save();break;
                             }
                             if(gateReleased(attemptState)){record.phase='passed';record.gateResult='平台解除门槛并恢复实际播放';record.outcomeConfirmed=true;record.submissionStarted=false;hooks.submitting(false);save();break;}
-                            if(hooks.now()>=deadline){manual('确认结果不明，请人工核对，禁止重复确认');break;}
+                            if(hooks.now()>=deadline){manual('确认结果不明，请人工核对，禁止重复确认',courseVideoQuizError('CX-EXE-003','确认结果不明'));break;}
                             hooks.status(`视频弹题第 ${record.attempts}/6 次确认，等待平台结果`);await hooks.wait();
                         }
-                    }catch(error){scriptWriting=false;guard();manual(error.message);}
+                    }catch(error){scriptWriting=false;guard();const failure=snapshotInvalidation||error;manual(failure.message,failure);}
                 }
             }finally{
                 child?.abort();video.removeEventListener('error',onMediaError);observer.disconnect();initial.root.removeEventListener('input',onEdit,true);initial.root.removeEventListener('change',onEdit,true);initial.root.removeEventListener('click',onEdit,true);
@@ -5776,7 +6468,15 @@ Typr["U"] = {
         return {allowed:true,reason:'',queue,token};
     }
     function courseTimeoutError(message) {
-        return Object.assign(new Error(message),{code:'COURSE_TIMEOUT'});
+        const error=createCxError('CX-EXE-007',{module:'course',operation:'wait'},{legacyCode:'COURSE_TIMEOUT'});
+        // Existing local report keeps its precise stage; safe export always uses the catalog.
+        error.message=message;
+        return error;
+    }
+    function courseFailureLimitError(limit) {
+        const error=createCxError('CX-EXE-008',{module:'course',operation:'protection',count:limit},{legacyCode:'COURSE_FAILURE_LIMIT'});
+        error.message=`连续 ${limit} 个章节超时，已保护性停止，请检查后重试`;
+        return error;
     }
     function courseRunActive(doc = document) {
         const owner = studyOwnerDocument(doc);
@@ -5845,6 +6545,9 @@ Typr["U"] = {
             const categories={playing:'当前播放',unknown:'暂停来源未确认，有限恢复',recovering:'尝试正常恢复',manual:'手动暂停，等待手动播放','recovery-blocked':'连续恢复无效，等待人工播放'};
             return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：旧鼠标拦截${state.installed===true?'已安装':'未安装'}，${stages[state.installedReadyState]||'安装时机未知'}；拦截 ${count(state.interceptedMouseouts)} 次，恢复入口尝试 ${count(state.recoveryAttempts)} 次；${categories[state.category]||'状态未知'}。`;
         }));
+        const speedStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.speedState).map(task=>{
+            const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；${state.evidence} / ${state.outcome}。`;
+        }));
         return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (report.retryOf ? '\n本轮为未完成章节重试，完成计数仅统计本轮。' : '')
             + (protection ? `\n连续超时 ${protection.consecutiveFailures}/${protection.limit}${protection.triggered?'，已保护性停止':''}。` : '')
@@ -5861,6 +6564,7 @@ Typr["U"] = {
             + (documentStates.length ? '\n资料状态记录：\n' + documentStates.join('\n') : '')
             + (foregroundStates.length ? '\n前台等待记录：\n' + foregroundStates.join('\n') : '')
             + (backgroundStates.length ? '\n后台播放保护记录：\n' + backgroundStates.join('\n') : '')
+            + (speedStates.length ? '\n倍速能力记录：\n' + speedStates.join('\n') : '')
             + (report.pacing?.restEnabled ? `\n学习休息：累计活动 ${Math.floor((report.pacing.activeMs||0)/1000)} 秒；${report.pacing.restUntil!==null?'已保存休息截止时间':'当前未休息'}。` : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
@@ -5910,8 +6614,10 @@ Typr["U"] = {
                 return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
             get report() { return current?.report || (key ? get(key,null)?.report : null); },
-            stop(reason = '用户停止自动学习') {
+            stop(reason = '用户停止自动学习', diagnosticError = null) {
                 if (!current || current.cancelled) return;
+                const cancellation=cancelledError();cancellation.message=reason;
+                current.stopError=diagnosticError || cancellation;
                 current.cancelled = true; current.reason = reason; current.abort.abort(); current.chapter?.abort.abort(); current.cancelWake();
                 current.releaseVideoProtection?.();
                 current.activeVideo?.pause();
@@ -5919,7 +6625,7 @@ Typr["U"] = {
             skip() {
                 if (!api.canSkip) return false;
                 if(!current)return api.start({resume:true,skipCurrent:true});
-                try { current.validate(); } catch(error) { api.stop(error.message); return false; }
+                try { current.validate(); } catch(error) { api.stop(error.message,error); return false; }
                 const chapter = current.chapter;
                 chapter.skipped = true; chapter.abort.abort(); chapter.wake();
                 current.releaseVideoProtection?.();
@@ -5927,7 +6633,7 @@ Typr["U"] = {
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (!scope || studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -5941,7 +6647,7 @@ Typr["U"] = {
                     retryCandidate=courseRetryCandidate(owner,previous);
                     if(!retryCandidate.allowed||retryCandidate.token!==retryToken){ctl.report(retryCandidate.allowed?'运行记录已变化，请重新确认重试':retryCandidate.reason,'error');return;}
                     skipLearned=get('cx_course_skip_learned',true)===true;
-                    skipUnanswerable=get('cx_course_skip_unanswerable',false)===true;videoQuizAuto=get('cx_course_video_quiz_auto',true)!==false;
+                    skipUnanswerable=get('cx_course_skip_unanswerable',false)===true;videoQuizAuto=get('cx_course_video_quiz_auto',true)!==false;speedEnabled=get('cx_course_speed_enabled',false)===true;
                     continueOnTimeout=get('cx_course_timeout_next',true)===true;muteVideo=get('cx_course_mute_video',true)===true;fromCurrent=false;
                 }
                 if(resume&&previous?.protection?.triggered){ctl.report('已保护性停止，请确认重试未完成章节','error');return;}
@@ -5953,6 +6659,8 @@ Typr["U"] = {
                 }
                 const configuration = readModelConfiguration();
                 const settings = configuration;
+                const diagnosticTaskId=newAssistantDiagnosticTaskId();
+                let runDiagnosticCode='';
                 const entries=catalog.entries.filter(item=>!item.isGroup);
                 let startIndex=0;
                 if(!resume && fromCurrent) {
@@ -5984,6 +6692,7 @@ Typr["U"] = {
                     muteVideo:resume ? previous.muteVideo!==false : muteVideo!==false,
                     skipUnanswerable:resume ? previous.skipUnanswerable===true : skipUnanswerable===true,
                     videoQuizAuto:resume ? previous.videoQuizAuto===true : videoQuizAuto!==false,
+                    speedEnabled:resume ? previous.speedEnabled===true : speedEnabled===true,
                     fromCurrent:resume ? previous.fromCurrent===true : fromCurrent===true,startChapterId:resume ? previous.startChapterId||queue[0].id : queue[0].id,
                     chapterIndex:resume ? previous.chapterIndex : 0,tabIndex:resume ? previous.tabIndex : 0,
                     cancelled:false,abort:new AbortController(),expected:null,navigating:false,lastSaved:0};
@@ -6008,7 +6717,7 @@ Typr["U"] = {
                     if(run.claimed && get(key,null)?.ownerId!==run.id)throw new Error('运行锁已失效');
                     if(run.pacing.activeStartedAt!==null){pausePacing();resumePacing();}
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
-                    set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,
+                    set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
                         learning:run.learning,pacing:{...run.pacing},queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
                     run.claimed=true;
@@ -6029,7 +6738,7 @@ Typr["U"] = {
                     for (const doc of courseFrameTree(owner).documents) doc.dispatchEvent(new doc.defaultView.Event('cx-ai-course-state'));
                 };
                 const guardRun = () => {
-                    if (run.cancelled) throw new Error(run.reason || '用户停止自动学习');
+                    if (run.cancelled) throw run.stopError || cancelledError();
                     if (owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id') !== run.id) throw new Error('运行锁已失效');
                     if (run.claimed && get(key,null)?.ownerId !== run.id) throw new Error('运行锁已失效');
                     if (courseScoreKey(owner) !== scope) throw new Error('课程或账号已变化');
@@ -6038,7 +6747,7 @@ Typr["U"] = {
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
                     // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
                     if (!run.navigating && !run.frameLoading && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
-                        throw new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查');
+                        throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
                         if (active?.id !== run.expected) throw new Error('用户切换了章节，已停止，避免操作新题目');
@@ -6107,7 +6816,7 @@ Typr["U"] = {
                         }
                     };
                     const race = async promise => {
-                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw new Error(run.reason);})]); guard(); return value;
+                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();})]); guard(); return value;
                     };
                     const taskDone = async node => {
                         if (courseTaskComplete(node) === false) await until(() => courseTaskComplete(node) === true,limits.completionMs,'播放/阅读结束，但平台未确认任务完成');
@@ -6123,6 +6832,8 @@ Typr["U"] = {
                         let foregroundPausePending=false,policyPauseExpected=false,playingEventCount=0;
                         const pauseControl={manualIntentUntil:0,manualPaused:false,lastAttemptAt:-Infinity,recoveryBlocked:false};
                         let playRequestPending=false;
+                        const speedAttempts=new WeakMap();
+                        task.speedState={status:'unknown',rates:[],evidence:'not-checked',selectedRate:null,outcome:!run.speedEnabled?'switch-off':settings.videoInfoEnabled?'recognition-enabled':'unchanged'};
                         const syncVideoWaitBudget=()=>{
                             const waiting=foregroundWaitingStartedAt!==null||manualWaitingStartedAt!==null||quizWaitingStartedAt!==null;
                             if(waiting&&waitingStartedAt===null)waitingStartedAt=now();
@@ -6291,7 +7002,7 @@ Typr["U"] = {
                         if(!Array.isArray(task.videoQuizzes))task.videoQuizzes=[];
                         let rewatchGrant=null;
                         const quizHandler=createCourseVideoQuizHandler(video,task.videoQuizzes,{
-                            settings,signal:context.abort.signal,now,confirmMs:limits.videoQuizConfirmMs,
+                            settings:{...settings,diagnosticTaskId},signal:context.abort.signal,now,confirmMs:limits.videoQuizConfirmMs,
                             guard:()=>{guard();if(!video.isConnected||!courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');},
                             wake:()=>wakeMedia?.(),wait:waitForMedia,playingCount:()=>playingEventCount,
                             status:message=>emit(message,'course-video-quiz'),
@@ -6499,6 +7210,9 @@ Typr["U"] = {
                                     continue;
                                 }
                                 foregroundPausePending=false;task.backgroundState.category='playing';task.backgroundState.reason=null;
+                                // 复用已通过弹题、前台、定位和媒体检查的播放入口；不在人工等待期间操作菜单。
+                                if(video.readyState>=2&&!courseVideoQuizCandidate(video))task.speedState=courseApplyVideoSpeed(video,speedAttempts,
+                                    {enabled:run.speedEnabled&&!settings.videoInfoEnabled,disabledReason:settings.videoInfoEnabled&&run.speedEnabled?'recognition-enabled':'switch-off'});
                                 // 定位位移不刷新停滞时间。先给一次普通媒体采样机会，随后必检原停滞计时；
                                 // 连续定位也不能反复续期，只有等待期间的真实普通播放进展能避免超时。
                                 if(wasPending&&!video.ended){
@@ -6656,7 +7370,9 @@ Typr["U"] = {
                         emit('正在分析章节测验…','generating');await race(ensureFontDecoded(doc));guard();
                         const body=doc.body;
                         const checkQuiz=()=>{guard();if(!courseFrameTree(owner).documents.includes(doc)||doc.body!==body) throw new Error('测验页面已切换，已停止');};
-                        const data=extract(doc),snapshot={doc,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),checkCurrent:checkQuiz,courseContext:settings.videoInfoEnabled?captureCurrentCourseContext(owner):[]};
+                        const snapshot=extractQuestionSnapshot(doc,{}, {taskId:diagnosticTaskId,checkCurrent:checkQuiz,signal:context.abort.signal});
+                        snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(owner):[];
+                        const data={version:ASSISTANT_VERSION,schemaVersion:3,questions:snapshot.questions,media:snapshot.media,total:snapshot.questions.length};
                         ctl.output(data);
                         if(!data.questions.length) throw new Error('测验没有可提取的题目');
                         if(!settings.key || !settings.model) {
@@ -6669,17 +7385,17 @@ Typr["U"] = {
                             throw Object.assign(new Error('测验题型尚未适配，无法自动填写'),{code:'COURSE_MANUAL_ANSWER_REQUIRED'});
                         }
                         let answers;
-                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'))); }
+                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'))); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
                         guard();checkSnapshot(snapshot);
                         const payload={...data,...answers,model:settings.model};ctl.output(payload);
-                        const byId=new Map(answers.answers.map(a=>[a.id,a]));
+                        const byId=new Map(answers.answers.map(a=>[a.id,a])),units=questionAnswerSnapshot(snapshot).questions;
                         const summary=answers.answers.some(a=>a.answer.length)
                             ? await race(prefillChecked(snapshot,answers.answers))
                             : {filled:0,already:0,skipped:data.total,unverified:0,details:answers.answers.map(a=>`第${a.number}题：${a.answerPolicy?.reason || a.reason || '需人工处理'}`)};
                         guard();checkSnapshot(snapshot);ctl.output({...payload,prefill:summary});
-                        const invalid=data.questions.filter(q=>!questionCanAutoAnswer(q,byId.get(q.id)?.answerPolicy) || !q.capabilities.prefill || !byId.get(q.id)?.answer?.length);
-                        if(invalid.length || summary.skipped || summary.unverified || summary.filled+summary.already!==data.total) {
+                        const invalid=units.filter(q=>!questionCanAutoAnswer(q,byId.get(q.id)?.answerPolicy) || !q.capabilities.prefill || !byId.get(q.id)?.answer?.length);
+                        if(invalid.length || summary.skipped || summary.unverified || summary.filled+summary.already!==units.length) {
                             chapter.issues.push(...invalid.map(q=>({number:q.number,reason:(byId.get(q.id)?.answerPolicy?.status!=='auto'?byId.get(q.id)?.answerPolicy?.reason:null) || byId.get(q.id)?.reason || q.diagnostics.join('；') || '无可靠答案或控件不可自动填写'})));
                             if(!invalid.length)chapter.issues.push(...summary.details.map(reason=>({number:Number(reason.match(/第\s*(\d+)\s*题/)?.[1])||null,reason})));
                             const error=new Error('支持的题目已处理，仍有题目需人工完成，未提交测验');error.code='COURSE_MANUAL_ANSWER_REQUIRED';throw error;
@@ -6810,12 +7526,12 @@ Typr["U"] = {
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
-                            if(!tasks.length && lastTab && pendingHere() && entryState()?.pending>0 && !entryState()?.completed) {
+                            if(!tasks.length && lastTab && (pendingHere() || !chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if(!pendingHere())return {tasks:[]};
+                                    if(!pendingHere() && chapter.tasks.some(task=>task.status==='manual-pending'))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -6859,9 +7575,9 @@ Typr["U"] = {
                 try {
                     save();
                     watchdog=owner.defaultView.setInterval(()=>{
-                        try {guardRun();if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message);}
+                        try {guardRun();if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
                     },limits.pollMs);
-                    if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw Object.assign(new Error(`连续 ${run.protection.limit} 个章节超时，已保护性停止，请检查后重试`),{code:'COURSE_FAILURE_LIMIT'});}
+                    if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
                         await waitForFrameReady();guardRun();const chapter=report.chapters[run.chapterIndex];
@@ -6895,7 +7611,7 @@ Typr["U"] = {
                         courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);
                         if(run.protection.consecutiveFailures>=run.protection.limit) {
                             run.protection.triggered=true;run.protection.triggeredAt=now();save();
-                            throw Object.assign(new Error(`连续 ${run.protection.limit} 个章节超时，已保护性停止，请检查后重试`),{code:'COURSE_FAILURE_LIMIT'});
+                            throw courseFailureLimitError(run.protection.limit);
                         }
                         save();
                         if(chapter.status==='timed-out')emitRun(`本章节超时；连续超时 ${run.protection.consecutiveFailures}/${run.protection.limit}，继续下一节`,'course-running');
@@ -6910,6 +7626,9 @@ Typr["U"] = {
                     }
                     report.status='done';
                 } catch(error) {
+                    const diagnostic=recordCxDiagnostic(error,{module:'course',operation:'run',taskId:diagnosticTaskId});
+                    runDiagnosticCode=diagnostic.code;
+                    ctl.state.lastErrorCode=runDiagnosticCode;
                     if(!run.leaving) {report.status='stopped';report.reason=error.message;}
                     const chapter=report.chapters[run.chapterIndex];
                     if(error.code!=='COURSE_FAILURE_LIMIT' && report.status==='stopped' && chapter && chapter.status!=='already' && chapter.status!=='done') {
@@ -6972,7 +7691,7 @@ Typr["U"] = {
             if(seconds<=0){clearStopConfirmation();return;}
             stopButton.textContent=`确认停止（${seconds}s）`;
         };
-        const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video'),skipUnanswerable=s.getElementById('course-skip-unanswerable'),videoQuizAuto=s.getElementById('course-video-quiz-auto');
+        const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video'),skipUnanswerable=s.getElementById('course-skip-unanswerable'),videoQuizAuto=s.getElementById('course-video-quiz-auto'),speedEnabled=s.getElementById('course-speed-enabled');
         const autoSubmit=s.getElementById('course-auto-submit');
         const restEnabled=s.getElementById('course-rest-enabled'),studyMinutes=s.getElementById('course-study-minutes'),restMinutes=s.getElementById('course-rest-minutes');
         const renderLearningFields=()=>{
@@ -6986,7 +7705,7 @@ Typr["U"] = {
             s.getElementById('course-learning-message').textContent=cfg[field]!==value?'请输入范围内的整数，已恢复默认值。':'学习设置已保存';
             set(key,cfg[field]);renderLearningFields();
         };
-        for(const [control,key,fallback] of [[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false],[videoQuizAuto,'cx_course_video_quiz_auto',true]]) {
+        for(const [control,key,fallback] of [[skipLearned,'cx_course_skip_learned',true],[fromCurrent,'cx_course_from_current',false],[timeoutNext,'cx_course_timeout_next',true],[muteVideo,'cx_course_mute_video',true],[skipUnanswerable,'cx_course_skip_unanswerable',false],[videoQuizAuto,'cx_course_video_quiz_auto',true],[speedEnabled,'cx_course_speed_enabled',false]]) {
             control.checked=get(key,fallback)===true;
             control.onchange=()=>set(key,control.checked);
         }
@@ -7007,6 +7726,10 @@ Typr["U"] = {
         videoQuizAuto.onchange=event=>{
             if(!trustedAssistantActivation(event,videoQuizAuto,'change')||courseRunActive(doc)||ctl.state.busy){videoQuizAuto.checked=get('cx_course_video_quiz_auto',true)!==false;return;}
             set('cx_course_video_quiz_auto',videoQuizAuto.checked);render();
+        };
+        speedEnabled.onchange=event=>{
+            if(!trustedAssistantActivation(event,speedEnabled,'change')||courseRunActive(doc)||ctl.state.busy){speedEnabled.checked=get('cx_course_speed_enabled',false)===true;return;}
+            set('cx_course_speed_enabled',speedEnabled.checked);render();
         };
         const latestReport=()=>courseRunner?.report || (owner&&courseScoreKey(owner)?get(`cx_course_run:${courseScoreKey(owner)}`,null)?.report:null);
         const retryButton=s.getElementById('course-retry'),retryConfirm=s.getElementById('course-retry-confirm'),retryMessage=s.getElementById('course-retry-message');
@@ -7040,7 +7763,7 @@ Typr["U"] = {
                 const li=doc.createElement('li');li.textContent=`${label} · ${item.number} ${item.title}${item.reason?'：'+item.reason:''}`;list.append(li);
             }
             const protection=report?.protection;
-            s.getElementById('course-protection-status').textContent=protection?.triggered?report.reason:protection?.consecutiveFailures?`连续超时 ${protection.consecutiveFailures}/${protection.limit}`:'';
+            s.getElementById('course-protection-status').textContent=protection?.triggered?`连续 ${protection.limit} 个章节超时，已保护性停止（CX-EXE-008）`:protection?.consecutiveFailures?`连续超时 ${protection.consecutiveFailures}/${protection.limit}`:'';
             const candidate=retryCandidate();retryButton.disabled=!courseRunController(owner)||ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
             retryButton.title=candidate.allowed?'按原队列顺序重试待处理章节':candidate.reason;
             if(retryToken && (ctl.state.busy||!candidate.allowed||candidate.token!==retryToken))clearRetryConfirmation();
@@ -7068,9 +7791,10 @@ Typr["U"] = {
             fromCurrent.disabled=running||ctl.state.busy;
             timeoutNext.disabled=running||ctl.state.busy;
             muteVideo.disabled=running||ctl.state.busy;
-            skipUnanswerable.disabled=running||ctl.state.busy;videoQuizAuto.disabled=running||ctl.state.busy;
+            skipUnanswerable.disabled=running||ctl.state.busy;videoQuizAuto.disabled=running||ctl.state.busy;speedEnabled.disabled=running||ctl.state.busy;
             for(const control of [restEnabled,studyMinutes,restMinutes])control.disabled=running||ctl.state.busy;
             s.getElementById('course-run-note').textContent=owner&&!hasCommands?'请通过课程主页面的学习通AI助手操作自动学习。':owner?(skipUnanswerable.checked?'自动播放视频、阅读资料；未开启自动提交时跳过章节测验。开启后，无法自动答题的测验保留答案、不提交并继续，仍需人工完成。遇到验证或运行异常时沿用原保护规则。':'自动播放视频、阅读资料；未开启自动提交时跳过章节测验，开启后处理章节测验；遇到人脸识别或无法可靠作答时停止。'):'仅课程学习页面支持；独立作业页无法刷课。';
+            if(speedEnabled.checked)s.getElementById('course-run-note').textContent+=readModelConfiguration().videoInfoEnabled?' 已开启视频信息识别，本次不用倍速。':' 倍速仅选择原生提供的最高不超过 2x 档位。';
             s.getElementById('course-report').textContent=courseReportText(report);
         };
         panelView.renderCourseRunControls=render;
@@ -7079,7 +7803,7 @@ Typr["U"] = {
         }
         s.getElementById('course-start').onclick=event=>{
             if(!trustedAssistantActivation(event,s.getElementById('course-start')) || !courseRunController(owner))return;
-            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,videoQuizAuto:videoQuizAuto.checked,...readCourseLearningSettings()});
+            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,videoQuizAuto:videoQuizAuto.checked,speedEnabled:speedEnabled.checked,...readCourseLearningSettings()});
         };
         s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
         stopButton.onclick=event=>{
@@ -7096,7 +7820,7 @@ Typr["U"] = {
         };
         s.getElementById('close').addEventListener('click',clearStopConfirmation);
         s.getElementById('course-copy-report').onclick=async()=>{
-            try{await navigator.clipboard.writeText(courseReportText(latestReport()));ctl.report('刷课报告已复制');}
+            try{await navigator.clipboard.writeText(safeCourseDiagnosticReport(latestReport()));ctl.report('运行安全摘要已复制');}
             catch{ctl.report('无法复制，请选中报告后复制');}
         };
         const disconnect=()=>{
@@ -7323,10 +8047,10 @@ Typr["U"] = {
             const declaresSecretFont = styles.some(el => /@font-face[\s\S]*?font-cxsecret/.test(el.textContent));
             if (completed && !declaresSecretFont && roots.every(root => !GARBLED.test(root.textContent))) return;
         }
-        if (!base64) throw new Error('存在加密题目，但未找到可解析的 Base64 字体');
+        if (!base64) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
-                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw new Error('内置字体解析模块不可用，请重新安装完整脚本');
+                if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw createCxError('CX-CFG-006',{module:'parser',operation:'font'});
                 if (!fontTable) fontTable = JSON.parse(GM_getResourceText('Table'));
                 const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                 const font = Typr.parse(bytes)[0];
@@ -7343,7 +8067,7 @@ Typr["U"] = {
                     }
                 }
                 return { mapping, encodedCodes };
-            });
+            }).catch(error=>{throw error.cxCode?error:createCxError('CX-PAR-005',{module:'parser',operation:'font'},{cause:error});});
             fontCache.set(base64, pending);
             pending.catch(() => fontCache.delete(base64));
         }
@@ -7361,7 +8085,7 @@ Typr["U"] = {
                     // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
                     if (!encodedCodes.has(code)) return char;
                     const decoded = mapping.get(code);
-                    if (decoded === undefined) throw new Error(`字体表缺少字形映射（U+${code.toString(16).toUpperCase()}），已保留原文并停止分析`);
+                    if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
                     return decoded;
                 });
                 edits.set(node, next);
@@ -7558,7 +8282,7 @@ Typr["U"] = {
 
     function formatResultText(data) {
         if (!data?.questions?.length) return '';
-        const answers = new Map((data.answers || []).map(entry => [entry.id, entry]));
+        const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
         const lines = [`题目列表（共 ${data.questions.length} 题）`];
         const appendImages = ids => {
             for (const id of ids) {
@@ -7644,8 +8368,8 @@ Typr["U"] = {
         if (!data?.questions?.length) {
             fragment.append(node('p', 'result-empty', '提取后将在这里显示题目列表'));
         } else {
-            const answers = new Map((data.answers || []).map(entry => [entry.id, entry]));
-            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
+            const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
+            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
             const list = node('ol', 'question-list');
             for (const question of data.questions) {
                 const entry = answers.get(question.id);
@@ -7654,7 +8378,7 @@ Typr["U"] = {
                 const heading = node('div', 'question-heading');
                 heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
                 card.append(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
-                const policy=data.answerPolicies?.[question.id] || entry?.answerPolicy || question.answerPolicy;
+                const policy=entry?.answerPolicy || data.answerPolicies?.[question.id] || question.answerPolicy;
                 if(policy)card.append(node('p','note answer-policy',policy.status==='auto'?'可一键答题':
                     `${policy.status==='manual'?'需人工处理':policy.status==='needs-classification'?'待判断作答要求':'需人工确认'}：${policy.reason || '请核对作答要求'}`));
                 if (question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
@@ -7944,9 +8668,9 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.19</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.20</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.19.08 1.725 1.19 1.725 1.19 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.19-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.193a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.193 3.092-1.193.615 1.55.228 2.695.112 2.98.722.788 1.199 1.79 1.199 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.20.08 1.725 1.20 1.725 1.20 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.20-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.203a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.203 3.092-1.203.615 1.55.228 2.695.112 2.98.722.788 1.209 1.79 1.209 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -7972,7 +8696,7 @@ Typr["U"] = {
                   <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
                   <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
                   <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
-                  <p class="note">地址填写到 API 前缀；图片选项请按接口文档确认。自定义接口首次访问时，在篡改猴中仅授权该域名；若被拦截，请在本脚本设置的用户域名白名单中添加该域名。</p>
+                  <p class="note">自定义模型需要配置 AI 请求地址白名单：打开篡改猴管理面板 → 本脚本 → 设置 → 用户域名白名单，添加接口的主机名（例如 api.example.com）。首次请求时仅授权该域名。地址填写到 API 前缀；图片选项请按接口文档确认。网络失败也可能有其他原因，请结合错误码排查。</p>
                 </div>
                 <div class="settings-block"><div id="api-key-editor"></div><p id="api-key-status" class="note" role="status"></p></div>
                 <div class="row"><button type="button" id="detect-model" class="secondary">检测</button><button type="button" id="cancel-model-test" class="secondary" hidden>取消检测</button><span class="note">向当前模型发送 Hi，消耗一次调用。</span></div>
@@ -7997,8 +8721,8 @@ Typr["U"] = {
                   <p id="course-learning-message" class="note" role="status"></p>
                 </section>
                 <section id="settings-developer-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-developer" hidden>
-                  <div class="course-run-actions"><button type="button" id="course-copy-report" class="secondary">复制报告</button></div>
-                  <p class="note">运行报告用于排查自动刷课问题。</p>
+                  <div class="course-run-actions"><button type="button" id="course-copy-report" class="secondary">复制运行摘要</button><button type="button" id="copy-error-report" class="secondary">复制错误报告</button><span id="last-error-code" class="note" role="status"></span></div>
+                  <p class="note">本页运行详情用于本地查看；复制仅包含安全摘要及当前页面最近 100 条诊断，刷新清除。</p>
                   <div id="course-report" role="region" aria-label="详细运行报告" tabindex="0"></div>
                 </section>
               </section>
@@ -8018,7 +8742,7 @@ Typr["U"] = {
                     <button type="button" id="catalog-refresh" class="secondary" hidden>刷新</button>
                   </div>
                   <section id="chapter-run-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-run">
-                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><p id="course-run-note" class="note"></p><p id="course-protection-status" role="status"></p><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
+                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><label class="check-label" title="仅选择原生最高不超过 2x 的档位；开启视频信息识别时本次学习不用倍速"><input type="checkbox" id="course-speed-enabled" /> 开启倍速</label><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><p id="course-run-note" class="note"></p><p id="course-protection-status" role="status"></p><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
                   </section>
                   <section id="chapter-catalog-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-catalog" hidden>
                     <input id="catalog-search" type="search" placeholder="搜索章节" aria-label="搜索课程目录" />
@@ -8067,6 +8791,10 @@ Typr["U"] = {
         initPanelNavigation();
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
+        el('copy-error-report').onclick = async () => {
+            try {await navigator.clipboard.writeText(exportCxDiagnostics());ctl.report('错误安全报告已复制');}
+            catch {ctl.report('无法访问剪贴板，请检查浏览器复制权限');}
+        };
         initAssistantUpdates(shadow);
         initCredentialEditor(el('api-key-editor'));
         el('model-setup-open').onclick = () => {
@@ -8455,6 +9183,8 @@ Typr["U"] = {
     function renderRunState(state) {
         if (!document?.defaultView || document.defaultView.document !== document) return;
         const busy = state.busy || courseRunActive();
+        const errorCode=panelView?.shadow.getElementById('last-error-code');
+        if(errorCode)errorCode.textContent=state.lastErrorCode || '';
         if (toolbarView) {
             const s = toolbarView.shadow;
             s.getElementById('generate').disabled = busy;
@@ -8507,16 +9237,63 @@ Typr["U"] = {
         }
     }
 
+    function extractQuestionSnapshot(doc = document, parseContext = {}, runtime = {}) {
+        const graph = parseQuestionGraph(doc,parseContext);
+        if (graph.questions.some(q=>GARBLED.test(q.question) || q.options.some(o=>GARBLED.test(o.text))))
+            throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+        return createQuestionSnapshot(graph,{...runtime,doc,parseContext});
+    }
     function checkSnapshot(snapshot) {
+        if(snapshot.graph) return assertQuestionSnapshot(snapshot.rootSnapshot || snapshot);
         snapshot.checkCurrent?.();
         const current = extract(snapshot.doc || document, snapshot.parseContext);
-        if (signature(current.questions, current.media) !== snapshot.signature) throw new Error('题目或图片与分析时不一致，已中止预填，请重新生成');
+        if (signature(current.questions, current.media) !== snapshot.signature)
+            throw createCxError('CX-PAR-008',{module:'parser',operation:'snapshot'},{legacyCode:'SNAPSHOT_CHANGED'});
+    }
+    function questionAnswerSnapshot(snapshot) {
+        if(snapshot.requestUnits)return snapshot;
+        checkSnapshot(snapshot);
+        const rootSnapshot=snapshot.graph?snapshot:extractQuestionSnapshot(snapshot.doc||document,snapshot.parseContext,{checkCurrent:snapshot.checkCurrent,signal:snapshot.signal,taskId:snapshot.taskId});
+        const requestUnits=buildQuestionRequestUnits(rootSnapshot.graph);
+        return {...rootSnapshot,rootSnapshot,courseContext:snapshot.courseContext,
+            sourceQuestions:rootSnapshot.questions,questions:requestUnits.questions,media:requestUnits.media,requestUnits};
+    }
+    function questionResultProjection(snapshot,result) {
+        const working=questionAnswerSnapshot(snapshot), byId=new Map(result.answers.map(a=>[a.id,a]));
+        const questionAnswers=(working.sourceQuestions||snapshot.questions).map(q=>{
+            const ids=working.requestUnits.unitsByQuestion.get(q.id)||[q.id],entries=ids.map(id=>byId.get(id)).filter(Boolean);
+            if(ids.length===1&&ids[0]===q.id)return entries[0];
+            if(!entries.length)return null;
+            const restricted=entries.find(a=>a.answerPolicy?.status==='manual')||entries.find(a=>a.answerPolicy?.status==='uncertain');
+            return {id:q.id,number:q.number,type:q.type,
+                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${i+1}. ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
+                reason:restricted?.answerPolicy?.reason||'按已确认的作答区域分别分析',
+                ...(restricted?{answerPolicy:restricted.answerPolicy}:{}),responseUnitIds:ids};
+        }).filter(Boolean);
+        return {...result,questionAnswers,responseUnitCount:working.questions.length};
+    }
+    function assistantErrorMessage(error,context={}) {
+        const batchIndex=error?.batchIndex,batchCount=error?.batchCount;
+        const hasBatch=Number.isSafeInteger(batchIndex)&&Number.isSafeInteger(batchCount)&&batchIndex>0&&batchIndex<=batchCount;
+        const diagnostic=recordCxDiagnostic(error,{...context,...(hasBatch?{batchIndex,batchCount}:{})});
+        if(controller)controller.state.lastErrorCode=diagnostic.code;
+        return `${hasBatch?`第 ${batchIndex}/${batchCount} 批：`:''}${diagnostic.message}（${diagnostic.code}）`;
+    }
+    function safeCourseDiagnosticReport(report) {
+        // Strict projection: no title/reason/question/answer/history, URL or account fields.
+        const states=new Set(['running','done','stopped','timed-out','manual-pending','unvisited','already','no-tasks','skipped']);
+        const counts={};
+        for(const chapter of report?.chapters||[])if(states.has(chapter.status))counts[chapter.status]=(counts[chapter.status]||0)+1;
+        const count=value=>Number.isSafeInteger(value)&&value>=0?value:0;
+        return JSON.stringify({schemaVersion:1,summary:{status:states.has(report?.status)?report.status:'unknown',
+            chapters:counts,videos:count(report?.videos),documents:count(report?.documents),quizzes:count(report?.quizzes)},
+            diagnostics:JSON.parse(exportCxDiagnostics())},null,2);
     }
     async function prefillChecked(snapshot, answers, options = {}) {
         await ensureFontDecoded(snapshot.doc || document, snapshot.parseContext);
         checkSnapshot(snapshot);
         if (!answers.some(a => a.answer.length)) throw new Error('没有有效答案可以预填');
-        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,parseContext:snapshot.parseContext});
+        return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,snapshot:snapshot.rootSnapshot || snapshot,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
         return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
@@ -8554,8 +9331,10 @@ Typr["U"] = {
     function currentAnalysisSettings() {
         return readModelConfiguration();
     }
+    let assistantTaskSequence=0;
+    function newAssistantDiagnosticTaskId() {return `cx-task-${++assistantTaskSequence}`;}
     function createAnalysisTask(snapshot, settings, autoPrefill) {
-        return {id:Symbol('analysis'),snapshot,configuration:analysisConfiguration(settings),settings,
+        return {id:Symbol('analysis'),diagnosticTaskId:newAssistantDiagnosticTaskId(),snapshot,configuration:analysisConfiguration(settings),settings,
             autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
     }
     function checkAnalysisTask(task) {
@@ -8626,11 +9405,11 @@ Typr["U"] = {
     }
     function renderAnalysisProgress(task, complete=false) {
         if(controller?.task!==task || !task.snapshot)return;
-        const result=collectBatchResults(task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies);
+        const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies));
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
-        const total=task.snapshot.questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.19',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
+        controller.output({version: '1.20',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -8657,6 +9436,8 @@ Typr["U"] = {
         }
     }
     async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},retryTransient=false}={}) {
+        snapshot=questionAnswerSnapshot(snapshot);
+        if(progress)progress.requestSnapshot=snapshot;
         const check=()=>{throwIfAborted(settings.signal);checkSnapshot(snapshot);};
         const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
@@ -8697,10 +9478,11 @@ Typr["U"] = {
                     onBatchComplete(record,i);
                 } catch(error) {
                     record.status=settings.signal?.aborted?'pending':'failed';record.error=error.message;
+                    error.batchIndex=i+1;error.batchCount=records.length;
                     error.message=`第 ${i+1}/${records.length} 批未完成：${error.message}；本次尚未预填`;throw error;
                 }
             }
-            return collectBatchResults(snapshot,records,skippedQuestions,true,policies);
+            return questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,true,policies));
         } finally {if(!progress)prepared.clear();}
     }
     function invalidateAnalysisTask(reason) {
@@ -8718,10 +9500,11 @@ Typr["U"] = {
         if(!task?.snapshot || ctl.state.busy || courseRunActive() || !['failed','stopped'].includes(task.status))return;
         const settings=currentAnalysisSettings();
         if(!settings.key){ctl.openPanel('model');ctl.report('请先保存 API Key，再重试未完成批次','error');return;}
+        // Explicit retry replaces the cancelled signal before validating the same frozen content.
+        task.abortController=new AbortController();
         try {
             if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(settings)))throw new Error('分析配置已变化，请重新分析');
-            const data=extract(task.snapshot.doc);
-            if(signature(data.questions,data.media)!==task.snapshot.signature)throw new Error('题目或图片已变化，请重新分析');
+            checkSnapshot(task.snapshot);
         } catch(error) {invalidateAnalysisTask(error.message);ctl.report(error.message,'error');return;}
         task.settings=settings;task.abortController=new AbortController();
         await executeAnalysisTask(task);
@@ -8734,21 +9517,20 @@ Typr["U"] = {
             checkAnalysisTask(task);await ensureFontDecoded(task.snapshot?.doc || document);checkAnalysisTask(task);
             if(!task.snapshot) {
                 ctl.report('正在提取题目…','extracting');
-                const data=extract();
-                task.snapshot={doc:document,schemaVersion:data.schemaVersion,questions:data.questions,media:data.media,signature:signature(data.questions,data.media),
-                    courseContext:task.settings.videoInfoEnabled?captureCurrentCourseContext(document):[]};
+                task.snapshot=extractQuestionSnapshot(document,{}, {taskId:task.diagnosticTaskId,checkCurrent:()=>checkAnalysisTask(task)});
+                task.snapshot.courseContext=task.settings.videoInfoEnabled?captureCurrentCourseContext(document):[];
             }
             task.snapshot.checkCurrent=()=>checkAnalysisTask(task);
-            checkSnapshot(task.snapshot);task.status='preparing';task.skippedQuestions=analysisSkipped(task.snapshot,task.settings);renderAnalysisProgress(task);
+            checkSnapshot(task.snapshot);task.requestSnapshot=questionAnswerSnapshot(task.snapshot);task.status='preparing';task.skippedQuestions=analysisSkipped(task.requestSnapshot,task.settings);renderAnalysisProgress(task);
             if(!task.snapshot.questions.some(q=>q.capabilities.analyze)) {
                 task.status='complete';renderAnalysisProgress(task);ctl.report('已保留原始题目：当前题型尚未适配，请查看题目列表','done');return;
             }
-            const result=await solveQuestionBatches(task.snapshot,{...task.settings,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
+            const result=await solveQuestionBatches(task.snapshot,{...task.settings,diagnosticTaskId:task.diagnosticTaskId,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
             checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('没有有效答案可以预填，请核对题目与模型结果');ctl.report(`没有可自动填写的答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
-            ctl.last={...task.snapshot,answers:result.answers};
+            ctl.last={...task.snapshot,rootSnapshot:task.snapshot,answers:result.answers};
             if(task.autoPrefill) {
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
@@ -8758,13 +9540,13 @@ Typr["U"] = {
         } catch(error) {
             if(ctl.task!==task)return;
             ctl.last=null;task.error=error.message;
-            const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{const data=extract(task.snapshot.doc);return signature(data.questions,data.media)!==task.snapshot.signature;}catch{return true;}})();
+            const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{checkSnapshot(task.snapshot);return false;}catch(e){return e.code!=='ABORTED';}})();
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
             if(changed)task.preparedMedia.clear();
             renderAnalysisProgress(task);
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
             const prefill=error.prefillSummary?`；已确认填写 ${error.prefillSummary.filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
-            ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+error.message}；保留 ${completed} 道已分析结果${prefill}`,
+            ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
                 task.status==='stopped'?'stopped':'error');
         } finally {
             task.active=false;
@@ -8815,7 +9597,7 @@ Typr["U"] = {
                 switchPanelView('questions');
                 invalidateAnalysisTask('已重新提取题目'); ctl.task = null; ctl.last = null; ctl.clearOutput(); ctl.report('正在还原字体并提取…', 'decoding', true);
                 try { await ensureFontDecoded(); const data = extract(); ctl.output(data); ctl.report(`已提取 ${data.total} 道题`, 'done'); }
-                catch (e) { ctl.report(`提取失败：${e.message}`, 'error'); }
+                catch (e) { ctl.report(`提取失败：${assistantErrorMessage(e,{module:'parser',operation:'extract'})}`, 'error'); }
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async prefillLast() {
@@ -8831,13 +9613,13 @@ Typr["U"] = {
                 catch (e) {
                     ctl.last = null;
                     if(task){task.status=task.abortController.signal.aborted?'stopped':'stale';task.preparedMedia.clear();renderAnalysisProgress(task,true);}
-                    ctl.report(`预填中止：${e.message}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
+                    ctl.report(`预填中止：${assistantErrorMessage(e,{module:'actions',operation:'prefill'})}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
                 finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async testModelConnection() {
                 if(ctl.state.busy || courseRunActive())return;
-                const cfg=readModelConfiguration(),signature=modelConnectionSignature(cfg),abort=new AbortController();
+                const cfg={...readModelConfiguration(),diagnosticTaskId:newAssistantDiagnosticTaskId()},signature=modelConnectionSignature(cfg),abort=new AbortController();
                 ctl.connectionTest=abort;ctl.connectionResult={signature,state:'checking',message:'检测中…'};
                 const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
                 ctl.report('正在向当前模型发送 Hi…','model-check',true);
@@ -8850,8 +9632,8 @@ Typr["U"] = {
                     ctl.connectionResult={signature,state:'ok',message:`可用 · 回复：${redact(reply)}`};
                     ctl.report('当前模型可用（已收到文本回复）','done',true);
                 } catch(error) {
-                    const code=Number.isInteger(error?.status)?`HTTP_${error.status}`:redact(error?.code||'REQUEST_FAILED');
-                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · 错误码：${code} · ${redact(error?.message||'请求失败')}`};
+                    const diagnostic=recordCxDiagnostic(error,{module:'model',operation:'detect'});
+                    ctl.connectionResult={signature,state:'error',message:`${abort.signal.aborted?'检测已取消':'检测失败'} · ${diagnostic.code} · ${diagnostic.message}`};
                     ctl.report(ctl.connectionResult.message,'error',true);
                 } finally {
                     window.removeEventListener('pagehide',cancel);
@@ -8860,24 +9642,36 @@ Typr["U"] = {
             },
             async loadModels() {
                 if (ctl.state.busy || courseRunActive()) return;
-                const configuration = readModelConfiguration();
+                const configuration = {...readModelConfiguration(),diagnosticTaskId:newAssistantDiagnosticTaskId()};
                 if (!configuration.key) return ctl.report('请先保存 API Key');
                 if (!configuration.baseURL) return ctl.report('请先保存有效接口地址');
+                const owner=panelView?.host.ownerDocument,body=owner?.body,abort=new AbortController();
+                ctl.modelListTest=abort;
+                const cancel=()=>abort.abort();window.addEventListener('pagehide',cancel,{once:true});
                 ctl.report('正在获取模型列表…', 'idle', true);
                 try {
-                    const models = await fetchConfiguredModels(configuration);
+                    const models = await fetchConfiguredModels(configuration,abort.signal);
+                    throwIfAborted(abort.signal);
+                    if(!owner || owner.body!==body || owner.defaultView?.document!==owner || !panelView?.host.isConnected || panelView.host.ownerDocument!==owner)
+                        throw cancelledError();
                     if (!models.length) throw new Error('模型列表没有有效条目');
                     const current=readModelConfiguration();
                     if(current.provider!==configuration.provider || current.baseURL!==configuration.baseURL || current.key!==configuration.key)
-                        throw new Error('配置已变化，请重新获取模型列表');
+                        throw requestFailure('','CONFIG_CHANGED');
                     renderModelSettings(ctl, models);
                     invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
                     ctl.report(`获取成功：${models.length} 个模型`, 'done');
-                } catch (e) { ctl.report(`获取模型失败：${e.message}`, 'error'); }
-                finally { ctl.state.busy = false; renderRunState(ctl.state); }
+                } catch (e) { ctl.report(`获取模型失败：${e.code==='CONFIG_CHANGED'?'配置已变化，请重新获取模型列表；':''}${assistantErrorMessage(e,{module:'model',operation:'list'})}`, 'error'); }
+                finally {
+                    window.removeEventListener('pagehide',cancel);
+                    if(ctl.modelListTest===abort)ctl.modelListTest=null;
+                    ctl.state.busy = false;
+                    if(panelView?.host.isConnected && owner?.defaultView?.document===owner)renderRunState(ctl.state);
+                }
             }
         };
         document.defaultView.addEventListener('pagehide', () => {
+            ctl.modelListTest?.abort();
             if(ctl.task){ctl.task.abortController.abort();ctl.task.preparedMedia.clear();ctl.task=null;ctl.last=null;}
         });
         return ctl;
@@ -8938,6 +9732,7 @@ Typr["U"] = {
         renderRunState(controller.state);
     }
     function startQuizObserver() {
+        startAssistantUpdateCheck();
         let scheduled = false;
         const refresh = () => {
             if (scheduled) return;
@@ -8947,7 +9742,7 @@ Typr["U"] = {
                 initQuizAssistant();
                 initStudyAssistant();
                 ensureFontDecoded().catch(error => {
-                    if (controller && !controller.state.busy) controller.report(`字体解密失败：${error.message}`, 'error');
+                    if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
             }, 40);
         };

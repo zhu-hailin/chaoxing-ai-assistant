@@ -329,7 +329,7 @@ async function main() {
     try {
       for(const [id,model] of [['qwen','qwen-plus'],['glm','glm-5.3'],['openai','unverified-vision'],['custom','looks-like-vision']]) {
         const cfg=config(f,id,model,id==='custom'?{baseURL:'https://gateway.example/v1'}:{});
-        await assert.rejects(f.api.askConfiguredModel(cfg,questions(f),{}),/不支持图片/);
+        await assert.rejects(f.api.askConfiguredModel(cfg,questions(f),{}),error=>error.cxCode==='CX-CFG-004');
       }
       assert.equal(f.requests.length,0);
     } finally {f.close();}
@@ -442,19 +442,20 @@ async function main() {
       assert.equal(f.requests.length,0);
     } finally {f.close();}
   });
-  for(const [name,content,extra,pattern] of [['非法 JSON','not-json',{},/合法 JSON/],['截断输出','{"answers":[]}',{finish_reason:'length'},/不完整/],['空内容','',{},/空答案/]])await test(`模型响应 ${name} 无法形成可预填答案`,async()=>{
+  for(const [name,content,extra,code] of [['非法 JSON','not-json',{},'CX-RES-005'],['截断输出','{"answers":[]}',{finish_reason:'length'},'CX-RES-004'],['空内容','',{},'CX-RES-003']])await test(`模型响应 ${name} 无法形成可预填答案`,async()=>{
     const f=fixture(essay('q1'));
     try {
-      const flow=f.api.askConfiguredModel(config(f,'glm','glm-5.3-flash'),questions(f),{}),reject=assert.rejects(flow,pattern);
+      const flow=f.api.askConfiguredModel(config(f,'glm','glm-5.3-flash'),questions(f),{}),reject=assert.rejects(flow,error=>error.cxCode===code);
       response(await pending(f),content,extra);await reject;assert.equal(f.d.querySelector('textarea').value,'');
     } finally {f.close();}
   });
-  await test('返回未知题号仅降级为本题空答案，不套用到其他题目',async()=>{
+  await test('返回未知题号拒绝整个响应，不套用到其他题目',async()=>{
     const f=fixture(essay('q1'));
     try {
       const flow=f.api.askConfiguredModel(config(f,'glm','glm-5.3-flash'),questions(f),{});
+      const rejected=assert.rejects(flow,error=>error.cxCode==='CX-RES-006');
       response(await pending(f),JSON.stringify({answers:[{id:'foreign',answer:['错误归属答案']}]}));
-      const result=await flow;assert.equal(result.answers.length,1);assert.equal(result.answers[0].id,'q1');assert.equal(result.answers[0].answer.length,0);
+      await rejected;
       assert.equal(f.d.querySelector('textarea').value,'');
     } finally {f.close();}
   });

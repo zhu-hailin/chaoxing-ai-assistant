@@ -5,7 +5,7 @@ import hashlib
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.19'
+VERSION = '1.20'
 def bundled_font_dependencies():
     # Offline and pinned: never download JavaScript during build or execution.
     directory = ROOT / 'vendor/font'
@@ -39,6 +39,9 @@ template = (ROOT / 'sources/panel-template.html').read_text(encoding='utf-8')
 intro = (ROOT / 'sources/project-intro.html').read_text(encoding='utf-8')
 implementation = (ROOT / 'implementation.js').read_text(encoding='utf-8')
 catalog = (ROOT / 'course_catalog.js').read_text(encoding='utf-8')
+errors = (ROOT / 'sources/assistant-errors.js').read_text(encoding='utf-8')
+question_context = (ROOT / 'sources/question-context.js').read_text(encoding='utf-8')
+actions = (ROOT / 'sources/question-actions.js').read_text(encoding='utf-8')
 providers = (ROOT / 'sources/model-providers.js').read_text(encoding='utf-8')
 provider_logos = (ROOT / 'sources/provider-logos.js').read_text(encoding='utf-8')
 model_picker = (ROOT / 'sources/model-picker.js').read_text(encoding='utf-8')
@@ -64,6 +67,6 @@ assert template.count(intro_placeholder) == 1
 template = template.replace(intro_placeholder, intro)
 implementation = re.sub(r"version: '[0-9.]+'", f"version: '{VERSION}'", implementation)
 implementation = implementation.replace('        /* PANEL_TEMPLATE */', '        shadow.innerHTML = `' + template + '`;')
-output = core + provider_logos + providers + credential_settings + updates + model_capability + parser + media + course_context + video_info + catalog + course_bridge + course_adapter + video_quiz + course_runner + model_picker + implementation + '\n})();\n})();\n'
+output = core + errors + question_context + provider_logos + providers + credential_settings + updates + model_capability + parser + media + actions + course_context + video_info + catalog + course_bridge + course_adapter + video_quiz + course_runner + model_picker + implementation + '\n})();\n})();\n'
 output = '\n'.join(line.rstrip() for line in output.splitlines()) + '\n'
 (ROOT / '学习通AI助手.user.js').write_text(output, encoding='utf-8', newline='\n')

@@ -147,7 +147,7 @@ function answer(request, overrides={}){
   for(const [kind,respond]of [['404',r=>r.onload({status:404})],['timeout',r=>r.ontimeout()],['html',r=>r.onload({status:200,response:Buffer.from('<html>login</html>').buffer})],['bad',r=>r.onload({status:200,response:new Uint8Array([1,2,3]).buffer})]]){
    const f=fixture('',{mediaResponse:respond});try{await assert.rejects(f.api.prepareQuestionMedia([{id:kind,src:'https://p.ananas.chaoxing.com/image.png',sourceQuestionNumber:1}]));}finally{f.close();}
   }
-  const f=fixture('',{decodeError:true});try{await assert.rejects(f.api.prepareQuestionMedia([{id:'x',src:DATA,sourceQuestionNumber:1}]),/解码/);await assert.rejects(f.api.readMediaBytes('https://unknown.invalid/image.png'));await assert.rejects(f.api.readMediaBytes('blob:https://unknown.invalid/x'));}finally{f.close();}
+  const f=fixture('',{decodeError:true});try{await assert.rejects(f.api.prepareQuestionMedia([{id:'x',src:DATA,sourceQuestionNumber:1}]),error=>error.cxCode==='CX-PAR-006');await assert.rejects(f.api.readMediaBytes('https://unknown.invalid/image.png'));await assert.rejects(f.api.readMediaBytes('blob:https://unknown.invalid/x'));}finally{f.close();}
  });
  await test('图片读取最多两个并发，失败后独立重试',async()=>{
   let active=0,max=0;const f=fixture('',{mediaResponse:r=>{active++;max=Math.max(max,active);setTimeout(()=>{active--;r.onload({status:200,response:bytes().buffer});},15);}});
@@ -179,10 +179,10 @@ function answer(request, overrides={}){
   try{f.api.initQuizAssistant();await f.api.runAnswerFlow();assert(!f.requests.some(r=>r.method==='POST'));assert(!f.api.controller.last);assert(f.api.controller.result.questions.length);fail=false;const flow=f.api.runAnswerFlow();answer(await pending(f));await flow;assert.equal(f.api.controller.state.phase,'done');}finally{f.close();}
  });
  await test('尺寸和请求体限制可靠阻止；组合超限先拆批，不截断单题',async()=>{
-  const f=fixture('',{width:8193});try{await assert.rejects(f.api.prepareQuestionMedia([{id:'x',src:DATA,sourceQuestionNumber:1}]),/8192/);assert.throws(()=>f.api.assertRequestSize({x:'x'.repeat(44*1024*1024)}),/44 MiB/);
+  const f=fixture('',{width:8193});try{await assert.rejects(f.api.prepareQuestionMedia([{id:'x',src:DATA,sourceQuestionNumber:1}]),error=>error.cxCode==='CX-PAR-006');assert.throws(()=>f.api.assertRequestSize({x:'x'.repeat(44*1024*1024)}),error=>error.cxCode==='CX-PAR-006');
    const q=(id)=>({id,number:Number(id),type:'essay',question:'图题',options:[],imageIds:[id],contextImageIds:[]});const assets=new Map([['1',{dataUrl:'data:image/png;base64,'+'A'.repeat(24*1024*1024),width:1,height:1}],['2',{dataUrl:'data:image/png;base64,'+'B'.repeat(24*1024*1024),width:1,height:1}]]);
    assert.equal(f.api.splitQuestionBatches([q('1'),q('2')],{model:'deepseek-flash'},assets).length,2);assets.get('1').dataUrl+='C'.repeat(24*1024*1024);assert.throws(()=>f.api.splitQuestionBatches([q('1')],{model:'deepseek-flash'},assets),/第 1 题/);
-   const many=Array.from({length:15},(_,i)=>String(i));const p=new Map(many.map(id=>[id,{dataUrl:'data:image/png;base64,'+id,width:5000,height:1}]));assert.throws(()=>f.api.buildChatContent([{...q('1'),imageIds:many}],{},p),/4096/);
+   const many=Array.from({length:15},(_,i)=>String(i));const p=new Map(many.map(id=>[id,{dataUrl:'data:image/png;base64,'+id,width:5000,height:1}]));assert.throws(()=>f.api.buildChatContent([{...q('1'),imageIds:many}],{},p),error=>error.cxCode==='CX-PAR-006');
   }finally{f.close();}
  });
  await test('作业工具条在标题右侧，成绩单独排列且不重复挂载',async()=>{

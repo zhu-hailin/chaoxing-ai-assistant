@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-15",
+  "version": "1.19",
+  "npmVersion": "1.0.19",
+  "scriptSha256": "fc08f15b67ce221a47a2a2390c6ba24ce6bcaa30b4595793e220aecc99ac9c81",
+  "passed": 285,
+  "failed": 0,
+  "suites": [
+    {
+      "suite": "逐视频倍速能力",
+      "passed": 17,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\video-speed.log"
+    },
+    {
+      "suite": "更新检查",
+      "passed": 21,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\updates.log"
+    },
+    {
+      "suite": "课程倍速集成",
+      "passed": 6,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\speed.log"
+    },
+    {
+      "suite": "旧版后台恢复",
+      "passed": 35,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\background.log"
+    },
+    {
+      "suite": "runner视频弹题",
+      "passed": 22,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\course-popup.log"
+    },
+    {
+      "suite": "课程页UI",
+      "passed": 5,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\course-ui.log"
+    },
+    {
+      "suite": "原有答题UI",
+      "passed": 53,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\core-ui.log"
+    },
+    {
+      "suite": "模型UI",
+      "passed": 12,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\model-ui.log"
+    },
+    {
+      "suite": "面板窗口",
+      "passed": 35,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\panel.log"
+    },
+    {
+      "suite": "视频弹题适配",
+      "passed": 78,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\video-quiz.log"
+    },
+    {
+      "suite": "离线字体依赖校验组",
+      "passed": 1,
+      "failed": 0,
+      "log": "C:\\Users\\22050\\Documents\\ChatGPT\\学习通项目\\work\\speed-startup-20261015\\candidate\\font.log"
+    }
+  ],
+  "newCases": 30,
+  "fullNpmTestRun": false,
+  "previousFullCourseBaseline": {
+    "total": 390,
+    "failed": 21,
+    "recheckedInThisRun": false
+  },
+  "realEnvironmentVerified": false,
+  "note": "字体按一个校验组计数；测试全部使用模拟DOM/HTTP，不调用真实模型或操作课程。"
+}

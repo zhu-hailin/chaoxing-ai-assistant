@@ -40,12 +40,12 @@
     function normalizeModelBaseURL(value) {
         let url;
         try {url=new URL(String(value ?? '').trim());}
-        catch {throw new Error('请输入有效的 API 地址');}
+        catch {throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});}
         if(url.protocol!=='https:' || !url.hostname || url.username || url.password || url.search || url.hash)
-            throw new Error('API 地址需使用 HTTPS，且不包含账号、密码、查询参数或锚点');
+            throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});
         const base=url.href.replace(/\/+$/,'');
         if(/\/(?:chat\/completions|models)$/i.test(url.pathname.replace(/\/+$/,'')))
-            throw new Error('请输入 API 基础地址，末尾不要包含 /chat/completions 或 /models');
+            throw createCxError('CX-CFG-003',{module:'provider',operation:'configure'},{legacyCode:'NO_ENDPOINT'});
         return base;
     }
     function readProviderConfiguration(provider = get(KEY_PROVIDER,'deepseek')) {
@@ -155,6 +155,10 @@
         const entries=Array.isArray(raw?.classifications)?raw.classifications:[];
         const counts=new Map(),byId=new Map();
         for(const entry of entries)if(entry && typeof entry.id==='string'){counts.set(entry.id,(counts.get(entry.id)||0)+1);byId.set(entry.id,entry);}
+        const expected=questions.filter(q=>questionLocalAnswerPolicy(q).status!=='manual'),requestedIds=new Set(expected.map(q=>q.id));
+        if(!Array.isArray(raw?.classifications))recordCxDiagnostic(createCxError('CX-RES-002',{module:'provider',operation:'classify',questionCount:expected.length,actualCount:0},{severity:'warning'}));
+        else if(entries.length!==expected.length || [...counts].some(([id,count])=>!requestedIds.has(id) || count!==1) || expected.some(q=>!counts.has(q.id)))
+            recordCxDiagnostic(createCxError('CX-RES-006',{module:'provider',operation:'classify',questionCount:expected.length,actualCount:entries.length},{severity:'warning'}));
         const allowedAuto=new Set(['objective','knowledge','text-blank','code']);
         return new Map(questions.map(q=>{
             const local=questionLocalAnswerPolicy(q),item=byId.get(q.id);
@@ -185,46 +189,58 @@
         const baseURL=platform.id==='custom' ? normalizeModelBaseURL(settings.baseURL) : platform.baseURL;
         return `${baseURL}/${path}`;
     }
-    async function fetchConfiguredModels(settings) {
-        if(!settings.key)throw new Error('请先保存 API Key');
-        const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000});
-        if(!Array.isArray(data.data) || !data.data.length)throw new Error('模型列表为空');
+    async function fetchConfiguredModels(settings,signal) {
+        assertConfiguredCredentials(settings,false);
+        const data=await requestJSON({method:'GET',url:configuredEndpoint(settings,'models'),key:settings.key,timeout:30000,signal,diagnosticTaskId:settings.diagnosticTaskId});
+        if(data?.error)throw createCxError('CX-RES-007',{module:'provider',operation:'models',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
+        if(!Array.isArray(data?.data) || !data.data.length)throw createCxError('CX-RES-002',{module:'provider',operation:'models',count:0},{legacyCode:'BAD_RESPONSE'});
         const models=new Map();
         for(const item of data.data) {
             if(!item || typeof item.id!=='string' || !item.id.trim() || item.id.trim().length>200)continue;
             const id=item.id.trim();if(models.has(id))continue;
             models.set(id,{id,name:typeof item.name==='string' && item.name.trim()?item.name.trim().slice(0,500):id});
         }
-        if(!models.size)throw new Error('模型列表没有有效条目');
+        if(!models.size)throw createCxError('CX-RES-002',{module:'provider',operation:'models',count:0},{legacyCode:'BAD_RESPONSE'});
         return [...models.values()];
     }
     function modelConnectionSignature(settings) {
         return JSON.stringify([settings.provider,settings.baseURL,settings.model,endpointFingerprint(settings.key)]);
     }
+    function assertConfiguredCredentials(settings,requireModel=true) {
+        const context={module:'provider',operation:'configure'};
+        if(settings.credentialNeedsApproval)throw createCxError('CX-CFG-005',context,{legacyCode:'ENDPOINT_NOT_APPROVED'});
+        if(!settings.key)throw createCxError('CX-CFG-001',context,{legacyCode:'NO_API_KEY'});
+        if(requireModel && !settings.model)throw createCxError('CX-CFG-002',context,{legacyCode:'NO_MODEL'});
+        if(getModelProvider(settings.provider || 'deepseek').id==='custom' && !settings.baseURL)
+            throw createCxError('CX-CFG-003',context,{legacyCode:'NO_ENDPOINT'});
+    }
+    function configuredResponseContext(response,settings) {
+        return {...(typeof requestContextForResponse==='function'?requestContextForResponse(response):{}),taskId:settings.diagnosticTaskId};
+    }
     async function detectConfiguredModelConnection(settings,signal) {
         throwIfAborted(signal);
-        if(settings.credentialNeedsApproval)throw requestFailure('自定义接口尚未授权，请重新保存 Key','ENDPOINT_NOT_APPROVED');
-        if(!settings.key)throw requestFailure('请先保存 API Key','NO_API_KEY');
-        if(!settings.model)throw requestFailure('请先选择或保存模型','NO_MODEL');
-        if(!settings.baseURL)throw requestFailure('请先保存有效接口地址','NO_ENDPOINT');
+        assertConfiguredCredentials(settings);
+        if(!settings.baseURL)throw createCxError('CX-CFG-003',{module:'provider',operation:'detect'},{legacyCode:'NO_ENDPOINT'});
         const payload=adaptConfiguredPayload({...settings,thinking:false},{model:settings.model,messages:[{role:'user',content:'Hi'}]});
         assertConfiguredRequestSize(settings,payload);
         const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
-            data:payload,timeout:60000,signal});
+            data:payload,timeout:60000,signal,diagnosticTaskId:settings.diagnosticTaskId});
         throwIfAborted(signal);
-        if(response?.error)throw requestFailure(String(response.error.message||'模型返回错误'),'MODEL_ERROR');
+        if(response?.error)throw createCxError('CX-RES-007',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
         const message=response?.choices?.[0]?.message;
-        if(!message || typeof message!=='object')throw requestFailure('接口没有返回有效的模型消息','BAD_RESPONSE');
+        if(!message || typeof message!=='object')throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasMessage:false},{legacyCode:'BAD_RESPONSE'});
+        if(!Object.prototype.hasOwnProperty.call(message,'content') && !Object.prototype.hasOwnProperty.call(message,'refusal'))
+            throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasContent:false},{legacyCode:'BAD_RESPONSE'});
         const content=message.content;
         const text=typeof content==='string'?content:Array.isArray(content)?content.filter(part=>part?.type==='text'&&typeof part.text==='string').map(part=>part.text).join(''):
             typeof message.refusal==='string'?message.refusal:'';
-        if(!text.trim())throw requestFailure('模型没有返回消息','EMPTY_REPLY');
+        if(!text.trim())throw createCxError('CX-RES-003',{...configuredResponseContext(response,settings),module:'provider',operation:'detect',hasContent:false},{legacyCode:'EMPTY_REPLY'});
         return text.trim().slice(0,200);
     }
     async function askConfiguredModel(settings,questions,evidence,preparedMedia = new Map(),signal) {
-        if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
+        assertConfiguredCredentials(settings);
         if(questions.some(question=>questionImageIds(question).length) && !modelSupportsImages(settings.model,settings))
-            throw new Error('所选模型不支持图片，此类题目暂不能分析');
+            throw createCxError('CX-CFG-004',{module:'provider',operation:'answer',images:true});
         const payload=buildConfiguredAnswerPayload(settings,questions,evidence,preparedMedia);
         const {parsed,usage}=await configuredModelJSON(settings,payload,signal);
         return {answers:normalize(parsed,questions),mediaAnalysis:normalizeMediaAnalysis(parsed,questions,preparedMedia),usage:usage || null};
@@ -232,17 +248,26 @@
 
     async function configuredModelJSON(settings,payload,signal) {
         throwIfAborted(signal || settings.signal);
-        if(!settings.key || !settings.model)throw new Error('请先配置模型：保存 API Key 并选择模型');
+        assertConfiguredCredentials(settings);
         assertConfiguredRequestSize(settings,payload);
         settings.onModelRequest?.();
         const response=await requestJSON({method:'POST',url:configuredEndpoint(settings,'chat/completions'),key:settings.key,
-            data:payload,timeout:settings.thinking?180000:90000,signal:signal || settings.signal});
-        const choice=response.choices?.[0];
-        if(!choice || choice.finish_reason!=='stop')throw new Error('模型输出不完整，建议减小题量或降低推理强度');
+            data:payload,timeout:settings.thinking?180000:90000,signal:signal || settings.signal,diagnosticTaskId:settings.diagnosticTaskId});
+        throwIfAborted(signal || settings.signal);
+        if(response?.error)throw createCxError('CX-RES-007',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasBusinessError:true},{legacyCode:'MODEL_ERROR'});
+        const choice=response?.choices?.[0];
+        if(!choice || !choice.message || typeof choice.message!=='object' || typeof choice.finish_reason!=='string' || !Object.prototype.hasOwnProperty.call(choice.message,'content'))
+            throw createCxError('CX-RES-002',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasMessage:Boolean(choice?.message && typeof choice.message==='object')},{legacyCode:'BAD_RESPONSE'});
+        if(choice.finish_reason==='length' || choice.finish_reason==='max_tokens')
+            throw createCxError('CX-RES-004',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',truncated:true});
+        if(choice.finish_reason!=='stop')throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
         const text=choice.message?.content;
-        if(typeof text!=='string' || !text.trim())throw new Error('AI 返回空答案');
+        if(text!==null && typeof text!=='string')throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
+        if(typeof text!=='string' || !text.trim())throw createCxError('CX-RES-003',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',hasContent:false},{legacyCode:'EMPTY_REPLY'});
         let parsed;
         try {parsed=JSON.parse(text);}
-        catch {throw new Error('AI 返回内容不是合法 JSON');}
+        catch {throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer',json:false});}
+        if(!parsed || typeof parsed!=='object' || Array.isArray(parsed))throw createCxError('CX-RES-005',{...configuredResponseContext(response,settings),module:'provider',operation:'answer'});
+        if(typeof requestContextForResponse==='function')requestContextForResponse(parsed,configuredResponseContext(response,settings));
         return {parsed,usage:response.usage || null};
     }
