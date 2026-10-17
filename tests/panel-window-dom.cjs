@@ -102,6 +102,25 @@ function assertSingleWindow(n,host,kind) {
 }
 
 async function main() {
+  await check('其他功能导航位于章节下方，两个开关默认关闭并支持键盘切换',async()=>{
+    const f=fixture();try{
+      assert.deepEqual([...f.s.querySelectorAll('[data-panel-view]')].map(x=>x.dataset.panelView),['questions','chapters','other','model']);f.open('other');assert(!f.s.getElementById('view-other').hidden);assert.equal(f.s.getElementById('nav-other').getAttribute('aria-selected'),'true');assert(!f.s.getElementById('other-hide-platform-ai').checked);assert(!f.s.getElementById('other-keep-video-playing').checked);
+      arrow(f,f.s.getElementById('nav-other'),'ArrowUp');assert.equal(f.panel.dataset.activeView,'chapters');arrow(f,f.s.getElementById('nav-chapters'),'ArrowDown');assert.equal(f.panel.dataset.activeView,'other');assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('平台助教统一隐藏大小形态、气泡和侧栏，通用resizer及助手不受影响',async()=>{
+    const f=fixture();try{
+      f.d.body.insertAdjacentHTML('beforeend','<div class="cx-robot-wrapper" style="color:red"><div class="figure-wrapper">小黄人</div><div class="anchor-figure">AI助教</div><div class="resizer">缩放</div></div><div class="cx-robot-side">侧栏</div><div class="cx-robot-side-tips">气泡</div><div class="resizer" id="unrelated-resizer">其他缩放</div><div data-face-verification>验证</div>');
+      const roots=[...f.d.querySelectorAll('.cx-robot-wrapper,.cx-robot-side,.cx-robot-side-tips')],styles=roots.map(n=>n.getAttribute('style')),control=f.s.getElementById('other-hide-platform-ai');control.checked=true;control.dispatchEvent(new f.w.Event('change'));
+      for(const node of roots)assert.equal(f.w.getComputedStyle(node).display,'none');assert.notEqual(f.w.getComputedStyle(f.d.getElementById('unrelated-resizer')).display,'none');assert.notEqual(f.w.getComputedStyle(f.d.querySelector('[data-face-verification]')).display,'none');assert.notEqual(f.host.style.display,'none');
+      const late=f.d.createElement('div');late.className='cx-robot-wrapper';f.d.body.append(late);assert.equal(f.w.getComputedStyle(late).display,'none');control.checked=false;control.dispatchEvent(new f.w.Event('change'));assert.notEqual(f.w.getComputedStyle(late).display,'none');assert.deepEqual(roots.map(n=>n.getAttribute('style')),styles);assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('其他功能持久化与跨实例同步无写入循环，全隐藏不取消功能配置',async()=>{
+    const a=fixture(),b=fixture({hub:a.hub});let c;try{
+      const writes=a.hub.writes,hide=a.s.getElementById('other-hide-platform-ai'),keep=a.s.getElementById('other-keep-video-playing');hide.checked=true;hide.dispatchEvent(new a.w.Event('change'));keep.checked=true;keep.dispatchEvent(new a.w.Event('change'));assert.equal(a.hub.writes,writes+2);assert(b.s.getElementById('other-hide-platform-ai').checked);assert(b.s.getElementById('other-keep-video-playing').checked);a.menus.get('隐藏助手全部界面')();assert.equal(a.storage.get('cx_other_features').keepVideoPlaying,true);c=fixture({hub:a.hub});assert(c.s.getElementById('other-hide-platform-ai').checked);assert(c.s.getElementById('other-keep-video-playing').checked);assert.equal(c.host.style.display,'none');assertNoErrors(a);assertNoErrors(b);assertNoErrors(c);
+    }finally{c?.close();b.close();a.close();}
+  });
   await check('全隐藏菜单隐藏主面板、悬浮球及测验工具栏，显示后保留内容和位置',async()=>{
     const f=fixture();try {
       f.open('model');const view=f.panel.dataset.activeView,position=f.host.style.cssText;

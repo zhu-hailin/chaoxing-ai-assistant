@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-18",
+  "version": "1.20",
+  "npmVersion": "1.0.20",
+  "baselineSha256": "68344ff37a1ae8d2d7e462cbe196e609cb62f57268d5a4d25c3542dfd358f064",
+  "scriptSha256": "34b08e0987ed3d36656bc2d8a8df59f2745d909c5aa99ded09e6bb4b01efa066",
+  "bytes": 709076,
+  "syntaxCheck": "passed",
+  "deterministicBuild": true,
+  "finalCandidateTests": {
+    "course": {
+      "total": 454,
+      "failures": 0
+    },
+    "newLocator": 19,
+    "previousLocator": 20,
+    "videoQuiz": {
+      "total": 78,
+      "failures": 0
+    },
+    "panelWindow": {
+      "total": 38,
+      "failures": 0
+    },
+    "coursePreview": {
+      "total": 11,
+      "failures": 0
+    }
+  },
+  "initialFullNpmTest": {
+    "exitCode": 0,
+    "scope": "Intermediate candidate; final static-body compatibility and report changes validated by final candidate related suites"
+  },
+  "performance": {
+    "fixture": "mock-only",
+    "chapters": 21,
+    "tabsBeforeTarget": 80,
+    "requestDelayMs": 100,
+    "serialReference": {
+      "elapsedMs": 10915,
+      "requests": 100,
+      "maxInFlight": 1,
+      "target": "cur21"
+    },
+    "coldMs": 2845,
+    "warmMs": 33,
+    "requests": 100,
+    "cacheHits": 100,
+    "maxInFlight": 4,
+    "nativeColumnSwitches": 0,
+    "playCalls": 0,
+    "modelCalls": 0,
+    "submissions": 0
+  },
+  "originalHarOffline": {
+    "scope": "offline original HAR responses, no replay or remote scripts",
+    "results": [
+      {
+        "sample": 94,
+        "known": true,
+        "tasks": [
+          {
+            "type": "video",
+            "completed": true,
+            "required": true
+          }
+        ]
+      },
+      {
+        "sample": 272,
+        "known": true,
+        "tasks": [],
+        "reason": "static-content"
+      },
+      {
+        "sample": 335,
+        "known": true,
+        "tasks": [
+          {
+            "type": "quiz",
+            "completed": null,
+            "required": true
+          }
+        ]
+      },
+      {
+        "sample": 522,
+        "known": true,
+        "tasks": [
+          {
+            "type": "discussion",
+            "completed": null,
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  "runnerIntegrationSample": {
+    "status": "done",
+    "reason": "",
+    "elapsedMs": 4461,
+    "locator": {
+      "requests": 100,
+      "elapsedMs": 3548,
+      "excludedTabs": 80,
+      "fallbacks": 0,
+      "chapterNavigations": 1,
+      "tabNavigations": 0,
+      "cacheHits": 0,
+      "deduplicated": 0,
+      "readyHits": 1
+    },
+    "requests": 100,
+    "maxInFlight": 4,
+    "nativeSteps": [
+      "chapter:20"
+    ],
+    "modelCalls": 0,
+    "submissions": 0,
+    "videos": 1
+  },
+  "realEnvironment": "Awaiting user installation and acceptance; all requests and platform feedback in regression are simulated",
+  "publication": "Local only; README, .publish, GitHub and version unchanged"
+}

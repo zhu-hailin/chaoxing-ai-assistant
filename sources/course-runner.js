@@ -198,6 +198,7 @@
         const speedStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.speedState).map(task=>{
             const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；${state.evidence} / ${state.outcome}。`;
         }));
+        const locatorMetric=name=>Number.isFinite(report.locator?.[name])?Math.max(0,Math.round(report.locator[name])):0;
         return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (report.retryOf ? '\n本轮为未完成章节重试，完成计数仅统计本轮。' : '')
             + (protection ? `\n连续超时 ${protection.consecutiveFailures}/${protection.limit}${protection.triggered?'，已保护性停止':''}。` : '')
@@ -215,6 +216,7 @@
             + (foregroundStates.length ? '\n前台等待记录：\n' + foregroundStates.join('\n') : '')
             + (backgroundStates.length ? '\n后台播放保护记录：\n' + backgroundStates.join('\n') : '')
             + (speedStates.length ? '\n倍速能力记录：\n' + speedStates.join('\n') : '')
+            + (report.locator ? `\n任务定位：摘要请求 ${locatorMetric('requests')} 次，缓存命中 ${locatorMetric('cacheHits')} 次，耗时 ${locatorMetric('elapsedMs')}ms；章节跳转 ${locatorMetric('chapterNavigations')} 次，栏目切换 ${locatorMetric('tabNavigations')} 次，就绪快路径 ${locatorMetric('readyHits')} 次，页面核实 ${locatorMetric('fallbacks')} 次。` : '')
             + (report.pacing?.restEnabled ? `\n学习休息：累计活动 ${Math.floor((report.pacing.activeMs||0)/1000)} 秒；${report.pacing.restUntil!==null?'已保存休息截止时间':'当前未休息'}。` : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
@@ -319,6 +321,12 @@
                     startIndex=entries.findIndex(item=>item.id===active[0].id);
                     if(startIndex<0) {ctl.report('当前章节不在课程目录中，请刷新后重试','error');return;}
                 }
+                let rangeStart=resume||retry?previous?.rangeStart||null:null;
+                if(!resume&&!retry&&fromCurrent) {
+                    const tabs=courseTabs(owner),active=tabs.filter(tab=>tab.active);
+                    if(tabs.length&&active.length!==1){ctl.report('无法确定当前栏目，请刷新页面后重试','error');return;}
+                    rangeStart={chapterId:entries[startIndex].id,tabId:active[0]?.id||'current',tabIndex:Math.max(0,tabs.findIndex(tab=>tab.active)),cardId:active[0]?.node.getAttribute('cardid')||''};
+                }
                 // 本次起点裁剪队列；换页恢复使用原队列，不重新读取当前选中章节。
                 const queue = retry ? retryCandidate.queue : resume && previous?.session === session ? previous.queue : entries.slice(startIndex).map(item => ({id:item.id,number:item.number,title:item.title}));
                 if (!queue?.length) return;
@@ -328,6 +336,8 @@
                 const report = resume ? previous.report : { status:'running', startedAt:now(), endedAt:null, reason:'', videos:0,documents:0,quizzes:0,
                     chapters:queue.map(item => ({...item,status:'unvisited',issues:[],tasks:[]})) };
                 report.status = 'running'; report.reason = '';
+                report.locator=report.locator||{requests:0,elapsedMs:0,excludedTabs:0,fallbacks:0,chapterNavigations:0,tabNavigations:0};
+                report.locator.cacheHits??=0;report.locator.deduplicated??=0;report.locator.readyHits??=0;
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
                 const learning=courseLearningSettings(resume?previous.learning||{}:{restEnabled,studyMinutes,restMinutes});
                 const savedPacing=resume?previous.pacing:null;
@@ -344,6 +354,7 @@
                     videoQuizAuto:resume ? previous.videoQuizAuto===true : videoQuizAuto!==false,
                     speedEnabled:resume ? previous.speedEnabled===true : speedEnabled===true,
                     fromCurrent:resume ? previous.fromCurrent===true : fromCurrent===true,startChapterId:resume ? previous.startChapterId||queue[0].id : queue[0].id,
+                    rangeStart,probeBlocked:(previous?.report?.chapters||[]).some(chapter=>chapter.tasks?.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed)&&task.status!=='done')),
                     chapterIndex:resume ? previous.chapterIndex : 0,tabIndex:resume ? previous.tabIndex : 0,
                     cancelled:false,abort:new AbortController(),expected:null,navigating:false,lastSaved:0};
                 run.cancelWait = new Promise(resolve => { run.cancelWake = resolve; });
@@ -369,7 +380,7 @@
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
                     set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
-                        learning:run.learning,pacing:{...run.pacing},queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
+                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
                     run.claimed=true;
                     run.lastSaved = now();
                 };
@@ -396,7 +407,7 @@
                     if (blocker) throw new Error(blocker);
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
                     // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && !run.frameLoading && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
@@ -405,7 +416,7 @@
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
-                const waitForFrameReady = async (settle = false) => {
+                const waitForFrameReady = async (settle = false, target = null) => {
                     // 仅在明确等待的读取窗口暂缓不可读 iframe；窗口内不执行任务操作。
                     const context=run.chapter;
                     run.frameLoading=true;run.frameReadRetries=0;
@@ -420,7 +431,7 @@
                     };
                     try {
                         check();
-                        if(settle)await delay();
+                        if(settle){if(courseTaskTargetReady(owner,target))report.locator.readyHits++;else await delay();}
                         while(!courseContentReady(owner)) {
                             if(run.frameReadRetries>=limits.maxFrameReadRetries)
                                 throw Object.assign(new Error(`任务 iframe 跨域或尚未加载，无法确认控件；等待后重试 ${limits.maxFrameReadRetries} 次仍不可读，请人工检查`),{code:'COURSE_FRAME_UNAVAILABLE'});
@@ -445,7 +456,40 @@
                         guardRun();run.pacing.activeMs=0;run.pacing.restUntil=null;
                     } finally {run.resting=false;resumePacing();save();}
                 };
-                const processChapter = async (chapter,entry) => {
+                const rememberExcluded=(chapter,items)=>{
+                    for(const item of items||[]) {
+                        report.locator.excludedTabs++;
+                        item.tasks.forEach((summary,index)=>{
+                            const decision=item.decisions[index],manual=['quiz-disabled','knowledge-graph'].includes(decision.reason);
+                            chapter.tasks.push({tab:item.tab.id,type:summary.type,status:manual?'manual-pending':decision.reason==='already'?'already':'not-required',
+                                reason:manual?decision.reason==='quiz-disabled'?'自动提交章节测验已关闭，测验已跳过且未提交':'知识图谱已自动跳过，未计为完成':'任务摘要已核实',located:true});
+                        });
+                    }
+                };
+                const locateAhead=async(entry,context)=>{
+                    const boundary=run.rangeStart?.chapterId===entry.id?run.rangeStart:null;
+                    const locationBefore=readCourseCatalog(owner)?.entries.find(item=>item.active)?.id,tabBefore=courseTabs(owner).find(tab=>tab.active)?.id;
+                    const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
+                    const check=()=>{
+                        guardRun();if(context!==run.chapter||context.skipped)throw skippedError();
+                        const catalog=readCourseCatalog(owner);
+                        if(catalog?.entries.find(item=>item.active)?.id!==locationBefore||courseTabs(owner).find(tab=>tab.active)?.id!==tabBefore
+                            ||JSON.stringify(catalog?.entries.filter(item=>!item.isGroup).map(item=>item.id))!==catalogBefore)throw new Error('定位期间章节或栏目发生变化，请重新开始');
+                    };
+                    run.probeCheck=check;run.locating=true;pausePacing();const started=now();
+                    try {
+                        emitRun('正在定位任务…','course-locating');check();
+                        const catalog=readCourseCatalog(owner),range=queue.slice(run.chapterIndex).filter(item=>!resume||!['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(report.chapters.find(ch=>ch.id===item.id)?.status))
+                            .map(item=>{const found=catalog.entries.find(ch=>ch.id===item.id);if(!found?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');return found;});
+                        const location=run.probeBlocked?{entry,probe:{known:false,reason:'submission-unconfirmed'}}:await findNextCourseTask(range,{owner,submit:run.submit,skipLearned:run.skipLearned,retrying:run.retrying,
+                            startChapterId:entry.id,startTabId:boundary?.tabId==='current'?null:boundary?.tabId,startCardId:boundary?.cardId,
+                            startTabIndex:Math.max(run.tabIndex,boundary?.tabIndex||0),check:()=>run.probeCheck(),now,timeoutMs:limits.loadMs,
+                            onRequest:()=>report.locator.requests++,onCacheHit:()=>report.locator.cacheHits++,onDeduplicated:()=>report.locator.deduplicated++},context.abort.signal);
+                        check();if(location.probe?.reason==='start-tab-missing')throw new Error('本次起点栏目发生变化，请重新开始');
+                        return location;
+                    }finally{report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
+                };
+                const processChapter = async (chapter,entry,location) => {
                     // 每章独立闭包和取消信号：旧请求/解密/预填回调不能进入下一章。
                     const context=run.chapter;
                     const guard=()=>{
@@ -1084,30 +1128,66 @@
                         },limits.submitMs,'测验提交后未收到成功状态，请人工核对；不会重试提交');
                         context.submitting=false;context.submissionFrames=null;task.status='done';task.questionCount=data.total;report.quizzes++;
                     };
+                    const boundary=run.rangeStart?.chapterId===chapter.id?run.rangeStart:null;
+                    const firstIndex=Math.max(run.tabIndex,boundary?.tabIndex||0);
+                    const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
+                    let probe=location.probe,initialProbeTab=location.tab?.id;
+                    if(!probe?.known||location.reason){report.locator.fallbacks++;const reason=location.reason||probe?.reason||'probe-unavailable';report.locator.reasons??={};report.locator.reasons[reason]=(report.locator.reasons[reason]||0)+1;}
+                    run.tabIndex=location.tab?.index??firstIndex;
                     run.expected=entry.id;run.expectedTab=null;run.navigating=true;chapter.status='running';
-                    emit(`正在打开章节：${entry.number} ${entry.title}`,'course-navigating');
+                    emit(`正在打开章节：${entry.number} ${entry.title}${location.tab?' · '+location.tab.title:''}`,'course-navigating');
                     const before=courseContentFingerprint(owner);
                     if(!entry.active) {
-                        save();entry.target.click();
+                        save();report.locator.chapterNavigations++;entry.target.click();
                         await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
                             && courseContentChanged(before,courseContentFingerprint(owner)),limits.loadMs,'章节内容未成功切换');
                     }
-                    await waitForFrameReady(true);run.navigating=false;guard();
+                    const tabJump=location.tab&&courseTabs(owner).find(tab=>tab.active)?.id!==location.tab.id;
+                    if(!tabJump)await waitForFrameReady(true,{chapterId:entry.id,tabId:location.tab?.id,type:location.targetType});
+                    run.navigating=Boolean(tabJump);run.locating=false;guard();
+                    run.probeCheck=()=>{guard();if(JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id))!==catalogBefore)
+                        throw Object.assign(new Error('定位期间课程目录发生变化，请重新开始'),{code:'COURSE_LOCATOR_CHANGED'});};
                     let tabs=courseTabs(owner);
-                    if(tabs.some(tab=>tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
                     if(!tabs.length) tabs=[{id:'current',title:'当前页面',active:true}];
-                    let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     const tabIds=tabs.map(tab=>tab.id);
+                    const rangeTruncated=Boolean(boundary&&tabIds.indexOf(boundary.tabId)>0);
+                    if(boundary&&(!tabIds.includes(boundary.tabId)||boundary.cardId&&tabs.find(tab=>tab.id===boundary.tabId)?.node.getAttribute('cardid')!==boundary.cardId))throw new Error('本次起点栏目发生变化，请重新开始');
+                    if(probe?.known&&JSON.stringify(probe.tabs.map(tab=>[tab.id,tab.cardId]))!==JSON.stringify(tabs.map(tab=>[tab.id,tab.node?.getAttribute('cardid')||'']))) {
+                        // Native rendering can change the pre-read column descriptors. Discard this
+                        // chapter's exclusions and inspect its live columns within the frozen range.
+                        courseInvalidateTaskProbe(owner,entry.id);
+                        probe=null;initialProbeTab=null;run.tabIndex=firstIndex;
+                        report.locator.fallbacks++;report.locator.reasons??={};
+                        report.locator.reasons['live-tabs-changed']=(report.locator.reasons['live-tabs-changed']||0)+1;
+                        emit('栏目列表已更新，正在核对当前章节任务…','course-locating');
+                    } else rememberExcluded(chapter,location.excluded);
+                    if(tabs.some((tab,index)=>index>=run.tabIndex&&tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
+                    let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     for(;run.tabIndex<tabIds.length;run.tabIndex++) {
                         const id=tabIds[run.tabIndex],tab=courseTabs(owner).find(item=>item.id===id);
+                        let readyType=id===initialProbeTab?location.targetType:null;
                         if(id!=='current' && !tab) throw new Error('章节页面标签发生变化');
+                        if(probe?.known&&id!==initialProbeTab) {
+                            const descriptor=probe.tabs.find(item=>item.id===id);let summary;
+                            const started=now();pausePacing();run.locating=true;
+                            const activeTab=courseTabs(owner).find(item=>item.active)?.id;
+                            try {emit(`正在定位任务… ${entry.number} · ${tab?.title||id}`,'course-locating');summary=await probe.read(descriptor);guard();
+                                if(courseTabs(owner).find(item=>item.active)?.id!==activeTab)throw new Error('定位期间栏目发生变化，请重新开始');
+                            } catch(error){guard();if(context.abort.signal.aborted||error.code==='COURSE_LOCATOR_CHANGED')throw error;summary={known:false};}
+                            finally {run.locating=false;report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
+                            if(summary?.known) {
+                                const decisions=summary.tasks.map(task=>courseTaskEligibility(task,run));
+                                if(decisions.every(item=>item.status==='excluded')){rememberExcluded(chapter,[{tab:descriptor,tasks:summary.tasks,decisions}]);taskFreeOnly=false;save();continue;}
+                                readyType=summary.tasks[decisions.findIndex(item=>item.status!=='excluded')]?.type;
+                            }
+                        }
                         if(tab && !tab.active) {
-                            const old=courseContentFingerprint(owner);run.navigating=true;save();tab.node.click();
+                            const old=courseContentFingerprint(owner);run.navigating=true;save();report.locator.tabNavigations++;tab.node.click();
                             await until(()=>courseTabs(owner).some(item=>item.id===id&&item.active)
                                 && courseContentChanged(old,courseContentFingerprint(owner)),limits.loadMs,'页面标签未成功切换');
-                            await waitForFrameReady(true);run.navigating=false;
+                            await waitForFrameReady(true,{chapterId:entry.id,tabId:id,type:readyType});run.navigating=false;
                         }
-                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();guard();
+                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();run.navigating=false;guard();
                         let tree=courseFrameTree(owner);
                         let docs=tree.documents.slice(1);
                         if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
@@ -1160,6 +1240,7 @@
                                 }
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
+                            if(task.status==='done')courseInvalidateTaskProbe(owner,entry.id);
                             processed.add(item.node);
                             save();
                             // 控件可在上一任务播放/阅读时延迟加入；每次重新读取，不重复执行原节点。
@@ -1176,12 +1257,12 @@
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
-                            if(!tasks.length && lastTab && (pendingHere() || !chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
+                            if(!tasks.length && lastTab && (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if(!pendingHere() && chapter.tasks.some(task=>task.status==='manual-pending'))return {tasks:[]};
+                                    if(!pendingHere() && (rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -1202,6 +1283,10 @@
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
+                    }
+                    if(rangeTruncated&&!pending()?.completed&&pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已处理本次起点之后的栏目；起点之前未纳入本轮，保留整章未完成状态';save();return;
                     }
                     if(chapter.tasks.some(task=>task.tab===tabIds[tabIds.length-1]&&task.type==='non-task')
                         && !pending()?.completed && pending()?.pending!==0) {
@@ -1230,14 +1315,30 @@
                     if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
-                        await waitForFrameReady();guardRun();const chapter=report.chapters[run.chapterIndex];
+                        run.locating=true;guardRun();let chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
-                        const entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
+                        let entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
                         if(!entry?.target?.isConnected) throw new Error('课程目录发生变化或章节入口不存在');
                         if((run.skipLearned||run.retrying) && entry.completed){chapter.status='already';courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);save();continue;}
                         const context={abort:new AbortController(),skipped:false,submitting:false};
                         context.wait=new Promise(resolve=>{context.wake=resolve;});run.chapter=context;
-                        try { await processChapter(chapter,entry); }
+                        try {
+                            const location=await locateAhead(entry,context);
+                            for(const skipped of location.skipped||[]) {
+                                const index=queue.findIndex(item=>item.id===skipped.entry.id),record=report.chapters[index];
+                                rememberExcluded(record,skipped.tabs);
+                                record.status=skipped.reason==='already'?'already':record.tasks.some(task=>task.status==='manual-pending')?'manual-pending':'no-tasks';
+                                record.reason=record.status==='manual-pending'?'本次设置已排除剩余任务，保留未完成状态':record.status==='already'?'平台目录已完成':'任务摘要中没有本次需要执行的任务，未计为整章完成';
+                                courseRecordChapterOutcome(run.protection,record,index);
+                            }
+                            if(!location.entry){run.chapterIndex=queue.length;save();break;}
+                            const targetIndex=queue.findIndex(item=>item.id===location.entry.id);
+                            if(targetIndex<run.chapterIndex)throw new Error('定位结果超出本次范围');
+                            if(targetIndex!==run.chapterIndex)run.tabIndex=0;
+                            run.chapterIndex=targetIndex;chapter=report.chapters[targetIndex];entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
+                            if(!entry?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');
+                            save();await processChapter(chapter,entry,location);
+                        }
                         catch(error) {
                             guardRun();
                             if(context.skipped) {

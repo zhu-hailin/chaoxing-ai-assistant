@@ -1,0 +1,21 @@
+{
+  "fixture": "mock-only",
+  "chapters": 21,
+  "tabsBeforeTarget": 80,
+  "requestDelayMs": 100,
+  "serialReference": {
+    "elapsedMs": 10915,
+    "requests": 100,
+    "maxInFlight": 1,
+    "target": "cur21"
+  },
+  "coldMs": 2845,
+  "warmMs": 33,
+  "requests": 100,
+  "cacheHits": 100,
+  "maxInFlight": 4,
+  "nativeColumnSwitches": 0,
+  "playCalls": 0,
+  "modelCalls": 0,
+  "submissions": 0
+}

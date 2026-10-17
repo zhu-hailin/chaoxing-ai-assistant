@@ -433,13 +433,13 @@
         tab.click();assert(!s.getElementById('course-nav').hidden && tab.getAttribute('aria-selected')==='true','章节页无法打开');
         s.getElementById('nav-model').click();assert(s.getElementById('course-nav').hidden && tab.getAttribute('aria-selected')==='false','模型页无法切回');assert(search.value==='不存在','切换丢失目录搜索');f.remove();
     });
-    await test('三个图标按序切换独立页面，窗口位置稳定且关闭重开保留页面', async () => {
+    await test('四个图标按序切换独立页面，窗口位置稳定且关闭重开保留页面', async () => {
         const f=await fixture({catalog:true});f.api.controller.openPanel();
         const host=f.d.getElementById('cx-ai-study-root'),s=host.shadowRoot;
-        const tabs=[...s.querySelectorAll('.nav-rail [role=tab]')];assert(tabs.length===3 && tabs.map(tab=>tab.getAttribute('aria-label')).join(',')==='题目,章节,设置','图标数量或顺序错误');
-        assert(s.getElementById('nav-model').matches('.nav-model-bottom') && s.getElementById('nav-model')===tabs[2] && /\.nav-model-bottom\{[^}]*margin-top:auto/.test(s.querySelector('style').textContent),'模型入口未固定在底部');
+        const tabs=[...s.querySelectorAll('.nav-rail [role=tab]')];assert(tabs.length===4 && tabs.map(tab=>tab.getAttribute('aria-label')).join(',')==='题目,章节,其他功能,设置','图标数量或顺序错误');
+        assert(s.getElementById('nav-model').matches('.nav-model-bottom') && s.getElementById('nav-model')===tabs[3] && /\.nav-model-bottom\{[^}]*margin-top:auto/.test(s.querySelector('style').textContent),'模型入口未固定在底部');
         assert(tabs.every(tab=>tab.querySelector('svg') && tab.textContent.trim()==='' && tab.title),'导航出现文字或缺少提示');
-        assert(s.getElementById('view-model').hidden && !s.getElementById('view-questions').hidden && s.getElementById('view-chapters').hidden,'默认页错误');
+        assert(s.getElementById('view-model').hidden && !s.getElementById('view-questions').hidden && s.getElementById('view-chapters').hidden && s.getElementById('view-other').hidden,'默认页错误');
         const before=host.style.cssText;
         for(const tab of tabs){tab.click();assert(s.querySelectorAll('.view-page:not([hidden])').length===1,'同时展示多个页面');assert(s.getElementById(tab.getAttribute('aria-controls')).hidden===false,'导航与页面不对应');assert(host.style.cssText===before,'切换移动或扩大窗口');}
         s.getElementById('close').click();f.api.controller.openPanel();assert(s.getElementById('nav-model').getAttribute('aria-selected')==='true','重开重置所选页');
@@ -455,11 +455,12 @@
         press('nav-chapters','End');assert(s.getElementById('nav-model').getAttribute('aria-selected')==='true','末项键错误');
         assert(s.querySelectorAll('.nav-button[tabindex="0"]').length===1 && !f.requests.length && !f.clicks,'焦点或无副作用约束错误');f.remove();
     });
-    await test('运行中可浏览三页，配置锁定与状态持续，切换保留结果和输入', async () => {
+    await test('运行中可浏览四页，配置锁定与状态持续，切换保留结果和输入', async () => {
         const f=await fixture({catalog:true}),s=f.d.getElementById('cx-ai-study-root').shadowRoot;
         s.getElementById('custom-model').value='mock-unsaved-value';const flow=f.api.runAnswerFlow({autoPrefill:false});await pending(f);
         assert(!s.getElementById('view-questions').hidden,'分析未切到题目页');s.getElementById('nav-model').click();
         assert(s.getElementById('model').disabled && s.getElementById('custom-model').disabled && f.api.controller.state.busy && s.getElementById('panel').getAttribute('aria-busy')==='true','切页解除互斥');
+        s.getElementById('nav-other').click();assert(f.api.controller.state.busy && !s.getElementById('view-other').hidden && s.getElementById('custom-model').disabled,'其他功能切页解除互斥');
         s.getElementById('nav-chapters').click();assert(!s.getElementById('status-spinner').hidden && s.getElementById('catalog-refresh').disabled,'全局状态或目录锁定丢失');
         f.respond();await flow;assert(s.getElementById('nav-chapters').getAttribute('aria-selected')==='true' && s.getElementById('status-spinner').hidden && s.getElementById('panel').getAttribute('aria-busy')==='false','后台结果抢占页面或加载未恢复');
         s.getElementById('nav-questions').click();const output=s.getElementById('output');assert(output.querySelectorAll('.ai-answer').length===4,'切换丢失答案');output.scrollTop=120;

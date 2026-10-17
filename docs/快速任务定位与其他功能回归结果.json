@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-18",
+  "version": "1.20",
+  "npmVersion": "1.0.20",
+  "scope": "Local candidate; no GitHub publication or real-course actions",
+  "fullNpmTest": {
+    "exitCode": 0
+  },
+  "syntaxCheck": "passed",
+  "deterministicBuild": true,
+  "scriptSha256": "68344ff37a1ae8d2d7e462cbe196e609cb62f57268d5a4d25c3542dfd358f064",
+  "courseRegression": {
+    "total": 435,
+    "failures": 0
+  },
+  "locatorChecks": 20,
+  "manualPlaybackChecks": 18,
+  "panelWindowChecks": {
+    "total": 38,
+    "failures": 0
+  },
+  "videoQuizRegression": {
+    "total": 78,
+    "failures": 0
+  },
+  "nativeSpeedRegression": {
+    "total": 25,
+    "failures": 0
+  },
+  "startupUpdatesRegression": {
+    "total": 21,
+    "failures": 0
+  },
+  "locatorPerformance": {
+    "fixture": "mock-only",
+    "samples": [
+      {
+        "mode": "page-by-page",
+        "chapterNavigations": 1,
+        "tabNavigations": 2,
+        "requests": 0,
+        "elapsedMs": 543
+      },
+      {
+        "mode": "indexed",
+        "chapterNavigations": 1,
+        "tabNavigations": 0,
+        "requests": 4,
+        "elapsedMs": 361
+      }
+    ]
+  },
+  "performanceNote": "Synthetic fixture timing. requests counts extra summary reads, not total network traffic.",
+  "platformWidgetEvidence": "Local HAR public CxRobotSdkJs.js roots: cx-robot-wrapper, cx-robot-side, cx-robot-side-tips",
+  "realEnvironmentStatus": "Awaiting installation and user acceptance of this candidate"
+}

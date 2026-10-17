@@ -7,7 +7,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
-const code=source.replace(entry,'globalThis.courseAPI={courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
+const code=source.replace(entry,'globalThis.courseAPI={courseTaskTargetReady,courseInvalidateTaskProbe,createManualVideoProtection,initOtherFeatures,readCourseCatalog,courseProbeMarkup,courseProbeArguments,courseProbeSummary,courseTaskProbe,courseTaskEligibility,findNextCourseTask,courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
 // DOM 模拟环境不能生成浏览器可信输入；只在测试代码替换激活检查。安全用例使用原始检查。
 const activationCheck='/* TRUSTED_ASSISTANT_ACTIVATION */';
 assert(code.includes(activationCheck));
@@ -56,15 +56,34 @@ function fixture(chapters,opts={}){
     const policy=policyInput(request);if(policy){classificationRequests.push(request);queueMicrotask(()=>opts.policyResponse?opts.policyResponse(request,policy):respondPolicy(request,policy));return {abort(){request.onabort?.();}};}
 
   requests.push(request);let cancelled=false;
-  const timer=setTimeout(()=>{
+  const timer=opts.holdModelResponse?null:setTimeout(()=>{
    if(cancelled&&!opts.lateResponse)return;
    if(opts.error){request[opts.error==='timeout'?'ontimeout':'onerror']();return;}
    const payload=JSON.parse(request.data),input=JSON.parse(payload.messages[1].content),answers=input.questions.map(q=>({id:q.id,answer:opts.videoQuizAnswers?opts.videoQuizAnswers[requests.length-1]||['A']:opts.invalid?[]:q.type==='essay'?['模拟简答\n第二行']:['A'],reason:opts.invalid?'条件不明确':'模拟答案'}));
    request.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({answers})}}]})});
-  },opts.requestMs||8);timers.add(timer);
+  },opts.requestMs||8);if(timer!==null)timers.add(timer);
   return {abort(){cancelled=true;if(!opts.lateResponse)clearTimeout(timer);events.push('api-abort');request.onabort?.();}};
  };
  const keyFor=(ci,ti,task)=>`${ci}:${ti}:${task}`;
+ const probeRequests=[],probeAborts=[];let probeActive=0,maxProbeActive=0;
+ const cardsURL=(ci,ti)=>{const url=new URL('/mooc-ans/knowledge/cards',w.location.href),params=new URL(w.location.href).searchParams;url.search=new URLSearchParams({courseid:params.get('courseId'),clazzid:params.get('clazzid'),cpi:params.get('cpi'),knowledgeid:String(ci+1),num:String(ti),mooc2:'1'}).toString();return url.href;};
+ const probeHTML=(ci,ti)=>{
+  const page=chapters[ci].tabs[ti];
+  if(page.probeHTML)return page.probeHTML;
+  const attachments=page.probeAttachments??(page.tasks||[]).map((task,i)=>({type:task.kind==='quiz'?'workid':task.kind==='ppt'?'document':task.kind==='video'?'video':'unadapted',isPassed:values.get(`${ci}:${ti}:${i}`)===true,job:!task.optional,jobid:'mock-job-'+i,property:{_jobid:'mock-job-'+i}}));
+  return '<script>(function(){mArg = "";try{mArg = '+JSON.stringify({attachments})+';}catch(e){}uParse(".ans-cc",null,mArg);})();</script>';
+ };
+ const probeTabs=ci=>'<div id="prev_tab">'+chapters[ci].tabs.map((page,ti)=>'<li id="dct'+(ti+1)+'" cardid="mock-card-'+ci+'-'+ti+'" title="'+page.title+'" onclick="changeDisplayContent('+(ti+1)+','+chapters[ci].tabs.length+',1)"></li>').join('')+'</div><iframe id="iframe" src="'+cardsURL(ci,0).replaceAll('&','&amp;')+'"></iframe>';
+ if(opts.probe)w.fetch=(raw,config)=>{
+  const url=new URL(raw),ajax=url.pathname.endsWith('studentstudyAjax'),ci=Number(url.searchParams.get(ajax?'chapterId':'knowledgeid'))-1,ti=Number(url.searchParams.get('num')||0);
+  probeRequests.push({path:url.pathname,chapter:ci,tab:ajax?null:ti});probeActive++;maxProbeActive=Math.max(maxProbeActive,probeActive);
+  return new Promise((resolve,reject)=>{
+   let finished=false;const finish=()=>{if(finished)return;finished=true;probeActive--;config.signal.removeEventListener('abort',abort);};
+   const abort=()=>{probeAborts.push({chapter:ci,tab:ajax?null:ti});if(opts.probeLate)return;clearTimeout(timer);finish();reject(Object.assign(Error('cancelled'),{name:'AbortError'}));};
+   const timer=setTimeout(()=>{try{let html=ajax?probeTabs(ci):probeHTML(ci,ti);html=opts.probeResponse?.(url,html,{d,events})??html;finish();if(opts.probeFail===true||typeof opts.probeFail==='function'&&opts.probeFail(url))throw Error('mock network failure');resolve({ok:true,status:200,url:raw,headers:{get:()=>null},text:async()=>html});}catch(error){finish();reject(error);}},(typeof opts.probeDelay==='function'?opts.probeDelay(url):opts.probeDelay)||2);timers.add(timer);config.signal.addEventListener('abort',abort,{once:true});
+  });
+ };
+
  chapters.forEach((chapter,ci)=>(chapter.tabs||[]).forEach((page,ti)=>(page.tasks||[]).forEach((task,i)=>{if(task.learned)values.set(keyFor(ci,ti,i),true);})));
  const rowFor=ci=>d.getElementById(`cur${ci+1}`);
  const update=()=>{
@@ -192,12 +211,17 @@ function fixture(chapters,opts={}){
    // 必需的未适配任务夹具提供真实可见标记；无任务页另用无标记夹具验证。
    if(!task.optional&&['survey','homework','unknown'].includes(task.kind)){const icon=doc.createElement('span');icon.className='ans-job-icon';container.append(icon);}
   }
+  if(opts.probe){const get=frame.getAttribute.bind(frame);frame.getAttribute=name=>name==='src'?cardsURL(ci,ti):get(name);const holder=doc.createElement('template');holder.innerHTML=probeHTML(ci,ti);doc.body.append(holder.content);
+   // A completed native navigation in this fixture; no real iframe/network is mounted.
+   Object.defineProperty(doc,'URL',{value:cardsURL(ci,ti),configurable:true});Object.defineProperty(doc,'readyState',{value:'complete',configurable:true});
+   // Visible native-module fixtures are already rendered; pre-read templates remain detached.
+   for(const child of doc.querySelectorAll('iframe'))if(child.contentDocument){child.contentDocument.body.innerHTML='<span>模拟原生模块已加载</span>';Object.defineProperty(child.contentDocument,'readyState',{value:'complete',configurable:true});}}
   return doc;
  };
  const renderChapter=ci=>{
   active=ci;tab=0;d.querySelector('#curChapterId').value=String(ci+1);d.querySelector('#prev_tab').replaceChildren();
   for(const [index,page]of(chapters[ci].tabs||[]).entries()){
-   const li=d.createElement('li');li.id=`dct${index+1}`;li.textContent=page.title;li.onclick=()=>{if(tab!==index){tab=index;events.push(`tab:${ci}:${index}`);renderPage();}};d.querySelector('#prev_tab').append(li);
+   const li=d.createElement('li');li.id=`dct${index+1}`;li.textContent=page.title;if(opts.probe){li.setAttribute('cardid','mock-card-'+ci+'-'+index);li.setAttribute('onclick','changeDisplayContent('+(index+1)+','+chapters[ci].tabs.length+',1)');}li.onclick=()=>{if(tab!==index){tab=index;events.push(`tab:${ci}:${index}`);renderPage();}};d.querySelector('#prev_tab').append(li);
   }
   renderPage();update();
  };
@@ -213,7 +237,7 @@ function fixture(chapters,opts={}){
  const runner=w.courseAPI.createCourseRunner(d,w.courseAPI.controller,{limits:{...LIMITS,...opts.limits},sleep:opts.sleep,now:opts.now});w.courseAPI.replaceRunner(runner);
  const startWithDefaults=runner.start;runner.start=(options={})=>startWithDefaults({submit:true,continueOnTimeout:false,...options});
  if(typeof activeTestName!=='undefined'&&activeTestName.startsWith('视频弹题')){const watchdog=setTimeout(()=>{if(runner.busy){console.log('POPUP WATCHDOG '+JSON.stringify(runner.report?.chapters[0]?.tasks));runner.stop('模拟弹题测试超时');}},8000);timers.add(watchdog);}
- return {w,d,storage,runner,startWithDefaults,requests,events,videos,menus,uiListeners,attachUiStorage,api:w.courseAPI,get doc(){return lastDoc},get submits(){return submitClicks},close(){runner.stop();timers.forEach(clearTimeout);dom.window.close();assert.deepEqual(runtimeErrors,[],'页面或已销毁 iframe 存在未处理异常');}};
+ return {w,d,storage,runner,startWithDefaults,requests,events,videos,probeRequests,probeAborts,get maxProbeActive(){return maxProbeActive},menus,uiListeners,attachUiStorage,api:w.courseAPI,get doc(){return lastDoc},get submits(){return submitClicks},close(){runner.stop();timers.forEach(clearTimeout);dom.window.close();assert.deepEqual(runtimeErrors,[],'页面或已销毁 iframe 存在未处理异常');}};
 }
 const video=(extra={})=>({title:'视频',tasks:[{kind:'video',...extra}]});
 const ppt=(extra={})=>({title:'资料',tasks:[{kind:'ppt',...extra}]});
@@ -243,7 +267,251 @@ function videoPopup(f,v,options={}){
  root.querySelector('button').onclick=()=>{confirms++;if(options.confirm)options.confirm({root,v,feedback,release,confirms});else{feedback('回答正确');const proof=root.querySelector('.videoquiz-feedback').cloneNode(true);v.parentElement.append(proof);release();}};
  return {root,feedback,release,get confirms(){return confirms}};
 }
+const taskProbeFixture=name=>fs.readFileSync(path.join(__dirname,'fixtures/task-probe-'+name+'.html'),'utf8');
+const probeRange=f=>f.api.readCourseCatalog(f.d).entries.filter(entry=>!entry.isGroup);
+const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
 (async()=>{
+ await test('秒级定位：脱敏真实视频/测验/静态课件/讨论结构均可判定',()=>{
+  const f=fixture([{tabs:[video()]}]);try{
+   const result=name=>f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,taskProbeFixture(name)));
+   assert.deepEqual(JSON.parse(JSON.stringify(result('video').tasks)),[{type:'video',completed:true,required:true}]);
+   assert.equal(result('work').tasks[0].type,'quiz');assert.equal(f.api.courseTaskEligibility(result('work').tasks[0],{submit:false}).reason,'quiz-disabled');
+   assert(result('static').known);assert.equal(result('static').tasks.length,0);assert.equal(result('insertbbs').tasks[0].required,false);assert.equal(result('insertbbs').tasks[0].type,'discussion');
+   assert.equal(f.d.querySelectorAll('.ans-module').length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);
+  }finally{f.close();}
+ });
+ await test('秒级定位：空数组仍需完整静态结构，动态和未知占位不能排除',()=>{
+  const f=fixture([{tabs:[video()]}]);try{for(const dynamic of ['<iframe></iframe>','<canvas></canvas>','<div class="ans-module"></div>','<div data-loading></div>','<button>加载</button>','<a onclick="load()">加载</a>']){
+   const raw=taskProbeFixture('static').replace('</div>',dynamic+'</div>');assert.equal(f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,raw)).known,false,dynamic);
+  }assert.equal(f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,'<div class="ans-cc"></div>')).known,false);}finally{f.close();}
+ });
+ await test('秒级定位：讨论名称可变化，任务ID/声明/标记任一存在均不自动排除',()=>{
+  const f=fixture([{tabs:[video()]}]);try{
+   const parse=html=>f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,html));const raw=taskProbeFixture('insertbbs');assert.equal(parse(raw.replaceAll('脱敏标题','任意栏目名称')).tasks[0].required,false);
+   for(const html of [raw.replace('"module":"insertbbs"','"jobid":"new-job","module":"insertbbs"'),raw.replace('"property":','"job":true,"property":'),raw.replace('</div>','<span class="ans-job-icon"></span></div>'),raw.replace('"fixture-mid"','"fixture-mid","_jobid":"new-job"'),raw.replace('</div>','<iframe class="ans-module unknown-task"></iframe></div>')]){
+    const summary=parse(html);assert(!summary.known||summary.tasks.some(task=>task.required!==false));
+   }
+  }finally{f.close();}
+ });
+ await test('秒级定位：已完成视频和关闭测验之间的静态/讨论栏零原生切换',async()=>{
+  const f=fixture([{tabs:[{...video({learned:true}),probeHTML:taskProbeFixture('video')},{title:'资料',tasks:[],probeHTML:taskProbeFixture('static')},{...quiz(),probeHTML:taskProbeFixture('work')},{title:'任意讨论标题',tasks:[],probeHTML:taskProbeFixture('insertbbs')}]},{tabs:[video()]}],{probe:true});
+  try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(r.chapters[0].status,'manual-pending');assert(!f.events.some(e=>e.startsWith('tab:0:')||e.startsWith('play:0:')));assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert.equal(f.d.querySelector('#cur1 .icon_Completed'),null);assert(f.maxProbeActive<=4);}finally{f.close();}
+ });
+ await test('秒级定位：跨章乱序返回仍选前面的任务，最大并发4',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]},{tabs:[video()]},{tabs:[video()]},{tabs:[video()]},{tabs:[video()]}],{probe:true,probeDelay:url=>url.pathname.endsWith('studentstudyAjax')?2:Number(url.searchParams.get('knowledgeid'))===2?45:2});
+  try{const r=await f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal);assert.equal(r.entry.id,'cur2');assert.equal(r.tab.id,'dct1');assert(f.maxProbeActive>1&&f.maxProbeActive<=4);assert(!f.probeRequests.some(item=>item.chapter>=5));assert.equal(f.events.length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);}finally{f.close();}
+ });
+ await test('秒级定位：前面的未知栏目优先核实，不能选后面已知视频',async()=>{
+  const f=fixture([{tabs:[{...video(),probeAttachments:[{type:'future-module',jobid:'mock',isPassed:false}]}]},{tabs:[video()]}],{probe:true});try{const r=await f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal);assert.equal(r.entry.id,'cur1');assert.equal(r.tab.id,'dct1');assert.equal(r.reason,'live-task-conflict');assert.equal(f.events.length,0);}finally{f.close();}
+ });
+ await test('秒级定位：目标确定取消后续在途请求，迟到响应不会写入缓存或继续探测',async()=>{
+  const f=fixture([{tabs:[video()]},{tabs:[video()]},{tabs:[video()]},{tabs:[video()]}],{probe:true,probeLate:true,probeDelay:url=>Number(url.searchParams.get('knowledgeid')||url.searchParams.get('chapterId'))===1?2:60});
+  try{const range=probeRange(f),settings=probeSettings(f);const r=await f.api.findNextCourseTask(range,settings,new f.w.AbortController().signal);assert.equal(r.entry.id,'cur1');const count=f.probeRequests.length;assert(f.probeAborts.length>0);await delay(90);assert.equal(f.probeRequests.length,count);assert.equal(f.events.length,0);
+   const before=f.probeRequests.length,probe=await f.api.courseTaskProbe(f.d,range[1],{signal:new f.w.AbortController().signal});assert(probe.known);assert(f.probeRequests.length>before);
+  }finally{f.close();}
+ });
+ await test('秒级定位：60秒内命中缓存，过期重新读取，刷新实例没有旧缓存',async()=>{
+  let clock=0,hits=0;const chapters=[{tabs:[quiz()]},{tabs:[video()]}],f=fixture(chapters,{probe:true});
+  try{const options={...probeSettings(f),now:()=>clock,onCacheHit:()=>hits++},scan=()=>f.api.findNextCourseTask(probeRange(f),options,new f.w.AbortController().signal);
+   assert.equal((await scan()).entry.id,'cur2');const count=f.probeRequests.length;assert.equal((await scan()).entry.id,'cur2');assert.equal(f.probeRequests.length,count);assert(hits>0);clock=60001;await scan();assert(f.probeRequests.length>count);
+  }finally{f.close();}
+  const g=fixture(chapters,{probe:true});try{await g.api.findNextCourseTask(probeRange(g),probeSettings(g),new g.w.AbortController().signal);assert(g.probeRequests.length>0);}finally{g.close();}
+ });
+ await test('秒级定位：相同请求共享进行中Promise，一个消费者取消不影响另一个',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{probe:true,probeDelay:25});try{const entry=probeRange(f)[1],a=new f.w.AbortController(),b=new f.w.AbortController();let dedup=0;
+   const first=f.api.courseTaskProbe(f.d,entry,{signal:a.signal,onDeduplicated:()=>dedup++}).catch(()=>null),second=f.api.courseTaskProbe(f.d,entry,{signal:b.signal,onDeduplicated:()=>dedup++});await delay(5);a.abort();assert.equal(await first,null);assert((await second).known);assert.equal(f.probeRequests.length,1);assert(dedup>0);assert.equal(f.probeAborts.length,0);
+  }finally{f.close();}
+ });
+ await test('秒级定位：两个定位入口共用全局4路限制',async()=>{
+  const f=fixture(Array.from({length:8},()=>({tabs:[quiz()]})),{probe:true,probeDelay:5});try{const a=f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal),b=f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal);assert.equal((await a).entry,null);assert.equal((await b).entry,null);assert(f.maxProbeActive<=4);assert(f.maxProbeActive>1);}finally{f.close();}
+ });
+ await test('秒级定位：目录计数和显式完成事件按章清缓存，不清其他章',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[quiz()]},{tabs:[video()]}],{probe:true});try{const scan=()=>f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal);await scan();let before=f.probeRequests.length;f.api.courseInvalidateTaskProbe(f.d,'cur2');await scan();const requests=f.probeRequests.slice(before);assert(requests.some(x=>x.chapter===1));assert(!requests.some(x=>x.chapter===2));
+   before=f.probeRequests.length;f.d.querySelector('#cur2 .orangeNew').textContent='2';const r=await scan();assert.equal(r.entry.id,'cur2');assert.equal(r.probe.reason,'pending-count-mismatch');assert(f.probeRequests.slice(before).some(x=>x.chapter===1));
+  }finally{f.close();}
+ });
+ await test('秒级定位：未知/失败不缓存为无任务，下次允许重新读取',async()=>{
+  let failing=true;const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{probe:true,probeFail:()=>failing});try{let range=probeRange(f),r=await f.api.findNextCourseTask(range,probeSettings(f),new f.w.AbortController().signal);assert.equal(r.entry.id,'cur2');assert.equal(r.probe.known,false);const count=f.probeRequests.length;failing=false;r=await f.api.findNextCourseTask(probeRange(f),probeSettings(f),new f.w.AbortController().signal);assert.equal(r.entry.id,'cur2');assert.equal(r.probe.known,true);assert(f.probeRequests.length>count);}finally{f.close();}
+ });
+ await test('秒级定位：就绪快路径核对栏目、Document URL、状态和实际控件',()=>{
+  const f=fixture([{tabs:[video(),video()]}],{probe:true});try{const target={chapterId:'cur1',tabId:'dct1',type:'video'};assert(f.api.courseTaskTargetReady(f.d,target));assert(!f.api.courseTaskTargetReady(f.d,{...target,tabId:'dct2'}));assert(!f.api.courseTaskTargetReady(f.d,{...target,type:'document'}));
+   const url=f.doc.URL;for(const bad of ['about:blank',url.replace('num=0','num=1')]){Object.defineProperty(f.doc,'URL',{value:bad,configurable:true});assert(!f.api.courseTaskTargetReady(f.d,target));}Object.defineProperty(f.doc,'URL',{value:url,configurable:true});Object.defineProperty(f.doc,'readyState',{value:'loading',configurable:true});assert(!f.api.courseTaskTargetReady(f.d,target));Object.defineProperty(f.doc,'readyState',{value:'complete',configurable:true});f.doc.body.insertAdjacentHTML('beforeend','<div data-loading></div>');assert(!f.api.courseTaskTargetReady(f.d,target));
+  }finally{f.close();}
+ });
+ await test('秒级定位：缓存原始摘要，设置变化重新判断测验资格',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{probe:true});try{const signal=new f.w.AbortController().signal;assert.equal((await f.api.findNextCourseTask(probeRange(f),probeSettings(f),signal)).entry.id,'cur2');const before=f.probeRequests.length;const r=await f.api.findNextCourseTask(probeRange(f),{...probeSettings(f),submit:true},signal);assert.equal(r.entry.id,'cur1');assert.equal(r.targetType,'quiz');assert.equal(f.probeRequests.length,before);assert.equal(f.requests.length,0);assert.equal(f.submits,0);}finally{f.close();}
+ });
+ await test('秒级定位：当前栏目cardId变化清理该章旧结构缓存',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{probe:true});try{let entry=probeRange(f)[1];const probe=await f.api.courseTaskProbe(f.d,entry);await probe.read(probe.tabs[0]);f.d.querySelector('#cur2 .posCatalog_name').click();f.d.querySelector('#dct1').setAttribute('cardid','changed-card');entry=probeRange(f)[1];const changed=await f.api.courseTaskProbe(f.d,entry);assert.equal(changed.tabs[0].cardId,'changed-card');f.d.querySelector('#cur1 .posCatalog_name').click();const before=f.probeRequests.length;await f.api.courseTaskProbe(f.d,probeRange(f)[1]);assert.equal(f.probeRequests.length,before+1);}finally{f.close();}
+ });
+ await test('秒级定位：账号变化取消整个请求池，保留任务未完成状态',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]},{tabs:[video()]},{tabs:[video()]}],{probe:true,probeDelay:50});try{const pending=f.runner.start({submit:false});await waitForTest(()=>f.probeRequests.length>=3);f.w.history.replaceState({},'','?courseId=mock-course&clazzid=mock-class&cpi=changed-account');const r=await pending;assert.equal(r.status,'stopped');assert.match(r.reason,/账号已变化/);assert(f.probeAborts.length>0);const count=f.probeRequests.length;await delay(70);assert.equal(f.probeRequests.length,count);assert.equal(f.events.filter(e=>/^(play|tab|chapter):/.test(e)).length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert(!f.api.courseRunActive(f.d));}finally{f.close();}
+ });
+ await test('秒级定位：控件已就绪不固定等待2秒，原生只跳最终目标',async()=>{
+  const sleeps=[],f=fixture([{tabs:[quiz()]},{tabs:[quiz(),video()]}],{probe:true,limits:{frameReadDelayMs:2000},sleep:ms=>{sleeps.push(ms);return delay(ms);}});try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert(!sleeps.includes(2000));assert(r.locator.readyHits>0);assert.deepEqual(f.events.filter(e=>/^(chapter|tab):/.test(e)),['chapter:1','tab:1:1']);assert.equal(r.videos,1);assert.equal(f.submits,0);}finally{f.close();}
+ });
+ await test('秒级定位：过渡Document仍按原间隔等待，加载完成后继续',async()=>{
+  const sleeps=[],f=fixture([{tabs:[video()]}],{probe:true,limits:{frameReadDelayMs:20},sleep:ms=>{sleeps.push(ms);return delay(ms);}});try{Object.defineProperty(f.doc,'URL',{value:'about:blank',configurable:true});const url=f.d.querySelector('#iframe').getAttribute('src'),timer=setTimeout(()=>Object.defineProperty(f.doc,'URL',{value:url,configurable:true}),8);const r=await f.runner.start({submit:false});clearTimeout(timer);assert.equal(r.status,'done',r.reason);assert(sleeps.includes(20));assert.equal(r.videos,1);}finally{f.close();}
+ });
+ await test('秒级定位：21章100ms读取性能样本，冷定位5秒内和缓存300ms内',async()=>{
+  const chapters=Array.from({length:20},()=>({tabs:[{...video({learned:true}),probeHTML:taskProbeFixture('video')},{title:'课件',tasks:[],probeHTML:taskProbeFixture('static')},{...quiz(),probeHTML:taskProbeFixture('work')},{title:'讨论',tasks:[],probeHTML:taskProbeFixture('insertbbs')}]}));chapters.push({tabs:[video()]});const f=fixture(chapters,{probe:true,probeDelay:100});
+  try{let hits=0;const options={...probeSettings(f),onCacheHit:()=>hits++},start=performance.now();const cold=await f.api.findNextCourseTask(probeRange(f),options,new f.w.AbortController().signal);const coldMs=performance.now()-start,requests=f.probeRequests.length;
+   const warmStart=performance.now(),warm=await f.api.findNextCourseTask(probeRange(f),options,new f.w.AbortController().signal),warmMs=performance.now()-warmStart;
+   // Same readers and inputs, one awaited read at a time: isolates the concurrency benefit.
+   const serialFixture=fixture(chapters,{probe:true,probeDelay:100});let serialReference;
+   try{const serialStart=performance.now();let target;
+    outer:for(const entry of probeRange(serialFixture)){const probe=await serialFixture.api.courseTaskProbe(serialFixture.d,entry);assert(probe.known);for(const tab of probe.tabs){const summary=await probe.read(tab);assert(summary.known);if(summary.tasks.some(task=>serialFixture.api.courseTaskEligibility(task,probeSettings(serialFixture)).status!=='excluded')){target=entry.id;break outer;}}}
+    serialReference={elapsedMs:Math.round(performance.now()-serialStart),requests:serialFixture.probeRequests.length,maxInFlight:serialFixture.maxProbeActive,target};assert.equal(target,'cur21');assert.equal(serialReference.maxInFlight,1);
+   }finally{serialFixture.close();}
+   assert.equal(cold.entry.id,'cur21');assert.equal(warm.entry.id,'cur21');assert.equal(f.events.length,0);assert.equal(f.probeRequests.length,requests);assert(f.maxProbeActive<=4);assert(coldMs<5000,'cold '+coldMs);assert(warmMs<300,'warm '+warmMs);
+   fs.writeFileSync(path.join(__dirname,'task-locator-fast-results.json'),JSON.stringify({fixture:'mock-only',chapters:21,tabsBeforeTarget:80,requestDelayMs:100,serialReference,coldMs:Math.round(coldMs),warmMs:Math.round(warmMs),requests,cacheHits:hits,maxInFlight:f.maxProbeActive,nativeColumnSwitches:0,playCalls:0,modelCalls:f.requests.length,submissions:f.submits},null,2));
+  }finally{f.close();}
+ });
+ await test('其他功能：默认关闭，不自动启动尚未播放的视频',async()=>{
+  const f=fixture([{tabs:[video({manual:true})]}]);let guard;
+  try{const s=f.d.getElementById('cx-ai-study-root').shadowRoot;assert(!s.getElementById('other-keep-video-playing').checked);assert(!s.getElementById('other-hide-platform-ai').checked);guard=f.api.createManualVideoProtection(f.d);guard.tick();assert.equal(guard.activeVideo,null);assert.equal(f.events.length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);}finally{guard?.close();f.close();}
+ });
+ for(const environment of ['mouseout','blur','hidden','none'])await test('其他功能：手动观看未知暂停有界恢复，环境='+environment,async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true,duration:60})]}]);let guard;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();assert.equal(guard.activeVideo,v);let exits=0;f.w.addEventListener('mouseout',()=>exits++);
+   if(environment==='mouseout'){f.w.dispatchEvent(new f.w.MouseEvent('mouseout',{relatedTarget:null}));assert.equal(exits,0);}else if(environment!=='none')foregroundFixture(f)(environment!=='hidden',false);
+   v.pause();clock=2999;guard.tick();assert.equal(v.startAttemptTimes.length,1);clock=3000;guard.tick();await delay(0);assert.equal(v.startAttemptTimes.length,2);assert(!v.paused);assert.equal(v.playbackRate,1);assert.equal(v.currentTime,0);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
+   guard.close();f.w.dispatchEvent(new f.w.MouseEvent('mouseout',{relatedTarget:null}));assert.equal(exits,1);
+  }finally{guard?.close();f.close();}
+ });
+ await test('其他功能：无效恢复最多8次，原生播放累计10秒后恢复额度',async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true,duration:100})]}]);let guard;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();v.pause();const original=v.play;v.play=()=>{f.events.push('manual-recovery');return Promise.resolve();};
+   for(let i=0;i<10;i++){clock+=3000;guard.tick();await delay(0);}assert.equal(f.events.filter(x=>x==='manual-recovery').length,8);assert.match(guard.status,/上限/);
+   v.play=original;await v.play();for(let i=1;i<=9;i++){clock+=1000;v.simulateMedia({seconds:i,natural:true});guard.tick();}v.pause();clock+=3000;guard.tick();assert.equal(v.startAttemptTimes.length,2);
+   await v.play();clock+=1000;v.simulateMedia({seconds:10,natural:true});guard.tick();v.pause();clock+=3000;guard.tick();await delay(0);assert.equal(v.startAttemptTimes.length,4);assert(!v.paused);
+  }finally{guard?.close();f.close();}
+ });
+ await test('其他功能：请求未结束不并行恢复，关闭后迟到结果没有后续操作',async()=>{
+  let clock=0,resolve,attempts=0;const f=fixture([{tabs:[video({manual:true})]}]);let guard;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();v.pause();v.play=()=>{attempts++;return new Promise(done=>resolve=done);};clock=3000;guard.tick();clock=9000;guard.tick();assert.equal(attempts,1);guard.close();resolve();await delay(0);clock+=3000;guard.tick();assert.equal(attempts,1);assert.equal(guard.activeVideo,null);
+  }finally{guard?.close();f.close();}
+ });
+ for(const trusted of [true,false])await test('其他功能：手动暂停意图归属校验，可信='+trusted,async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true})]}]);let guard;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();playerInput(v,{trusted});v.pause();clock=3000;guard.tick();await delay(0);assert.equal(v.startAttemptTimes.length,trusted?1:2);if(trusted){assert.match(guard.status,/手动暂停/);await v.play();v.pause();clock+=3000;guard.tick();await delay(0);assert.equal(v.startAttemptTimes.length,3);}}
+  finally{guard?.close();f.close();}
+ });
+ await test('其他功能：编辑器和其他视频点击不冒充当前视频暂停',async()=>{
+  let clock=0;const f=fixture([{tabs:[{title:'双视频',tasks:[{kind:'video',manual:true},{kind:'video',manual:true}]}]}]);let guard;
+  try{const [v,other]=f.videos;await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();const textarea=f.doc.createElement('textarea');f.doc.body.append(textarea);playerInput(v,{target:textarea});playerInput(other);v.pause();clock=3000;guard.tick();await delay(0);assert.equal(v.startAttemptTimes.length,2);assert(other.paused);
+  }finally{guard?.close();f.close();}
+ });
+ for(const marker of ['data-face-verification','data-captcha','video-quiz','foreground'])await test('其他功能：平台门槛优先于恢复，类型='+marker,async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true,foreground:marker==='foreground'})]}]);let guard;
+  try{const v=f.videos[0];foregroundFixture(f)(true,true);await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();if(marker==='video-quiz')f.doc.body.insertAdjacentHTML('beforeend','<div class="ans-videoquiz"><a id="videoquiz-submit">提交</a></div>');else if(marker==='foreground')foregroundFixture(f)(false,false);else f.doc.body.insertAdjacentHTML('beforeend','<div '+marker+'>请验证</div>');v.pause();clock=3000;guard.tick();assert.equal(v.startAttemptTimes.length,1);assert.equal(f.requests.length,0);assert.equal(f.submits,0);
+  }finally{guard?.close();f.close();}
+ });
+ await test('其他功能：定位位移不恢复额度，数据未就绪不尝试播放',async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true,duration:100})]}]);let guard;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock,maxResumes:1});guard.tick();v.pause();clock=3000;guard.tick();await delay(0);clock+=1000;v.simulateMedia({seconds:30,seeking:true},'seeking');v.simulateMedia({seeking:false},'seeked');guard.tick();v.pause();clock+=3000;guard.tick();assert.equal(v.startAttemptTimes.length,2);assert.match(guard.status,/上限/);guard.close();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});await v.play();guard.tick();v.simulateMedia({readyState:0,paused:true},'pause');clock+=3000;guard.tick();assert.equal(v.startAttemptTimes.length,3);
+  }finally{guard?.close();f.close();}
+ });
+ await test('其他功能：多播放器不混淆，节点替换释放旧监听和拦截',async()=>{
+  const f=fixture([{tabs:[{title:'多视频',tasks:[{kind:'video',manual:true},{kind:'video',manual:true}]}]}]);let guard;
+  try{const [a,b]=f.videos;await a.play();await b.play();guard=f.api.createManualVideoProtection(f.d);guard.tick();assert.equal(guard.activeVideo,null);b.pause();guard.tick();assert.equal(guard.activeVideo,a);a.remove();guard.tick();assert.equal(guard.activeVideo,null);assert.equal(a.testListeners.get('pause').size,0);assert.equal(a.testListeners.get('playing').size,0);assert.equal(f.submits,0);
+  }finally{guard?.close();f.close();}
+ });
+ await test('其他功能：自动刷课接管期间让出保护，停止后手动观看恢复',async()=>{
+  let clock=0;const f=fixture([{tabs:[video({manual:true,duration:60})]}]);let guard,p;
+  try{const v=f.videos[0];await v.play();guard=f.api.createManualVideoProtection(f.d,{now:()=>clock});guard.tick();p=f.runner.start({skipLearned:false});await waitForTest(()=>f.api.courseRunActive(f.d));guard.tick();assert.equal(guard.activeVideo,null);assert.match(guard.status,/刷课/);f.runner.stop();await p;await v.play();guard.tick();assert.equal(guard.activeVideo,v);f.menus.get('隐藏助手全部界面')();v.pause();clock=3000;guard.tick();await delay(0);assert(!v.paused);assert.equal(f.d.getElementById('cx-ai-study-root').style.display,'none');
+  }finally{f.runner.stop();if(p)await p;guard?.close();f.close();}
+ });
+ await test('其他功能：关闭开关和页面退出释放播放监听，重复初始化不叠加',async()=>{
+  const f=fixture([{tabs:[video({manual:true})]}]);
+  try{const v=f.videos[0],s=f.d.getElementById('cx-ai-study-root').shadowRoot,toggle=s.getElementById('other-keep-video-playing');await v.play();assert.equal(f.api.initOtherFeatures(f.d),f.api.initOtherFeatures(f.d));toggle.checked=true;toggle.dispatchEvent(new f.w.Event('change'));assert.equal(v.testListeners.get('pause').size,1);toggle.checked=false;toggle.dispatchEvent(new f.w.Event('change'));assert.equal(v.testListeners.get('pause').size,0);toggle.checked=true;toggle.dispatchEvent(new f.w.Event('change'));assert.equal(v.testListeners.get('pause').size,1);f.w.dispatchEvent(new f.w.Event('pagehide'));assert.equal(v.testListeners.get('pause').size,0);
+  }finally{f.close();}
+ });
+ await test('任务定位：静态JSON解析不执行脚本，字符串/注释/正则/函数体伪赋值不生效',()=>{
+  const f=fixture([{tabs:[video()]}]);try{
+   const root=f.api.courseProbeMarkup(f.d,'<script>window.probeExecuted=true;/* mArg={"attachments":[]}; */const text="mArg={}";/;mArg={"fake":true};/;function later(){mArg={"fake":true};}var mArg="";mArg={"attachments":[{"type":"video","jobid":"mock","isPassed":false}]};</script><iframe src="https://invalid.example/player"></iframe>');
+   assert.equal(f.w.probeExecuted,undefined);assert.equal(root.isConnected,false);assert.equal(f.api.courseProbeSummary(root).tasks[0].type,'video');
+   for(const text of ['mArg={};mArg={};','mArg={attachments:[]};'])assert.equal(f.api.courseProbeArguments(f.api.courseProbeMarkup(f.d,'<script>'+text+'</script>')),null);
+  }finally{f.close();}
+ });
+ await test('任务定位：开关决定任务适用性，空元数据不当作无任务',()=>{
+  const f=fixture([{tabs:[video()]}]);try{
+   const decide=(type,completed,settings={})=>f.api.courseTaskEligibility({type,completed,required:true},{submit:false,skipLearned:true,...settings});
+   assert.equal(decide('quiz',null).reason,'quiz-disabled');assert.equal(decide('quiz',null,{submit:true}).status,'unknown');assert.equal(decide('video',true).reason,'already');assert.equal(decide('video',true,{skipLearned:false}).status,'eligible');assert.equal(decide('video',false).status,'eligible');assert.equal(decide('unknown',false).status,'unknown');assert.equal(decide('knowledge-graph',false).reason,'knowledge-graph');
+   assert.equal(f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,'<script>mArg={"attachments":[]};</script><span class="ans-job-icon"></span>')).known,false);
+  }finally{f.close();}
+ });
+ await test('任务定位：当前第③栏作为0坐标，前两栏零读取/切换/模型或播放',async()=>{
+  const f=fixture([{tabs:[video(),quiz(),video()]}],{probe:true});try{
+   f.d.querySelector('#dct3').click();f.events.length=0;const r=await f.runner.start({submit:false,fromCurrent:true});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(r.quizzes,0);
+   assert.deepEqual(f.probeRequests,[]);assert.deepEqual(f.events.filter(e=>/^(play|tab|chapter):/.test(e)),['play:0:2:0']);assert.equal(f.requests.length,0);assert.equal(f.storage.get(f.runner.key).rangeStart.tabId,'dct3');
+  }finally{f.close();}
+ });
+ await test('任务定位：未勾从当前从首栏搜索，有序并发确定目标后停止读取',async()=>{
+  const f=fixture([{tabs:[video(),video(),video()]},{tabs:[video()]}],{probe:true});try{
+   f.d.querySelector('#dct3').click();f.events.length=0;const range=f.api.readCourseCatalog(f.d).entries.filter(x=>!x.isGroup);
+   const result=await f.api.findNextCourseTask(range,{owner:f.d,submit:false,skipLearned:true},new f.w.AbortController().signal);
+   assert.equal(result.tab.id,'dct1');assert.equal(result.entry.id,'cur1');const count=f.probeRequests.length;await delay(20);assert.equal(f.probeRequests.length,count);assert(f.probeRequests.some(x=>x.chapter===0&&x.tab===0));assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert.equal(f.events.length,0);assert(f.maxProbeActive<=4);
+  }finally{f.close();}
+ });
+ await test('任务定位：前章只剩关闭的测验，不打开栏目，直接处理后续视频',async()=>{
+  const f=fixture([{tabs:[video({learned:true}),quiz()]},{tabs:[video(),video()]}],{probe:true});try{
+   const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,2);assert.equal(r.chapters[0].status,'manual-pending');assert(!f.events.includes('tab:0:1'));assert(!f.events.some(x=>x.startsWith('play:0:')));assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert(f.maxProbeActive<=4);assert.equal(f.d.querySelector('#cur1 .icon_Completed'),null);
+  }finally{f.close();}
+ });
+ await test('任务定位：同栏视频/PPT/测验保持顺序，只排除测验',async()=>{
+  const f=fixture([{tabs:[{title:'混合',tasks:[{kind:'video'},{kind:'quiz'},{kind:'ppt'}]},quiz()]}],{probe:true});try{
+   const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(r.documents,1);assert.equal(f.submits,0);assert.equal(f.requests.length,0);assert.deepEqual(Array.from(r.chapters[0].tasks,t=>t.type),['video','quiz','document','quiz']);assert.equal(r.chapters[0].status,'manual-pending');assert(!f.events.includes('tab:0:1'));
+  }finally{f.close();}
+ });
+ await test('任务定位：开启提交正常解题，关闭跳过已学可重新处理视频',async()=>{
+  for(const submit of [false,true]){const f=fixture([{tabs:[video({learned:true}),quiz()]}],{probe:true});try{const r=await f.runner.start({submit,skipLearned:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(f.submits,submit?1:0);assert.equal(f.requests.length,submit?1:0);}finally{f.close();}}
+ });
+ await test('任务定位：当前栏目边界随导航恢复，前两栏不重新执行',async()=>{
+  const f=fixture([{tabs:[video(),quiz(),video({stall:true})]}],{probe:true});let saved,session,key=f.runner.key;
+  try{f.d.querySelector('#dct3').click();const pending=f.runner.start({submit:false,fromCurrent:true});await waitForTest(()=>f.events.includes('play:0:2:0'));session=f.w.sessionStorage.getItem('cx-ai-course-session');f.w.dispatchEvent(new f.w.Event('pagehide'));await pending;saved=JSON.parse(JSON.stringify(f.storage.get(key)));saved.handoff=true;saved.status='running';saved.report.status='running';}finally{f.close();}
+  const g=fixture([{tabs:[video(),quiz(),video()]}],{probe:true,storage:[[key,saved]],session,noAutoResume:true});try{const r=await g.runner.start({resume:true});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert(!g.events.includes('play:0:0:0'));assert(g.events.includes('play:0:2:0'));assert.equal(g.submits,0);}finally{g.close();}
+ });
+ await test('任务定位：未知类型/空附件/缺完成状态回原页面核实视频',async()=>{
+  for(const attachments of [[],[{type:'new-type',jobid:'mock',isPassed:false}],[{type:'video',jobid:'mock'}]]){const f=fixture([{tabs:[{...video(),probeAttachments:attachments}]}],{probe:true});try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);}finally{f.close();}}
+ });
+ await test('任务定位：网络失败或地址不匹配回原流程，不漏实际视频',async()=>{
+  for(const failure of ['network','scope']){const f=fixture([{tabs:[quiz(),video()]}],{probe:true,probeFail:failure==='network'});try{
+   if(failure==='scope'){const frame=f.d.querySelector('#iframe'),original=frame.getAttribute;frame.getAttribute=name=>name==='src'?original(name).replace('courseid=mock-course','courseid=other'):original(name);}
+   const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.equal(f.submits,0);if(failure==='scope')assert.equal(f.probeRequests.length,0);
+  }finally{f.close();}}
+ });
+ await test('任务定位：停止取消与迟到响应没有后续操作并释放运行锁',async()=>{
+  const f=fixture([{tabs:[video({learned:true}),quiz()]},{tabs:[video()]}],{probe:true,probeDelay:40,probeLate:true});try{const pending=f.runner.start({submit:false});await waitForTest(()=>f.probeRequests.length>0);f.runner.stop();const r=await pending;await delay(70);assert.equal(r.status,'stopped');assert(!f.events.some(e=>/^(play|tab|chapter):/.test(e)));assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert(!f.runner.busy);assert(!f.api.courseRunActive(f.d));}finally{f.close();}
+ });
+ await test('任务定位：读取摘要时跳过本章，中止旧请求后只执行后续章节',async()=>{
+  const f=fixture([{tabs:[video({learned:true}),quiz()]},{tabs:[video()]}],{probe:true,probeDelay:30});try{const pending=f.runner.start({submit:false});await waitForTest(()=>f.probeRequests.length>0);assert(f.runner.skip());const r=await pending;assert.equal(r.status,'done',r.reason);assert.equal(r.chapters[0].status,'skipped');assert.equal(r.videos,1);assert(!f.events.some(e=>e.startsWith('play:0:')));assert.equal(f.submits,0);}finally{f.close();}
+ });
+ await test('任务定位：读取期间人工换栏或目录变化取消旧定位',async()=>{
+  for(const change of ['tab','catalog']){const f=fixture([{tabs:[video({learned:true}),quiz(),video()]}],{probe:true,probeDelay:30});try{const pending=f.runner.start({submit:false});await waitForTest(()=>f.probeRequests.length>0);if(change==='tab')f.d.querySelector('#dct3').click();else f.d.querySelector('#cur1').id='cur-removed';const r=await pending;assert.equal(r.status,'stopped');assert.match(r.reason,/定位期间|课程目录/);assert(!f.events.some(e=>e.startsWith('play:')));assert.equal(f.submits,0);}finally{f.close();}}
+ });
+ await test('任务定位：目录完成先筛选，不读取已完成章节',async()=>{
+  const f=fixture([{already:true,tabs:[video()]},{tabs:[video()]}],{probe:true});try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.chapters[0].status,'already');assert(f.probeRequests.every(x=>x.chapter!==0));assert.equal(r.videos,1);}finally{f.close();}
+ });
+ await test('任务定位：人脸和验证码优先停止，定位期间零请求',async()=>{
+  for(const marker of ['data-face-verification','data-captcha']){const f=fixture([{tabs:[quiz(),video()]}],{probe:true});try{f.doc.body.insertAdjacentHTML('afterbegin','<div '+marker+'>请验证</div>');const r=await f.runner.start({submit:false});assert.equal(r.status,'stopped');assert.equal(f.probeRequests.length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);}finally{f.close();}}
+ });
+ await test('任务定位：未确认提交禁用快速排除，沿既有核对流程处理',async()=>{
+  const f=fixture([{tabs:[quiz()]}],{probe:true});try{f.storage.set(f.runner.key,{status:'stopped',report:{chapters:[{tasks:[{type:'quiz',status:'stopped',submissionStarted:true}]}]}});const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(f.probeRequests.length,0);assert.equal(r.locator.fallbacks,1);assert.equal(f.submits,0);assert.equal(r.chapters[0].status,'manual-pending');}finally{f.close();}
+ });
+ await test('任务定位：目录待完成数大于已映射任务时不提前排除整章',async()=>{
+  const f=fixture([{tabs:[quiz()]}],{probe:true});try{f.d.querySelector('#cur1 .orangeNew').textContent='2';const range=f.api.readCourseCatalog(f.d).entries.filter(x=>!x.isGroup);const r=await f.api.findNextCourseTask(range,{owner:f.d,submit:false,skipLearned:true},new f.w.AbortController().signal);assert.equal(r.entry.id,'cur1');assert.equal(r.probe.reason,'pending-count-mismatch');assert.equal(f.submits,0);}finally{f.close();}
+ });
+ await test('任务定位：人工重试仅处理原队列及原栏目边界',async()=>{
+  const f=fixture([{tabs:[video(),quiz(),quiz()]}],{probe:true});try{f.d.querySelector('#dct3').click();await f.runner.start({submit:false,fromCurrent:true});assert(f.runner.canRetry);f.events.length=0;const r=await f.runner.retryIncomplete(undefined,{submit:true});assert.equal(r.status,'done',r.reason);assert.equal(f.submits,1);assert(!f.events.includes('tab:0:0'));assert(!f.events.includes('tab:0:1'));assert.equal(r.videos,0);}finally{f.close();}
+ });
+ await test('任务定位：任务摘要与当前DOM冲突时核实页面，不漏实际未完成任务',async()=>{
+  const f=fixture([{tabs:[{...video(),probeAttachments:[{type:'video',isPassed:true,jobid:'mock'}]}]}],{probe:true});try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert(f.events.includes('play:0:0:0'));}finally{f.close();}
+ });
+ await test('任务定位：记录切换/摘要请求/耗时，较逐栏核实减少切换',async()=>{
+  const samples=[];for(const probe of [false,true]){const f=fixture([{tabs:[video({learned:true}),quiz(),quiz()]},{tabs:[video()]}],{probe}),began=Date.now();try{const r=await f.runner.start({submit:false});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);samples.push({mode:probe?'indexed':'page-by-page',chapterNavigations:f.events.filter(e=>e.startsWith('chapter:')).length,tabNavigations:f.events.filter(e=>e.startsWith('tab:')).length,requests:f.probeRequests.length,elapsedMs:Date.now()-began});}finally{f.close();}}
+  assert(samples[1].tabNavigations<samples[0].tabNavigations);fs.writeFileSync(path.join(__dirname,'task-locator-results.json'),JSON.stringify({fixture:'mock-only',samples},null,2));
+ });
  await test('倍速集成：真实菜单DOM与模拟缺失组件字段正常选择2x',async()=>{const f=fixture([{tabs:[video({nativeSpeed:{nativeMarkup:true,omitItemRate:true}})]}],{autoContext:false});try{const r=await f.runner.start({speedEnabled:true});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,1);assert.deepEqual(f.videos[0].speedFixture.clicks,[2]);assert.equal(r.chapters[0].tasks[0].speedState.evidence,'native-configuration-and-dom-menu');assert.equal(f.submits,0);}finally{f.close();}});
  await test('倍速集成：同页多视频独立选择，禁止档位不变且正常确认完成',async()=>{const f=fixture([{tabs:[{title:'视频',tasks:[{kind:'video',nativeSpeed:{}},{kind:'video',nativeSpeed:{rates:false}},{kind:'video',nativeSpeed:{rates:[1,1.5]}}]}]}],{autoContext:false});try{const r=await f.runner.start({speedEnabled:true});assert.equal(r.status,'done',r.reason);assert.equal(r.videos,3);assert.deepEqual(f.videos.map(v=>v.speedFixture.clicks),[[2],[],[1.5]]);assert.equal(f.storage.get(f.runner.key).speedEnabled,true);}finally{f.close();}});
  await test('倍速集成：默认关闭与视频信息识别开启时都不点击倍速',async()=>{for(const recognition of [false,true]){const f=fixture([{tabs:[video({nativeSpeed:{}})]}],{autoContext:recognition});try{const r=await f.runner.start({speedEnabled:recognition});assert.equal(r.videos,1,r.reason);assert.equal(f.videos[0].speedFixture.clicks.length,0);assert.equal(r.chapters[0].tasks[0].speedState.outcome,recognition?'recognition-enabled':'switch-off');}finally{f.close();}}});
@@ -1503,7 +1771,7 @@ function videoPopup(f,v,options={}){
  });
  await test('出现验证码或账号切换时中止未完成模型请求',async()=>{
   for(const kind of ['captcha','account']){
-   const f=fixture([{tabs:[quiz()]}],{requestMs:100});try{const p=f.runner.start();await delay(10);
+   const f=fixture([{tabs:[quiz()]}],{holdModelResponse:true});try{const p=f.runner.start();await waitForTest(()=>f.requests.length===1);
     if(kind==='captcha'){const node=f.doc.createElement('div');node.setAttribute('data-captcha','');f.doc.body.append(node);}else f.w.history.replaceState({},'','?courseId=mock-course&clazzid=mock-class&cpi=other-account');
     const r=await p;assert.equal(r.status,'stopped');assert.match(r.reason,/验证码|账号已变化/);assert.equal(f.submits,0);assert(f.events.includes('api-abort'));
    }finally{f.close();}
@@ -1781,7 +2049,7 @@ function videoPopup(f,v,options={}){
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.20');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.21');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{

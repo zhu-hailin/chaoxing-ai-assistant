@@ -1,0 +1,19 @@
+{
+  "fixture": "mock-only",
+  "samples": [
+    {
+      "mode": "page-by-page",
+      "chapterNavigations": 1,
+      "tabNavigations": 2,
+      "requests": 0,
+      "elapsedMs": 946
+    },
+    {
+      "mode": "indexed",
+      "chapterNavigations": 1,
+      "tabNavigations": 0,
+      "requests": 4,
+      "elapsedMs": 692
+    }
+  ]
+}

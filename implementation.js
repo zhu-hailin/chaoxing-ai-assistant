@@ -464,7 +464,7 @@
     }
 
     function switchPanelView(view, { focus = false } = {}) {
-        if (!panelView || !['model','questions','chapters'].includes(view)) return;
+        if (!panelView || !['model','questions','chapters','other'].includes(view)) return;
         const { shadow } = panelView;
         for (const button of shadow.querySelectorAll('[data-panel-view]')) {
             const selected = button.dataset.panelView === view;
@@ -676,6 +676,7 @@
         }, { once: true });
         initCourseSidebar();
         initPanelNavigation();
+        initOtherFeatureControls(shadow,doc);
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
         el('copy-error-report').onclick = async () => {
@@ -1296,7 +1297,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.20',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.21',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1619,6 +1620,7 @@
         renderRunState(controller.state);
     }
     function startQuizObserver() {
+        initOtherFeatures(document);
         startAssistantUpdateCheck();
         let scheduled = false;
         const refresh = () => {

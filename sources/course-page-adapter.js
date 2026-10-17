@@ -70,6 +70,319 @@
                 active:node.classList.contains('active') || node.getAttribute('aria-selected') === 'true',
                 disabled:node.getAttribute('aria-disabled') === 'true' || node.classList.contains('disabled') }));
     }
+    // Detached template content stays inert: no player, iframe or returned script is mounted.
+    function courseProbeMarkup(owner, html) {
+        if(typeof html!=='string'||html.length>2*1024*1024)return null;
+        const template=owner.createElement('template');template.innerHTML=html;
+        return template.content;
+    }
+    function courseProbeArguments(root) {
+        const objects=[];
+        const objectAt=(text,begin)=>{
+            let end=begin,braces=0,quoted=false;
+            for(;end<text.length;end++) {
+                const char=text[end];
+                if(quoted){if(char==='\\'){end++;continue;}if(char==='"')quoted=false;continue;}
+                if(char==='"'){quoted=true;continue;}
+                if(char==='{')braces++;else if(char==='}'&&--braces===0){end++;break;}
+            }
+            if(braces!==0||!/^\s*(?:;|$)/.test(text.slice(end)))throw new Error('Invalid task metadata');
+            const value=JSON.parse(text.slice(begin,end));
+            if(!value||Array.isArray(value))throw new Error('Invalid task metadata');
+            return {value,end};
+        };
+        for(const script of root.querySelectorAll('script:not([src])')) {
+            const text=script.textContent;let depth=0,paren=0,previous='';
+            // Native cards bootstrap observed in the HAR: an immediate wrapper + try + uParse.
+            // Only the JSON literal is consumed; neither the wrapper nor uParse is executed.
+            const bootstrap=/^\s*\(function\s*\(\s*\)\s*\{\s*mArg\s*=\s*(?:""|'')\s*;\s*try\s*\{\s*mArg\s*=\s*(?=\{)/.exec(text);
+            if(bootstrap) {
+                try {
+                    const {value,end}=objectAt(text,bootstrap[0].length);
+                    if(!/^\s*;\s*\}\s*catch\s*\(\s*\w+\s*\)\s*\{\s*\}\s*uParse\(\s*["']\.ans-cc["']\s*,\s*null\s*,\s*mArg\s*\)/.test(text.slice(end)))return null;
+                    objects.push(value);continue;
+                }catch{return null;}
+            }
+            for(let i=0;i<text.length;) {
+                const char=text[i];
+                if(/\s/.test(char)){i++;continue;}
+                if(text.startsWith('//',i)){const end=text.indexOf('\n',i+2);i=end<0?text.length:end+1;continue;}
+                if(text.startsWith('/*',i)){const end=text.indexOf('*/',i+2);if(end<0)return null;i=end+2;continue;}
+                if(char==='/'&&['',';','=','(',',','return',':','[','!','&&','||'].includes(previous)) {
+                    let bracket=false;i++;
+                    while(i<text.length){if(text[i]==='\\'){i+=2;continue;}if(text[i]==='[')bracket=true;if(text[i]===']')bracket=false;if(text[i++]==='/'&&!bracket)break;}
+                    while(i<text.length&&/[a-z]/i.test(text[i]))i++;
+                    previous='value';continue;
+                }
+                if(char==='"'||char==="'"||char==='`') {
+                    const quote=char;i++;
+                    while(i<text.length){if(text[i]==='\\'){i+=2;continue;}if(text[i++]===quote)break;}
+                    previous='string';continue;
+                }
+                if(/[A-Za-z_$]/.test(char)) {
+                    const start=i++;while(i<text.length&&/[\w$]/.test(text[i]))i++;
+                    const word=text.slice(start,i);
+                    if(word==='mArg'&&depth===0&&paren===0&&['',';','var','let','const'].includes(previous)) {
+                        const assignment=/^\s*=\s*/.exec(text.slice(i));
+                        if(assignment) {
+                            const begin=i+assignment[0].length;
+                            if(text[begin]==='{') {
+                                try {const result=objectAt(text,begin);objects.push(result.value);i=result.end;}catch{return null;}
+                                previous='value';continue;
+                            }
+                        }
+                    }
+                    previous=word;continue;
+                }
+                if(char==='{')depth++;if(char==='}')depth--;
+                if(char==='(')paren++;if(char===')')paren--;
+                previous=char;i++;
+            }
+        }
+        return objects.length===1?objects[0]:null;
+    }
+    function courseProbeSummary(root) {
+        if(!root||root.querySelector('[data-captcha],.captcha-container,#chapterFaceState,.chapterVideoFaceMaskDiv,.fanyaMarking_left,form[action*="login"]'))return {known:false,reason:'page-gate'};
+        const args=courseProbeArguments(root);
+        // Empty/missing metadata is not evidence of a task-free page.
+        if(!Array.isArray(args?.attachments)||args.attachments.length>1000)return {known:false,reason:'incomplete-metadata'};
+        if(!args.attachments.length) {
+            const content=root.querySelector('.ans-cc');
+            // Complete native bootstrap + a static content tree, not merely an empty attachment array.
+            const staticTags=new Set(['DIV','P','SPAN','BR','HR','IMG','A','UL','OL','LI','B','I','EM','STRONG','U','S','SUB','SUP','H1','H2','H3','H4','H5','H6','TABLE','THEAD','TBODY','TFOOT','TR','TH','TD','CAPTION','COLGROUP','COL','BLOCKQUOTE','PRE','CODE']);
+            const nodes=content?[content,...content.querySelectorAll('*')]:[];
+            const dynamic=root.querySelector('.ans-module,.ans-attach-ct,.ans-job-icon,[data-course-task],iframe,object,embed,canvas,[aria-busy="true"],.loading,.ans-loading,[data-loading]');
+            if(content&&!dynamic&&nodes.every(node=>staticTags.has(node.tagName)&&!node.matches('[contenteditable]')&&!node.getAttributeNames().some(name=>/^on/i.test(name))))return {known:true,tasks:[],reason:'static-content'};
+            return {known:false,reason:'incomplete-metadata'};
+        }
+        const tasks=args.attachments.map(item=>{
+            if(!item||typeof item!=='object')return {type:'unknown',completed:null};
+            if(item.property?.module==='insertbbs'&&!item.jobid&&!item.property.jobid&&!item.property._jobid&&item.job!==true
+                &&root.querySelector('.ans-insertbbs-module')&&!root.querySelector('.ans-job-icon,[data-course-task]')
+                &&[...root.querySelectorAll('.ans-module,iframe,object,embed,canvas')].every(node=>node.matches('.ans-insertbbs-module'))) {
+                const frames=[...root.querySelectorAll('.ans-insertbbs-module')];
+                const plain=frames.every(frame=>{try{const data=JSON.parse(frame.getAttribute('data')||'{}');return !data.jobid&&!data._jobid&&!data.job;}catch{return false;}});
+                if(plain)return {type:'discussion',completed:null,required:false};
+            }
+            const type=item.type==='video'?'video':item.type==='workid'?'quiz':['document','ppt'].includes(item.type)?'document':'unknown';
+            const id=item.jobid||item.property?._jobid||item.property?.jobid;
+            return {type,completed:typeof item.isPassed==='boolean'?item.isPassed:null,
+                required:item.job===false?false:item.job===true||typeof id==='string'&&id.length>0?true:null};
+        });
+        const markers=root.querySelectorAll('.ans-job-icon').length;
+        if(markers>tasks.filter(task=>task.required!==false).length)return {known:false,reason:'unmapped-task-marker'};
+        return {known:true,tasks};
+    }
+    const courseProbeStores=new WeakMap();
+    const courseProbeEpoch=chapter=>JSON.stringify([chapter.chapterId,chapter.pending,chapter.completed]);
+    function courseProbeChapterState(owner,chapter) {
+        const row=owner.getElementById(chapter.id);
+        if(!row||chapter.target&&!chapter.target.isConnected)return null;
+        const text=clean(courseCatalogMarker(row,'.orangeNew')?.textContent);
+        return {...chapter,active:row.classList.contains('posCatalog_active'),pending:/^\d+$/.test(text)?Number(text):null,completed:Boolean(courseCatalogMarker(row,'.icon_Completed'))};
+    }
+    function courseProbeStore(owner) {
+        const scope=courseScoreKey(owner);let store=courseProbeStores.get(owner);
+        if(!store){store={scope,chapters:new Map(),active:0,queue:[]};courseProbeStores.set(owner,store);}
+        if(store.scope!==scope){for(const bucket of store.chapters.values())for(const pending of bucket.pending.values())pending.abort.abort();store.chapters.clear();store.scope=scope;}
+        return store;
+    }
+    function courseInvalidateTaskProbe(owner, chapterId) {
+        const store=courseProbeStores.get(owner),bucket=store?.chapters.get(chapterId);
+        if(bucket){for(const pending of bucket.pending.values())pending.abort.abort();store.chapters.delete(chapterId);}
+    }
+    function courseProbeSchedule(owner,signal,read,priority=[0,0]) {
+        const store=courseProbeStore(owner);
+        return new Promise((resolve,reject)=>{
+            const job={priority,signal,read,resolve,reject,started:false};
+            const abort=()=>{if(!job.started){store.queue=store.queue.filter(item=>item!==job);reject(cancelledError());}};
+            const pump=()=>{
+                store.queue.sort((a,b)=>a.priority[0]-b.priority[0]||a.priority[1]-b.priority[1]);
+                while(store.active<4&&store.queue.length) {
+                    const next=store.queue.shift();next.signal?.removeEventListener('abort',next.abort);
+                    if(next.signal?.aborted){next.reject(cancelledError());continue;}
+                    next.started=true;store.active++;
+                    Promise.resolve().then(next.read).then(next.resolve,next.reject).finally(()=>{store.active--;pump();});
+                }
+            };
+            job.abort=abort;
+            if(signal?.aborted){reject(cancelledError());return;}
+            signal?.addEventListener('abort',abort,{once:true});store.queue.push(job);pump();
+        });
+    }
+    function courseProbeCached(owner,chapter,key,options,load) {
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};check();
+        const store=courseProbeStore(owner),epoch=courseProbeEpoch(chapter),clock=options.now||Date.now;
+        let bucket=store.chapters.get(chapter.id);
+        if(bucket&&bucket.epoch!==epoch){courseInvalidateTaskProbe(owner,chapter.id);bucket=null;}
+        if(!bucket){bucket={epoch,values:new Map(),pending:new Map()};store.chapters.set(chapter.id,bucket);}
+        const value=bucket.values.get(key);
+        if(value&&clock()<value.expires){options.onCacheHit?.();return Promise.resolve(value.result);}
+        bucket.values.delete(key);
+        let pending=bucket.pending.get(key);
+        if(pending?.abort.signal.aborted){bucket.pending.delete(key);pending=null;}
+        if(!pending) {
+            pending={abort:new owner.defaultView.AbortController(),users:new Set(),settled:false};bucket.pending.set(key,pending);
+            pending.promise=Promise.resolve().then(()=>load(pending.abort.signal)).then(result=>{
+                if(result?.known&&!pending.abort.signal.aborted&&store.chapters.get(chapter.id)===bucket&&courseScoreKey(owner)===store.scope)
+                    bucket.values.set(key,{result,expires:clock()+60000});
+                return result;
+            }).finally(()=>{pending.settled=true;if(bucket.pending.get(key)===pending)bucket.pending.delete(key);});
+            pending.promise.catch(()=>{});
+        }else options.onDeduplicated?.();
+        return new Promise((resolve,reject)=>{
+            let done=false;const token={};pending.users.add(token);
+            const finish=(callback,result)=>{if(done)return;done=true;options.signal?.removeEventListener('abort',abort);pending.users.delete(token);if(!pending.users.size&&!pending.settled)pending.abort.abort();callback(result);};
+            const abort=()=>finish(reject,cancelledError());
+            options.signal?.addEventListener('abort',abort,{once:true});
+            pending.promise.then(result=>{try{check();finish(resolve,result);}catch(error){finish(reject,error);}},error=>finish(reject,error));
+            if(options.signal?.aborted)abort();
+        });
+    }
+    function courseTaskEligibility(task, settings) {
+        if(task.required===false)return {status:'excluded',reason:'not-required'};
+        if((settings.skipLearned||settings.retrying)&&task.completed===true)return {status:'excluded',reason:'already'};
+        if(task.type==='quiz'&&!settings.submit)return {status:'excluded',reason:'quiz-disabled'};
+        if(task.type==='knowledge-graph')return {status:'excluded',reason:'knowledge-graph'};
+        if(!['video','document','quiz'].includes(task.type)||task.required!==true||task.completed===null)return {status:'unknown',reason:'inspect-page'};
+        return {status:'eligible',reason:'pending-task'};
+    }
+    async function courseProbeReadText(owner, url, {signal,check=()=>{},onRequest=()=>{},timeoutMs=30000}={}) {
+        check();if(signal?.aborted)throw cancelledError();
+        const controller=new owner.defaultView.AbortController(),abort=()=>controller.abort();
+        signal?.addEventListener('abort',abort,{once:true});
+        const timer=owner.defaultView.setTimeout(abort,timeoutMs);
+        try {
+            onRequest();
+            const response=await owner.defaultView.fetch(url.href,{method:'GET',credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+            check();if(signal?.aborted)throw cancelledError();
+            if(!response.ok||response.url&&new URL(response.url).origin!==url.origin)throw new Error('任务摘要读取失败');
+            if(Number(response.headers?.get('content-length'))>2*1024*1024)throw new Error('任务摘要过大');
+            const html=await response.text();check();if(signal?.aborted)throw cancelledError();
+            if(html.length>2*1024*1024)throw new Error('任务摘要过大');
+            return html;
+        } finally {owner.defaultView.clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+    }
+    async function courseTaskProbe(owner, chapter, options={}) {
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};
+        const unknown=reason=>({known:false,reason,tabs:[]});
+        check();
+        try {
+            const scope=courseScoreKey(owner),base=pageURL(owner),frame=owner.querySelector('#mainid #iframe');
+            const template=new URL(frame?.getAttribute('src')||'',base);
+            const course=base?.searchParams.get('courseId')||base?.searchParams.get('courseid');
+            const classroom=base?.searchParams.get('clazzid')||base?.searchParams.get('classId'),student=base?.searchParams.get('cpi');
+            if(!scope||!base||base.pathname!=='/mycourse/studentstudy'||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
+                ||template.searchParams.get('courseid')!==course||template.searchParams.get('clazzid')!==classroom||template.searchParams.get('cpi')!==student)return unknown('native-url-unavailable');
+            const parseHeader=(root,cardTemplate)=>{
+                if(!root||root.querySelector('#chapterFaceState,[data-captcha],form[action*="login"]'))return unknown('page-gate');
+                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||cardTemplate.searchParams.get('courseid')!==course
+                    ||cardTemplate.searchParams.get('clazzid')!==classroom||cardTemplate.searchParams.get('cpi')!==student||cardTemplate.searchParams.get('knowledgeid')!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
+                const nodes=[...root.querySelectorAll('#prev_tab li[id^="dct"]')],tabs=[];
+                for(const node of nodes) {
+                    const call=/^\s*changeDisplayContent\(\s*(\d+)\s*,\s*(\d+)\s*,/.exec(node.getAttribute('onclick')||'');
+                    if(!call||Number(call[1])!==tabs.length+1||Number(call[2])!==nodes.length||node.id!==`dct${call[1]}`)return unknown('unconfirmed-tab-order');
+                    tabs.push({id:node.id,index:tabs.length,title:clean(node.getAttribute('title')||node.textContent).slice(0,160),cardId:node.getAttribute('cardid')||'',disabled:node.getAttribute('aria-disabled')==='true'||node.classList.contains('disabled')});
+                }
+                return !tabs.length||new Set(tabs.map(tab=>tab.id)).size!==tabs.length?unknown('missing-tabs'):{known:true,tabs,url:cardTemplate.href};
+            };
+            const network=(url,signal,priority=options.priority)=>courseProbeSchedule(owner,signal,()=>courseProbeReadText(owner,url,{signal,onRequest:options.onRequest,timeoutMs:options.timeoutMs}),priority);
+            const active=courseProbeChapterState(owner,chapter)?.active;
+            let header;
+            if(active) {
+                header=parseHeader(owner,template);
+                const cached=courseProbeStore(owner).chapters.get(chapter.id)?.values.get('header')?.result;
+                if(header.known&&cached&&JSON.stringify(cached.tabs)!==JSON.stringify(header.tabs))courseInvalidateTaskProbe(owner,chapter.id);
+            }
+            else header=await courseProbeCached(owner,chapter,'header',options,async signal=>{
+                const url=new URL('/mooc-ans/mycourse/studentstudyAjax',base);
+                url.search=new URLSearchParams({courseId:course,clazzid:classroom,chapterId:chapter.chapterId,cpi:student,verificationcode:'',mooc2:base.searchParams.get('mooc2')||'1',microTopicId:'0',editorPreview:'0',isPreviewVideo:'false',videoWidth:'0',videoHeight:'0',targetVideoJobId:'',cardIndex:'0'}).toString();
+                const root=courseProbeMarkup(owner,await network(url,signal));
+                return parseHeader(root,new URL(root?.querySelector('#iframe')?.getAttribute('src')||'',base));
+            });
+            check();if(!header.known)return header;
+            const {tabs}=header,cardTemplate=new URL(header.url);
+            const defaults={...options,signal:options.contextSignal||options.signal};
+            // Cache only normalized summaries for 60s; visible state is checked again on entry.
+            return {known:true,tabs,async read(tab,runtime={}) {
+                const readOptions={...defaults,...runtime};
+                const assert=()=>{readOptions.check?.();if(readOptions.signal?.aborted||courseScoreKey(owner)!==scope)throw cancelledError();};
+                assert();if(!tab)return {known:false,reason:'missing-tab'};
+                const live=courseProbeChapterState(owner,chapter);
+                if(live?.active&&courseTabs(owner).find(item=>item.active)?.id===tab.id) {
+                    const doc=courseContentFingerprint(owner).doc;
+                    if(doc){
+                        const summary=courseProbeSummary(doc);
+                        if(summary.known) {
+                            const actual=coursePageTasks(courseFrameTree(owner));
+                            for(const type of new Set(actual.map(task=>task.type))) {
+                                const nodes=actual.filter(task=>task.type===type),metadata=summary.tasks.filter(task=>task.type===type);
+                                if(nodes.length>metadata.length||nodes.some(task=>courseTaskComplete(task.node)===false)&&metadata.every(task=>task.completed===true)
+                                    ||nodes.some(task=>courseTaskRequired(task.node)===true)&&metadata.every(task=>task.required===false))return {known:false,reason:'live-task-conflict'};
+                            }
+                            assert();return summary;
+                        }
+                    }
+                }
+                const url=new URL(cardTemplate);url.searchParams.set('num',String(tab.index));
+                const summary=await courseProbeCached(owner,live||chapter,'tab:'+tab.id+':'+tab.cardId,readOptions,async signal=>courseProbeSummary(courseProbeMarkup(owner,await network(url,signal,readOptions.priority))));
+                assert();return summary;
+            }};
+        } catch(error) {check();return unknown('probe-unavailable');}
+    }
+    async function findNextCourseTask(range, settings, signal) {
+        const skipped=[],owner=settings.owner,scan=new owner.defaultView.AbortController(),lanes=new Map();
+        const abort=()=>scan.abort(),check=()=>{settings.check?.();if(signal?.aborted)throw cancelledError();};
+        signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+        const open=index=>{
+            if(index>=range.length||lanes.has(index))return;
+            const entry=range[index],lane={columns:new Map(),next:0,tabs:[],bounded:entry.id===settings.startChapterId||!settings.startChapterId&&index===0};lanes.set(index,lane);
+            const fill=()=>{
+                while(!scan.signal.aborted&&lane.next<lane.tabs.length&&lane.columns.size<4) {
+                    const tab=lane.tabs[lane.next++];
+                    lane.columns.set(tab.id,lane.probe.read(tab,{signal:scan.signal,priority:[index,tab.index]}).catch(()=>({known:false,reason:'probe-unavailable'})));
+                }
+            };
+            lane.fill=fill;
+            lane.header=(async()=>{
+                check();if((settings.skipLearned||settings.retrying)&&entry.completed)return {known:true,already:true};
+                const probe=await courseTaskProbe(owner,entry,{signal:scan.signal,contextSignal:signal,check:settings.check,
+                    onRequest:settings.onRequest,onCacheHit:settings.onCacheHit,onDeduplicated:settings.onDeduplicated,now:settings.now,timeoutMs:settings.timeoutMs,priority:[index,-1]});
+                if(!probe.known)return probe;
+                let tabs=probe.tabs;
+                if(lane.bounded&&Number.isInteger(settings.startTabIndex)&&settings.startTabIndex>=tabs.length)return {known:false,reason:'start-tab-missing'};
+                if(lane.bounded&&settings.startTabId) {
+                    const start=tabs.findIndex(tab=>tab.id===settings.startTabId);
+                    if(start<0||settings.startCardId&&tabs[start].cardId!==settings.startCardId)return {known:false,reason:'start-tab-missing'};
+                    tabs=tabs.slice(start);
+                }
+                if(lane.bounded&&Number.isInteger(settings.startTabIndex))tabs=tabs.filter(tab=>tab.index>=settings.startTabIndex);
+                lane.probe=probe;lane.tabs=tabs;fill();return probe;
+            })().catch(()=>({known:false,reason:'probe-unavailable'}));
+        };
+        try {
+            for(let index=0;index<range.length;index++) {
+                check();for(let ahead=index;ahead<Math.min(range.length,index+4);ahead++)open(ahead);
+                const entry=range[index],lane=lanes.get(index),probe=await lane.header;check();
+                if(probe.already){skipped.push({entry,reason:'already',tabs:[]});lanes.delete(index);continue;}
+                if(!probe.known)return {entry,tab:null,skipped,probe};
+                const excluded=[];
+                const changed=()=>{const current=courseProbeChapterState(owner,entry);return !current||courseProbeEpoch(current)!==courseProbeEpoch(entry);};
+                for(const tab of lane.tabs) {
+                    const summary=await lane.columns.get(tab.id);check();
+                    if(changed()){courseInvalidateTaskProbe(owner,entry.id);return {entry,tab:null,skipped,probe:{known:false,reason:'directory-state-changed'}};}
+                    if(!summary?.known||tab.disabled)return {entry,tab,skipped,excluded,probe,reason:tab.disabled?'tab-disabled':summary?.reason||'unknown-summary'};
+                    const decisions=summary.tasks.map(task=>courseTaskEligibility(task,settings));
+                    if(decisions.some(item=>item.status!=='excluded'))return {entry,tab,skipped,excluded,probe,targetType:summary.tasks[decisions.findIndex(item=>item.status!=='excluded')].type};
+                    excluded.push({tab,tasks:summary.tasks,decisions});lane.columns.delete(tab.id);lane.fill();
+                }
+                const possiblePending=excluded.flatMap(item=>item.tasks).filter(task=>task.required!==false&&task.completed!==true).length;
+                if(!(lane.bounded&&(settings.startTabId||settings.startTabIndex>0))&&Number.isInteger(entry.pending)&&entry.pending>possiblePending)return {entry,tab:null,skipped,probe:{known:false,reason:'pending-count-mismatch'}};
+                skipped.push({entry,reason:'excluded',tabs:excluded});lanes.delete(index);
+            }
+            return {entry:null,tab:null,skipped};
+        }finally{scan.abort();signal?.removeEventListener('abort',abort);}
+    }
     function courseTaskContains(container, node) {
         // contains 只能比较同一 DOM 树；通过 frameElement 将内层节点投影到祖先文档。
         // 与 courseTaskContainer 使用相同深度边界；不可访问或无法证明归属时返回 false。
@@ -248,6 +561,19 @@
     function courseContentReady(owner) {
         const tree=courseFrameTree(owner);
         return !tree.inaccessible.length && tree.documents.length>1 && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
+    }
+    function courseTaskTargetReady(owner,target) {
+        if(!target||!['video','document','quiz'].includes(target.type))return false;
+        if(readCourseCatalog(owner)?.entries.find(entry=>entry.active)?.id!==target.chapterId||courseTabs(owner).find(tab=>tab.active)?.id!==target.tabId)return false;
+        const fingerprint=courseContentFingerprint(owner),tree=courseFrameTree(owner);
+        if(!fingerprint.doc||tree.inaccessible.length||!courseContentReady(owner)||courseBlocker(tree.documents))return false;
+        if(tree.documents.slice(1).some(doc=>doc.readyState==='loading'||doc.querySelector('[aria-busy="true"],.ans-loading,[data-loading]')))return false;
+        try {
+            const expected=new URL(fingerprint.src,pageURL(owner)),actual=new URL(fingerprint.doc.URL);
+            if(expected.origin!==actual.origin||expected.pathname!==actual.pathname
+                ||['courseid','clazzid','knowledgeid','num'].some(key=>expected.searchParams.get(key)!==actual.searchParams.get(key)))return false;
+        }catch{return false;}
+        return coursePageTasks(tree).some(task=>task.type===target.type&&courseTaskRequired(task.node)!==false);
     }
     function courseDocumentScrollTo(target, top) {
         const value=target.style.getPropertyValue('scroll-behavior'),priority=target.style.getPropertyPriority('scroll-behavior');

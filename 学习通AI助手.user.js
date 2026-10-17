@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.20
+// @version      1.21
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
@@ -2896,7 +2896,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.20';
+    const ASSISTANT_VERSION = '1.21';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2944,7 +2944,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.20', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.21', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -5589,7 +5589,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.20');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.21');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -5669,6 +5669,319 @@ Typr["U"] = {
             .map(node => ({ id:node.id, title:clean(node.textContent), node,
                 active:node.classList.contains('active') || node.getAttribute('aria-selected') === 'true',
                 disabled:node.getAttribute('aria-disabled') === 'true' || node.classList.contains('disabled') }));
+    }
+    // Detached template content stays inert: no player, iframe or returned script is mounted.
+    function courseProbeMarkup(owner, html) {
+        if(typeof html!=='string'||html.length>2*1024*1024)return null;
+        const template=owner.createElement('template');template.innerHTML=html;
+        return template.content;
+    }
+    function courseProbeArguments(root) {
+        const objects=[];
+        const objectAt=(text,begin)=>{
+            let end=begin,braces=0,quoted=false;
+            for(;end<text.length;end++) {
+                const char=text[end];
+                if(quoted){if(char==='\\'){end++;continue;}if(char==='"')quoted=false;continue;}
+                if(char==='"'){quoted=true;continue;}
+                if(char==='{')braces++;else if(char==='}'&&--braces===0){end++;break;}
+            }
+            if(braces!==0||!/^\s*(?:;|$)/.test(text.slice(end)))throw new Error('Invalid task metadata');
+            const value=JSON.parse(text.slice(begin,end));
+            if(!value||Array.isArray(value))throw new Error('Invalid task metadata');
+            return {value,end};
+        };
+        for(const script of root.querySelectorAll('script:not([src])')) {
+            const text=script.textContent;let depth=0,paren=0,previous='';
+            // Native cards bootstrap observed in the HAR: an immediate wrapper + try + uParse.
+            // Only the JSON literal is consumed; neither the wrapper nor uParse is executed.
+            const bootstrap=/^\s*\(function\s*\(\s*\)\s*\{\s*mArg\s*=\s*(?:""|'')\s*;\s*try\s*\{\s*mArg\s*=\s*(?=\{)/.exec(text);
+            if(bootstrap) {
+                try {
+                    const {value,end}=objectAt(text,bootstrap[0].length);
+                    if(!/^\s*;\s*\}\s*catch\s*\(\s*\w+\s*\)\s*\{\s*\}\s*uParse\(\s*["']\.ans-cc["']\s*,\s*null\s*,\s*mArg\s*\)/.test(text.slice(end)))return null;
+                    objects.push(value);continue;
+                }catch{return null;}
+            }
+            for(let i=0;i<text.length;) {
+                const char=text[i];
+                if(/\s/.test(char)){i++;continue;}
+                if(text.startsWith('//',i)){const end=text.indexOf('\n',i+2);i=end<0?text.length:end+1;continue;}
+                if(text.startsWith('/*',i)){const end=text.indexOf('*/',i+2);if(end<0)return null;i=end+2;continue;}
+                if(char==='/'&&['',';','=','(',',','return',':','[','!','&&','||'].includes(previous)) {
+                    let bracket=false;i++;
+                    while(i<text.length){if(text[i]==='\\'){i+=2;continue;}if(text[i]==='[')bracket=true;if(text[i]===']')bracket=false;if(text[i++]==='/'&&!bracket)break;}
+                    while(i<text.length&&/[a-z]/i.test(text[i]))i++;
+                    previous='value';continue;
+                }
+                if(char==='"'||char==="'"||char==='`') {
+                    const quote=char;i++;
+                    while(i<text.length){if(text[i]==='\\'){i+=2;continue;}if(text[i++]===quote)break;}
+                    previous='string';continue;
+                }
+                if(/[A-Za-z_$]/.test(char)) {
+                    const start=i++;while(i<text.length&&/[\w$]/.test(text[i]))i++;
+                    const word=text.slice(start,i);
+                    if(word==='mArg'&&depth===0&&paren===0&&['',';','var','let','const'].includes(previous)) {
+                        const assignment=/^\s*=\s*/.exec(text.slice(i));
+                        if(assignment) {
+                            const begin=i+assignment[0].length;
+                            if(text[begin]==='{') {
+                                try {const result=objectAt(text,begin);objects.push(result.value);i=result.end;}catch{return null;}
+                                previous='value';continue;
+                            }
+                        }
+                    }
+                    previous=word;continue;
+                }
+                if(char==='{')depth++;if(char==='}')depth--;
+                if(char==='(')paren++;if(char===')')paren--;
+                previous=char;i++;
+            }
+        }
+        return objects.length===1?objects[0]:null;
+    }
+    function courseProbeSummary(root) {
+        if(!root||root.querySelector('[data-captcha],.captcha-container,#chapterFaceState,.chapterVideoFaceMaskDiv,.fanyaMarking_left,form[action*="login"]'))return {known:false,reason:'page-gate'};
+        const args=courseProbeArguments(root);
+        // Empty/missing metadata is not evidence of a task-free page.
+        if(!Array.isArray(args?.attachments)||args.attachments.length>1000)return {known:false,reason:'incomplete-metadata'};
+        if(!args.attachments.length) {
+            const content=root.querySelector('.ans-cc');
+            // Complete native bootstrap + a static content tree, not merely an empty attachment array.
+            const staticTags=new Set(['DIV','P','SPAN','BR','HR','IMG','A','UL','OL','LI','B','I','EM','STRONG','U','S','SUB','SUP','H1','H2','H3','H4','H5','H6','TABLE','THEAD','TBODY','TFOOT','TR','TH','TD','CAPTION','COLGROUP','COL','BLOCKQUOTE','PRE','CODE']);
+            const nodes=content?[content,...content.querySelectorAll('*')]:[];
+            const dynamic=root.querySelector('.ans-module,.ans-attach-ct,.ans-job-icon,[data-course-task],iframe,object,embed,canvas,[aria-busy="true"],.loading,.ans-loading,[data-loading]');
+            if(content&&!dynamic&&nodes.every(node=>staticTags.has(node.tagName)&&!node.matches('[contenteditable]')&&!node.getAttributeNames().some(name=>/^on/i.test(name))))return {known:true,tasks:[],reason:'static-content'};
+            return {known:false,reason:'incomplete-metadata'};
+        }
+        const tasks=args.attachments.map(item=>{
+            if(!item||typeof item!=='object')return {type:'unknown',completed:null};
+            if(item.property?.module==='insertbbs'&&!item.jobid&&!item.property.jobid&&!item.property._jobid&&item.job!==true
+                &&root.querySelector('.ans-insertbbs-module')&&!root.querySelector('.ans-job-icon,[data-course-task]')
+                &&[...root.querySelectorAll('.ans-module,iframe,object,embed,canvas')].every(node=>node.matches('.ans-insertbbs-module'))) {
+                const frames=[...root.querySelectorAll('.ans-insertbbs-module')];
+                const plain=frames.every(frame=>{try{const data=JSON.parse(frame.getAttribute('data')||'{}');return !data.jobid&&!data._jobid&&!data.job;}catch{return false;}});
+                if(plain)return {type:'discussion',completed:null,required:false};
+            }
+            const type=item.type==='video'?'video':item.type==='workid'?'quiz':['document','ppt'].includes(item.type)?'document':'unknown';
+            const id=item.jobid||item.property?._jobid||item.property?.jobid;
+            return {type,completed:typeof item.isPassed==='boolean'?item.isPassed:null,
+                required:item.job===false?false:item.job===true||typeof id==='string'&&id.length>0?true:null};
+        });
+        const markers=root.querySelectorAll('.ans-job-icon').length;
+        if(markers>tasks.filter(task=>task.required!==false).length)return {known:false,reason:'unmapped-task-marker'};
+        return {known:true,tasks};
+    }
+    const courseProbeStores=new WeakMap();
+    const courseProbeEpoch=chapter=>JSON.stringify([chapter.chapterId,chapter.pending,chapter.completed]);
+    function courseProbeChapterState(owner,chapter) {
+        const row=owner.getElementById(chapter.id);
+        if(!row||chapter.target&&!chapter.target.isConnected)return null;
+        const text=clean(courseCatalogMarker(row,'.orangeNew')?.textContent);
+        return {...chapter,active:row.classList.contains('posCatalog_active'),pending:/^\d+$/.test(text)?Number(text):null,completed:Boolean(courseCatalogMarker(row,'.icon_Completed'))};
+    }
+    function courseProbeStore(owner) {
+        const scope=courseScoreKey(owner);let store=courseProbeStores.get(owner);
+        if(!store){store={scope,chapters:new Map(),active:0,queue:[]};courseProbeStores.set(owner,store);}
+        if(store.scope!==scope){for(const bucket of store.chapters.values())for(const pending of bucket.pending.values())pending.abort.abort();store.chapters.clear();store.scope=scope;}
+        return store;
+    }
+    function courseInvalidateTaskProbe(owner, chapterId) {
+        const store=courseProbeStores.get(owner),bucket=store?.chapters.get(chapterId);
+        if(bucket){for(const pending of bucket.pending.values())pending.abort.abort();store.chapters.delete(chapterId);}
+    }
+    function courseProbeSchedule(owner,signal,read,priority=[0,0]) {
+        const store=courseProbeStore(owner);
+        return new Promise((resolve,reject)=>{
+            const job={priority,signal,read,resolve,reject,started:false};
+            const abort=()=>{if(!job.started){store.queue=store.queue.filter(item=>item!==job);reject(cancelledError());}};
+            const pump=()=>{
+                store.queue.sort((a,b)=>a.priority[0]-b.priority[0]||a.priority[1]-b.priority[1]);
+                while(store.active<4&&store.queue.length) {
+                    const next=store.queue.shift();next.signal?.removeEventListener('abort',next.abort);
+                    if(next.signal?.aborted){next.reject(cancelledError());continue;}
+                    next.started=true;store.active++;
+                    Promise.resolve().then(next.read).then(next.resolve,next.reject).finally(()=>{store.active--;pump();});
+                }
+            };
+            job.abort=abort;
+            if(signal?.aborted){reject(cancelledError());return;}
+            signal?.addEventListener('abort',abort,{once:true});store.queue.push(job);pump();
+        });
+    }
+    function courseProbeCached(owner,chapter,key,options,load) {
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};check();
+        const store=courseProbeStore(owner),epoch=courseProbeEpoch(chapter),clock=options.now||Date.now;
+        let bucket=store.chapters.get(chapter.id);
+        if(bucket&&bucket.epoch!==epoch){courseInvalidateTaskProbe(owner,chapter.id);bucket=null;}
+        if(!bucket){bucket={epoch,values:new Map(),pending:new Map()};store.chapters.set(chapter.id,bucket);}
+        const value=bucket.values.get(key);
+        if(value&&clock()<value.expires){options.onCacheHit?.();return Promise.resolve(value.result);}
+        bucket.values.delete(key);
+        let pending=bucket.pending.get(key);
+        if(pending?.abort.signal.aborted){bucket.pending.delete(key);pending=null;}
+        if(!pending) {
+            pending={abort:new owner.defaultView.AbortController(),users:new Set(),settled:false};bucket.pending.set(key,pending);
+            pending.promise=Promise.resolve().then(()=>load(pending.abort.signal)).then(result=>{
+                if(result?.known&&!pending.abort.signal.aborted&&store.chapters.get(chapter.id)===bucket&&courseScoreKey(owner)===store.scope)
+                    bucket.values.set(key,{result,expires:clock()+60000});
+                return result;
+            }).finally(()=>{pending.settled=true;if(bucket.pending.get(key)===pending)bucket.pending.delete(key);});
+            pending.promise.catch(()=>{});
+        }else options.onDeduplicated?.();
+        return new Promise((resolve,reject)=>{
+            let done=false;const token={};pending.users.add(token);
+            const finish=(callback,result)=>{if(done)return;done=true;options.signal?.removeEventListener('abort',abort);pending.users.delete(token);if(!pending.users.size&&!pending.settled)pending.abort.abort();callback(result);};
+            const abort=()=>finish(reject,cancelledError());
+            options.signal?.addEventListener('abort',abort,{once:true});
+            pending.promise.then(result=>{try{check();finish(resolve,result);}catch(error){finish(reject,error);}},error=>finish(reject,error));
+            if(options.signal?.aborted)abort();
+        });
+    }
+    function courseTaskEligibility(task, settings) {
+        if(task.required===false)return {status:'excluded',reason:'not-required'};
+        if((settings.skipLearned||settings.retrying)&&task.completed===true)return {status:'excluded',reason:'already'};
+        if(task.type==='quiz'&&!settings.submit)return {status:'excluded',reason:'quiz-disabled'};
+        if(task.type==='knowledge-graph')return {status:'excluded',reason:'knowledge-graph'};
+        if(!['video','document','quiz'].includes(task.type)||task.required!==true||task.completed===null)return {status:'unknown',reason:'inspect-page'};
+        return {status:'eligible',reason:'pending-task'};
+    }
+    async function courseProbeReadText(owner, url, {signal,check=()=>{},onRequest=()=>{},timeoutMs=30000}={}) {
+        check();if(signal?.aborted)throw cancelledError();
+        const controller=new owner.defaultView.AbortController(),abort=()=>controller.abort();
+        signal?.addEventListener('abort',abort,{once:true});
+        const timer=owner.defaultView.setTimeout(abort,timeoutMs);
+        try {
+            onRequest();
+            const response=await owner.defaultView.fetch(url.href,{method:'GET',credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+            check();if(signal?.aborted)throw cancelledError();
+            if(!response.ok||response.url&&new URL(response.url).origin!==url.origin)throw new Error('任务摘要读取失败');
+            if(Number(response.headers?.get('content-length'))>2*1024*1024)throw new Error('任务摘要过大');
+            const html=await response.text();check();if(signal?.aborted)throw cancelledError();
+            if(html.length>2*1024*1024)throw new Error('任务摘要过大');
+            return html;
+        } finally {owner.defaultView.clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+    }
+    async function courseTaskProbe(owner, chapter, options={}) {
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};
+        const unknown=reason=>({known:false,reason,tabs:[]});
+        check();
+        try {
+            const scope=courseScoreKey(owner),base=pageURL(owner),frame=owner.querySelector('#mainid #iframe');
+            const template=new URL(frame?.getAttribute('src')||'',base);
+            const course=base?.searchParams.get('courseId')||base?.searchParams.get('courseid');
+            const classroom=base?.searchParams.get('clazzid')||base?.searchParams.get('classId'),student=base?.searchParams.get('cpi');
+            if(!scope||!base||base.pathname!=='/mycourse/studentstudy'||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
+                ||template.searchParams.get('courseid')!==course||template.searchParams.get('clazzid')!==classroom||template.searchParams.get('cpi')!==student)return unknown('native-url-unavailable');
+            const parseHeader=(root,cardTemplate)=>{
+                if(!root||root.querySelector('#chapterFaceState,[data-captcha],form[action*="login"]'))return unknown('page-gate');
+                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||cardTemplate.searchParams.get('courseid')!==course
+                    ||cardTemplate.searchParams.get('clazzid')!==classroom||cardTemplate.searchParams.get('cpi')!==student||cardTemplate.searchParams.get('knowledgeid')!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
+                const nodes=[...root.querySelectorAll('#prev_tab li[id^="dct"]')],tabs=[];
+                for(const node of nodes) {
+                    const call=/^\s*changeDisplayContent\(\s*(\d+)\s*,\s*(\d+)\s*,/.exec(node.getAttribute('onclick')||'');
+                    if(!call||Number(call[1])!==tabs.length+1||Number(call[2])!==nodes.length||node.id!==`dct${call[1]}`)return unknown('unconfirmed-tab-order');
+                    tabs.push({id:node.id,index:tabs.length,title:clean(node.getAttribute('title')||node.textContent).slice(0,160),cardId:node.getAttribute('cardid')||'',disabled:node.getAttribute('aria-disabled')==='true'||node.classList.contains('disabled')});
+                }
+                return !tabs.length||new Set(tabs.map(tab=>tab.id)).size!==tabs.length?unknown('missing-tabs'):{known:true,tabs,url:cardTemplate.href};
+            };
+            const network=(url,signal,priority=options.priority)=>courseProbeSchedule(owner,signal,()=>courseProbeReadText(owner,url,{signal,onRequest:options.onRequest,timeoutMs:options.timeoutMs}),priority);
+            const active=courseProbeChapterState(owner,chapter)?.active;
+            let header;
+            if(active) {
+                header=parseHeader(owner,template);
+                const cached=courseProbeStore(owner).chapters.get(chapter.id)?.values.get('header')?.result;
+                if(header.known&&cached&&JSON.stringify(cached.tabs)!==JSON.stringify(header.tabs))courseInvalidateTaskProbe(owner,chapter.id);
+            }
+            else header=await courseProbeCached(owner,chapter,'header',options,async signal=>{
+                const url=new URL('/mooc-ans/mycourse/studentstudyAjax',base);
+                url.search=new URLSearchParams({courseId:course,clazzid:classroom,chapterId:chapter.chapterId,cpi:student,verificationcode:'',mooc2:base.searchParams.get('mooc2')||'1',microTopicId:'0',editorPreview:'0',isPreviewVideo:'false',videoWidth:'0',videoHeight:'0',targetVideoJobId:'',cardIndex:'0'}).toString();
+                const root=courseProbeMarkup(owner,await network(url,signal));
+                return parseHeader(root,new URL(root?.querySelector('#iframe')?.getAttribute('src')||'',base));
+            });
+            check();if(!header.known)return header;
+            const {tabs}=header,cardTemplate=new URL(header.url);
+            const defaults={...options,signal:options.contextSignal||options.signal};
+            // Cache only normalized summaries for 60s; visible state is checked again on entry.
+            return {known:true,tabs,async read(tab,runtime={}) {
+                const readOptions={...defaults,...runtime};
+                const assert=()=>{readOptions.check?.();if(readOptions.signal?.aborted||courseScoreKey(owner)!==scope)throw cancelledError();};
+                assert();if(!tab)return {known:false,reason:'missing-tab'};
+                const live=courseProbeChapterState(owner,chapter);
+                if(live?.active&&courseTabs(owner).find(item=>item.active)?.id===tab.id) {
+                    const doc=courseContentFingerprint(owner).doc;
+                    if(doc){
+                        const summary=courseProbeSummary(doc);
+                        if(summary.known) {
+                            const actual=coursePageTasks(courseFrameTree(owner));
+                            for(const type of new Set(actual.map(task=>task.type))) {
+                                const nodes=actual.filter(task=>task.type===type),metadata=summary.tasks.filter(task=>task.type===type);
+                                if(nodes.length>metadata.length||nodes.some(task=>courseTaskComplete(task.node)===false)&&metadata.every(task=>task.completed===true)
+                                    ||nodes.some(task=>courseTaskRequired(task.node)===true)&&metadata.every(task=>task.required===false))return {known:false,reason:'live-task-conflict'};
+                            }
+                            assert();return summary;
+                        }
+                    }
+                }
+                const url=new URL(cardTemplate);url.searchParams.set('num',String(tab.index));
+                const summary=await courseProbeCached(owner,live||chapter,'tab:'+tab.id+':'+tab.cardId,readOptions,async signal=>courseProbeSummary(courseProbeMarkup(owner,await network(url,signal,readOptions.priority))));
+                assert();return summary;
+            }};
+        } catch(error) {check();return unknown('probe-unavailable');}
+    }
+    async function findNextCourseTask(range, settings, signal) {
+        const skipped=[],owner=settings.owner,scan=new owner.defaultView.AbortController(),lanes=new Map();
+        const abort=()=>scan.abort(),check=()=>{settings.check?.();if(signal?.aborted)throw cancelledError();};
+        signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+        const open=index=>{
+            if(index>=range.length||lanes.has(index))return;
+            const entry=range[index],lane={columns:new Map(),next:0,tabs:[],bounded:entry.id===settings.startChapterId||!settings.startChapterId&&index===0};lanes.set(index,lane);
+            const fill=()=>{
+                while(!scan.signal.aborted&&lane.next<lane.tabs.length&&lane.columns.size<4) {
+                    const tab=lane.tabs[lane.next++];
+                    lane.columns.set(tab.id,lane.probe.read(tab,{signal:scan.signal,priority:[index,tab.index]}).catch(()=>({known:false,reason:'probe-unavailable'})));
+                }
+            };
+            lane.fill=fill;
+            lane.header=(async()=>{
+                check();if((settings.skipLearned||settings.retrying)&&entry.completed)return {known:true,already:true};
+                const probe=await courseTaskProbe(owner,entry,{signal:scan.signal,contextSignal:signal,check:settings.check,
+                    onRequest:settings.onRequest,onCacheHit:settings.onCacheHit,onDeduplicated:settings.onDeduplicated,now:settings.now,timeoutMs:settings.timeoutMs,priority:[index,-1]});
+                if(!probe.known)return probe;
+                let tabs=probe.tabs;
+                if(lane.bounded&&Number.isInteger(settings.startTabIndex)&&settings.startTabIndex>=tabs.length)return {known:false,reason:'start-tab-missing'};
+                if(lane.bounded&&settings.startTabId) {
+                    const start=tabs.findIndex(tab=>tab.id===settings.startTabId);
+                    if(start<0||settings.startCardId&&tabs[start].cardId!==settings.startCardId)return {known:false,reason:'start-tab-missing'};
+                    tabs=tabs.slice(start);
+                }
+                if(lane.bounded&&Number.isInteger(settings.startTabIndex))tabs=tabs.filter(tab=>tab.index>=settings.startTabIndex);
+                lane.probe=probe;lane.tabs=tabs;fill();return probe;
+            })().catch(()=>({known:false,reason:'probe-unavailable'}));
+        };
+        try {
+            for(let index=0;index<range.length;index++) {
+                check();for(let ahead=index;ahead<Math.min(range.length,index+4);ahead++)open(ahead);
+                const entry=range[index],lane=lanes.get(index),probe=await lane.header;check();
+                if(probe.already){skipped.push({entry,reason:'already',tabs:[]});lanes.delete(index);continue;}
+                if(!probe.known)return {entry,tab:null,skipped,probe};
+                const excluded=[];
+                const changed=()=>{const current=courseProbeChapterState(owner,entry);return !current||courseProbeEpoch(current)!==courseProbeEpoch(entry);};
+                for(const tab of lane.tabs) {
+                    const summary=await lane.columns.get(tab.id);check();
+                    if(changed()){courseInvalidateTaskProbe(owner,entry.id);return {entry,tab:null,skipped,probe:{known:false,reason:'directory-state-changed'}};}
+                    if(!summary?.known||tab.disabled)return {entry,tab,skipped,excluded,probe,reason:tab.disabled?'tab-disabled':summary?.reason||'unknown-summary'};
+                    const decisions=summary.tasks.map(task=>courseTaskEligibility(task,settings));
+                    if(decisions.some(item=>item.status!=='excluded'))return {entry,tab,skipped,excluded,probe,targetType:summary.tasks[decisions.findIndex(item=>item.status!=='excluded')].type};
+                    excluded.push({tab,tasks:summary.tasks,decisions});lane.columns.delete(tab.id);lane.fill();
+                }
+                const possiblePending=excluded.flatMap(item=>item.tasks).filter(task=>task.required!==false&&task.completed!==true).length;
+                if(!(lane.bounded&&(settings.startTabId||settings.startTabIndex>0))&&Number.isInteger(entry.pending)&&entry.pending>possiblePending)return {entry,tab:null,skipped,probe:{known:false,reason:'pending-count-mismatch'}};
+                skipped.push({entry,reason:'excluded',tabs:excluded});lanes.delete(index);
+            }
+            return {entry:null,tab:null,skipped};
+        }finally{scan.abort();signal?.removeEventListener('abort',abort);}
     }
     function courseTaskContains(container, node) {
         // contains 只能比较同一 DOM 树；通过 frameElement 将内层节点投影到祖先文档。
@@ -5848,6 +6161,19 @@ Typr["U"] = {
     function courseContentReady(owner) {
         const tree=courseFrameTree(owner);
         return !tree.inaccessible.length && tree.documents.length>1 && tree.documents.slice(1).every(doc=>doc.body && (doc.body.children.length || clean(doc.body.textContent)));
+    }
+    function courseTaskTargetReady(owner,target) {
+        if(!target||!['video','document','quiz'].includes(target.type))return false;
+        if(readCourseCatalog(owner)?.entries.find(entry=>entry.active)?.id!==target.chapterId||courseTabs(owner).find(tab=>tab.active)?.id!==target.tabId)return false;
+        const fingerprint=courseContentFingerprint(owner),tree=courseFrameTree(owner);
+        if(!fingerprint.doc||tree.inaccessible.length||!courseContentReady(owner)||courseBlocker(tree.documents))return false;
+        if(tree.documents.slice(1).some(doc=>doc.readyState==='loading'||doc.querySelector('[aria-busy="true"],.ans-loading,[data-loading]')))return false;
+        try {
+            const expected=new URL(fingerprint.src,pageURL(owner)),actual=new URL(fingerprint.doc.URL);
+            if(expected.origin!==actual.origin||expected.pathname!==actual.pathname
+                ||['courseid','clazzid','knowledgeid','num'].some(key=>expected.searchParams.get(key)!==actual.searchParams.get(key)))return false;
+        }catch{return false;}
+        return coursePageTasks(tree).some(task=>task.type===target.type&&courseTaskRequired(task.node)!==false);
     }
     function courseDocumentScrollTo(target, top) {
         const value=target.style.getPropertyValue('scroll-behavior'),priority=target.style.getPropertyPriority('scroll-behavior');
@@ -6548,6 +6874,7 @@ Typr["U"] = {
         const speedStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.speedState).map(task=>{
             const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；${state.evidence} / ${state.outcome}。`;
         }));
+        const locatorMetric=name=>Number.isFinite(report.locator?.[name])?Math.max(0,Math.round(report.locator[name])):0;
         return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (report.retryOf ? '\n本轮为未完成章节重试，完成计数仅统计本轮。' : '')
             + (protection ? `\n连续超时 ${protection.consecutiveFailures}/${protection.limit}${protection.triggered?'，已保护性停止':''}。` : '')
@@ -6565,6 +6892,7 @@ Typr["U"] = {
             + (foregroundStates.length ? '\n前台等待记录：\n' + foregroundStates.join('\n') : '')
             + (backgroundStates.length ? '\n后台播放保护记录：\n' + backgroundStates.join('\n') : '')
             + (speedStates.length ? '\n倍速能力记录：\n' + speedStates.join('\n') : '')
+            + (report.locator ? `\n任务定位：摘要请求 ${locatorMetric('requests')} 次，缓存命中 ${locatorMetric('cacheHits')} 次，耗时 ${locatorMetric('elapsedMs')}ms；章节跳转 ${locatorMetric('chapterNavigations')} 次，栏目切换 ${locatorMetric('tabNavigations')} 次，就绪快路径 ${locatorMetric('readyHits')} 次，页面核实 ${locatorMetric('fallbacks')} 次。` : '')
             + (report.pacing?.restEnabled ? `\n学习休息：累计活动 ${Math.floor((report.pacing.activeMs||0)/1000)} 秒；${report.pacing.restUntil!==null?'已保存休息截止时间':'当前未休息'}。` : '');
     }
     function coursePanelStatusMessage(state, doc = document) {
@@ -6669,6 +6997,12 @@ Typr["U"] = {
                     startIndex=entries.findIndex(item=>item.id===active[0].id);
                     if(startIndex<0) {ctl.report('当前章节不在课程目录中，请刷新后重试','error');return;}
                 }
+                let rangeStart=resume||retry?previous?.rangeStart||null:null;
+                if(!resume&&!retry&&fromCurrent) {
+                    const tabs=courseTabs(owner),active=tabs.filter(tab=>tab.active);
+                    if(tabs.length&&active.length!==1){ctl.report('无法确定当前栏目，请刷新页面后重试','error');return;}
+                    rangeStart={chapterId:entries[startIndex].id,tabId:active[0]?.id||'current',tabIndex:Math.max(0,tabs.findIndex(tab=>tab.active)),cardId:active[0]?.node.getAttribute('cardid')||''};
+                }
                 // 本次起点裁剪队列；换页恢复使用原队列，不重新读取当前选中章节。
                 const queue = retry ? retryCandidate.queue : resume && previous?.session === session ? previous.queue : entries.slice(startIndex).map(item => ({id:item.id,number:item.number,title:item.title}));
                 if (!queue?.length) return;
@@ -6678,6 +7012,8 @@ Typr["U"] = {
                 const report = resume ? previous.report : { status:'running', startedAt:now(), endedAt:null, reason:'', videos:0,documents:0,quizzes:0,
                     chapters:queue.map(item => ({...item,status:'unvisited',issues:[],tasks:[]})) };
                 report.status = 'running'; report.reason = '';
+                report.locator=report.locator||{requests:0,elapsedMs:0,excludedTabs:0,fallbacks:0,chapterNavigations:0,tabNavigations:0};
+                report.locator.cacheHits??=0;report.locator.deduplicated??=0;report.locator.readyHits??=0;
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
                 const learning=courseLearningSettings(resume?previous.learning||{}:{restEnabled,studyMinutes,restMinutes});
                 const savedPacing=resume?previous.pacing:null;
@@ -6694,6 +7030,7 @@ Typr["U"] = {
                     videoQuizAuto:resume ? previous.videoQuizAuto===true : videoQuizAuto!==false,
                     speedEnabled:resume ? previous.speedEnabled===true : speedEnabled===true,
                     fromCurrent:resume ? previous.fromCurrent===true : fromCurrent===true,startChapterId:resume ? previous.startChapterId||queue[0].id : queue[0].id,
+                    rangeStart,probeBlocked:(previous?.report?.chapters||[]).some(chapter=>chapter.tasks?.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed)&&task.status!=='done')),
                     chapterIndex:resume ? previous.chapterIndex : 0,tabIndex:resume ? previous.tabIndex : 0,
                     cancelled:false,abort:new AbortController(),expected:null,navigating:false,lastSaved:0};
                 run.cancelWait = new Promise(resolve => { run.cancelWake = resolve; });
@@ -6719,7 +7056,7 @@ Typr["U"] = {
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
                     set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
-                        learning:run.learning,pacing:{...run.pacing},queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
+                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
                     run.claimed=true;
                     run.lastSaved = now();
                 };
@@ -6746,7 +7083,7 @@ Typr["U"] = {
                     if (blocker) throw new Error(blocker);
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
                     // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && !run.frameLoading && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
@@ -6755,7 +7092,7 @@ Typr["U"] = {
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
-                const waitForFrameReady = async (settle = false) => {
+                const waitForFrameReady = async (settle = false, target = null) => {
                     // 仅在明确等待的读取窗口暂缓不可读 iframe；窗口内不执行任务操作。
                     const context=run.chapter;
                     run.frameLoading=true;run.frameReadRetries=0;
@@ -6770,7 +7107,7 @@ Typr["U"] = {
                     };
                     try {
                         check();
-                        if(settle)await delay();
+                        if(settle){if(courseTaskTargetReady(owner,target))report.locator.readyHits++;else await delay();}
                         while(!courseContentReady(owner)) {
                             if(run.frameReadRetries>=limits.maxFrameReadRetries)
                                 throw Object.assign(new Error(`任务 iframe 跨域或尚未加载，无法确认控件；等待后重试 ${limits.maxFrameReadRetries} 次仍不可读，请人工检查`),{code:'COURSE_FRAME_UNAVAILABLE'});
@@ -6795,7 +7132,40 @@ Typr["U"] = {
                         guardRun();run.pacing.activeMs=0;run.pacing.restUntil=null;
                     } finally {run.resting=false;resumePacing();save();}
                 };
-                const processChapter = async (chapter,entry) => {
+                const rememberExcluded=(chapter,items)=>{
+                    for(const item of items||[]) {
+                        report.locator.excludedTabs++;
+                        item.tasks.forEach((summary,index)=>{
+                            const decision=item.decisions[index],manual=['quiz-disabled','knowledge-graph'].includes(decision.reason);
+                            chapter.tasks.push({tab:item.tab.id,type:summary.type,status:manual?'manual-pending':decision.reason==='already'?'already':'not-required',
+                                reason:manual?decision.reason==='quiz-disabled'?'自动提交章节测验已关闭，测验已跳过且未提交':'知识图谱已自动跳过，未计为完成':'任务摘要已核实',located:true});
+                        });
+                    }
+                };
+                const locateAhead=async(entry,context)=>{
+                    const boundary=run.rangeStart?.chapterId===entry.id?run.rangeStart:null;
+                    const locationBefore=readCourseCatalog(owner)?.entries.find(item=>item.active)?.id,tabBefore=courseTabs(owner).find(tab=>tab.active)?.id;
+                    const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
+                    const check=()=>{
+                        guardRun();if(context!==run.chapter||context.skipped)throw skippedError();
+                        const catalog=readCourseCatalog(owner);
+                        if(catalog?.entries.find(item=>item.active)?.id!==locationBefore||courseTabs(owner).find(tab=>tab.active)?.id!==tabBefore
+                            ||JSON.stringify(catalog?.entries.filter(item=>!item.isGroup).map(item=>item.id))!==catalogBefore)throw new Error('定位期间章节或栏目发生变化，请重新开始');
+                    };
+                    run.probeCheck=check;run.locating=true;pausePacing();const started=now();
+                    try {
+                        emitRun('正在定位任务…','course-locating');check();
+                        const catalog=readCourseCatalog(owner),range=queue.slice(run.chapterIndex).filter(item=>!resume||!['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(report.chapters.find(ch=>ch.id===item.id)?.status))
+                            .map(item=>{const found=catalog.entries.find(ch=>ch.id===item.id);if(!found?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');return found;});
+                        const location=run.probeBlocked?{entry,probe:{known:false,reason:'submission-unconfirmed'}}:await findNextCourseTask(range,{owner,submit:run.submit,skipLearned:run.skipLearned,retrying:run.retrying,
+                            startChapterId:entry.id,startTabId:boundary?.tabId==='current'?null:boundary?.tabId,startCardId:boundary?.cardId,
+                            startTabIndex:Math.max(run.tabIndex,boundary?.tabIndex||0),check:()=>run.probeCheck(),now,timeoutMs:limits.loadMs,
+                            onRequest:()=>report.locator.requests++,onCacheHit:()=>report.locator.cacheHits++,onDeduplicated:()=>report.locator.deduplicated++},context.abort.signal);
+                        check();if(location.probe?.reason==='start-tab-missing')throw new Error('本次起点栏目发生变化，请重新开始');
+                        return location;
+                    }finally{report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
+                };
+                const processChapter = async (chapter,entry,location) => {
                     // 每章独立闭包和取消信号：旧请求/解密/预填回调不能进入下一章。
                     const context=run.chapter;
                     const guard=()=>{
@@ -7434,30 +7804,66 @@ Typr["U"] = {
                         },limits.submitMs,'测验提交后未收到成功状态，请人工核对；不会重试提交');
                         context.submitting=false;context.submissionFrames=null;task.status='done';task.questionCount=data.total;report.quizzes++;
                     };
+                    const boundary=run.rangeStart?.chapterId===chapter.id?run.rangeStart:null;
+                    const firstIndex=Math.max(run.tabIndex,boundary?.tabIndex||0);
+                    const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
+                    let probe=location.probe,initialProbeTab=location.tab?.id;
+                    if(!probe?.known||location.reason){report.locator.fallbacks++;const reason=location.reason||probe?.reason||'probe-unavailable';report.locator.reasons??={};report.locator.reasons[reason]=(report.locator.reasons[reason]||0)+1;}
+                    run.tabIndex=location.tab?.index??firstIndex;
                     run.expected=entry.id;run.expectedTab=null;run.navigating=true;chapter.status='running';
-                    emit(`正在打开章节：${entry.number} ${entry.title}`,'course-navigating');
+                    emit(`正在打开章节：${entry.number} ${entry.title}${location.tab?' · '+location.tab.title:''}`,'course-navigating');
                     const before=courseContentFingerprint(owner);
                     if(!entry.active) {
-                        save();entry.target.click();
+                        save();report.locator.chapterNavigations++;entry.target.click();
                         await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
                             && courseContentChanged(before,courseContentFingerprint(owner)),limits.loadMs,'章节内容未成功切换');
                     }
-                    await waitForFrameReady(true);run.navigating=false;guard();
+                    const tabJump=location.tab&&courseTabs(owner).find(tab=>tab.active)?.id!==location.tab.id;
+                    if(!tabJump)await waitForFrameReady(true,{chapterId:entry.id,tabId:location.tab?.id,type:location.targetType});
+                    run.navigating=Boolean(tabJump);run.locating=false;guard();
+                    run.probeCheck=()=>{guard();if(JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id))!==catalogBefore)
+                        throw Object.assign(new Error('定位期间课程目录发生变化，请重新开始'),{code:'COURSE_LOCATOR_CHANGED'});};
                     let tabs=courseTabs(owner);
-                    if(tabs.some(tab=>tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
                     if(!tabs.length) tabs=[{id:'current',title:'当前页面',active:true}];
-                    let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     const tabIds=tabs.map(tab=>tab.id);
+                    const rangeTruncated=Boolean(boundary&&tabIds.indexOf(boundary.tabId)>0);
+                    if(boundary&&(!tabIds.includes(boundary.tabId)||boundary.cardId&&tabs.find(tab=>tab.id===boundary.tabId)?.node.getAttribute('cardid')!==boundary.cardId))throw new Error('本次起点栏目发生变化，请重新开始');
+                    if(probe?.known&&JSON.stringify(probe.tabs.map(tab=>[tab.id,tab.cardId]))!==JSON.stringify(tabs.map(tab=>[tab.id,tab.node?.getAttribute('cardid')||'']))) {
+                        // Native rendering can change the pre-read column descriptors. Discard this
+                        // chapter's exclusions and inspect its live columns within the frozen range.
+                        courseInvalidateTaskProbe(owner,entry.id);
+                        probe=null;initialProbeTab=null;run.tabIndex=firstIndex;
+                        report.locator.fallbacks++;report.locator.reasons??={};
+                        report.locator.reasons['live-tabs-changed']=(report.locator.reasons['live-tabs-changed']||0)+1;
+                        emit('栏目列表已更新，正在核对当前章节任务…','course-locating');
+                    } else rememberExcluded(chapter,location.excluded);
+                    if(tabs.some((tab,index)=>index>=run.tabIndex&&tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
+                    let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     for(;run.tabIndex<tabIds.length;run.tabIndex++) {
                         const id=tabIds[run.tabIndex],tab=courseTabs(owner).find(item=>item.id===id);
+                        let readyType=id===initialProbeTab?location.targetType:null;
                         if(id!=='current' && !tab) throw new Error('章节页面标签发生变化');
+                        if(probe?.known&&id!==initialProbeTab) {
+                            const descriptor=probe.tabs.find(item=>item.id===id);let summary;
+                            const started=now();pausePacing();run.locating=true;
+                            const activeTab=courseTabs(owner).find(item=>item.active)?.id;
+                            try {emit(`正在定位任务… ${entry.number} · ${tab?.title||id}`,'course-locating');summary=await probe.read(descriptor);guard();
+                                if(courseTabs(owner).find(item=>item.active)?.id!==activeTab)throw new Error('定位期间栏目发生变化，请重新开始');
+                            } catch(error){guard();if(context.abort.signal.aborted||error.code==='COURSE_LOCATOR_CHANGED')throw error;summary={known:false};}
+                            finally {run.locating=false;report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
+                            if(summary?.known) {
+                                const decisions=summary.tasks.map(task=>courseTaskEligibility(task,run));
+                                if(decisions.every(item=>item.status==='excluded')){rememberExcluded(chapter,[{tab:descriptor,tasks:summary.tasks,decisions}]);taskFreeOnly=false;save();continue;}
+                                readyType=summary.tasks[decisions.findIndex(item=>item.status!=='excluded')]?.type;
+                            }
+                        }
                         if(tab && !tab.active) {
-                            const old=courseContentFingerprint(owner);run.navigating=true;save();tab.node.click();
+                            const old=courseContentFingerprint(owner);run.navigating=true;save();report.locator.tabNavigations++;tab.node.click();
                             await until(()=>courseTabs(owner).some(item=>item.id===id&&item.active)
                                 && courseContentChanged(old,courseContentFingerprint(owner)),limits.loadMs,'页面标签未成功切换');
-                            await waitForFrameReady(true);run.navigating=false;
+                            await waitForFrameReady(true,{chapterId:entry.id,tabId:id,type:readyType});run.navigating=false;
                         }
-                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();guard();
+                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();run.navigating=false;guard();
                         let tree=courseFrameTree(owner);
                         let docs=tree.documents.slice(1);
                         if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
@@ -7510,6 +7916,7 @@ Typr["U"] = {
                                 }
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
+                            if(task.status==='done')courseInvalidateTaskProbe(owner,entry.id);
                             processed.add(item.node);
                             save();
                             // 控件可在上一任务播放/阅读时延迟加入；每次重新读取，不重复执行原节点。
@@ -7526,12 +7933,12 @@ Typr["U"] = {
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
-                            if(!tasks.length && lastTab && (pendingHere() || !chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
+                            if(!tasks.length && lastTab && (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if(!pendingHere() && chapter.tasks.some(task=>task.status==='manual-pending'))return {tasks:[]};
+                                    if(!pendingHere() && (rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -7552,6 +7959,10 @@ Typr["U"] = {
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
+                    }
+                    if(rangeTruncated&&!pending()?.completed&&pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已处理本次起点之后的栏目；起点之前未纳入本轮，保留整章未完成状态';save();return;
                     }
                     if(chapter.tasks.some(task=>task.tab===tabIds[tabIds.length-1]&&task.type==='non-task')
                         && !pending()?.completed && pending()?.pending!==0) {
@@ -7580,14 +7991,30 @@ Typr["U"] = {
                     if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
-                        await waitForFrameReady();guardRun();const chapter=report.chapters[run.chapterIndex];
+                        run.locating=true;guardRun();let chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
-                        const entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
+                        let entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
                         if(!entry?.target?.isConnected) throw new Error('课程目录发生变化或章节入口不存在');
                         if((run.skipLearned||run.retrying) && entry.completed){chapter.status='already';courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);save();continue;}
                         const context={abort:new AbortController(),skipped:false,submitting:false};
                         context.wait=new Promise(resolve=>{context.wake=resolve;});run.chapter=context;
-                        try { await processChapter(chapter,entry); }
+                        try {
+                            const location=await locateAhead(entry,context);
+                            for(const skipped of location.skipped||[]) {
+                                const index=queue.findIndex(item=>item.id===skipped.entry.id),record=report.chapters[index];
+                                rememberExcluded(record,skipped.tabs);
+                                record.status=skipped.reason==='already'?'already':record.tasks.some(task=>task.status==='manual-pending')?'manual-pending':'no-tasks';
+                                record.reason=record.status==='manual-pending'?'本次设置已排除剩余任务，保留未完成状态':record.status==='already'?'平台目录已完成':'任务摘要中没有本次需要执行的任务，未计为整章完成';
+                                courseRecordChapterOutcome(run.protection,record,index);
+                            }
+                            if(!location.entry){run.chapterIndex=queue.length;save();break;}
+                            const targetIndex=queue.findIndex(item=>item.id===location.entry.id);
+                            if(targetIndex<run.chapterIndex)throw new Error('定位结果超出本次范围');
+                            if(targetIndex!==run.chapterIndex)run.tabIndex=0;
+                            run.chapterIndex=targetIndex;chapter=report.chapters[targetIndex];entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
+                            if(!entry?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');
+                            save();await processChapter(chapter,entry,location);
+                        }
                         catch(error) {
                             guardRun();
                             if(context.skipped) {
@@ -7849,6 +8276,117 @@ Typr["U"] = {
         doc.defaultView.addEventListener('pagehide',disconnect,{once:true});
         render();
         if(owner===doc) courseRunner?.resumeIfNeeded();
+    }
+    const OTHER_FEATURES_KEY = 'cx_other_features';
+    const otherFeatureManagers = new WeakMap();
+    const otherFeaturePageShows = new WeakSet();
+    function otherFeatureSettings() {
+        const saved=get(OTHER_FEATURES_KEY,{});
+        return {hidePlatformAi:saved?.hidePlatformAi===true,keepVideoPlaying:saved?.keepVideoPlaying===true};
+    }
+    function createManualVideoProtection(owner, options={}) {
+        const clock=options.now||Date.now;
+        const resumeMs=options.resumeMs??COURSE_RUN_LIMITS.resumeMs,maxResumes=options.maxResumes??COURSE_RUN_LIMITS.maxResumes;
+        const progressSeconds=options.progressSeconds??COURSE_RUN_LIMITS.resumeProgressSeconds;
+        let state=null,closed=false,status='播放视频后生效';
+        const release=()=>{if(!state)return;state.release?.();state.cleanup();state=null;};
+        const allowed=video=>{
+            if(closed||courseRunActive(owner)||!video.isConnected||video.ended||video.error||video.seeking)return false;
+            const tree=courseFrameTree(owner);
+            if(tree.inaccessible.length||courseBlocker(tree.documents))return false;
+            const policy=courseVideoForegroundPolicy(video),foreground=courseOwnerForegroundState(owner);
+            return !policy.required||foreground.visible&&foreground.focused;
+        };
+        const bind=video=>{
+            release();
+            const local={video,manualPaused:false,intentUntil:-Infinity,attempts:0,lastAttemptAt:clock(),pending:false,blocked:false,
+                progress:0,lastTime:Number(video.currentTime),lastAt:clock(),rate:Number(video.playbackRate)||1};
+            state=local;
+            const anchor=()=>{local.lastTime=Number(video.currentTime);local.lastAt=clock();local.rate=Number(video.playbackRate)||1;};
+            const input=event=>{if(state===local&&courseVideoPauseInput(event,video)&&!video.paused&&!video.ended)local.intentUntil=clock()+COURSE_RUN_LIMITS.videoManualPauseIntentMs;};
+            const pause=()=>{if(state===local){if(clock()<local.intentUntil)local.manualPaused=true;anchor();}};
+            const playing=()=>{if(state===local){local.manualPaused=false;local.intentUntil=-Infinity;anchor();}};
+            for(const name of ['pointerdown','click','keydown'])video.ownerDocument.addEventListener(name,input,true);
+            video.addEventListener('pause',pause);video.addEventListener('playing',playing);
+            video.addEventListener('seeking',anchor);video.addEventListener('seeked',anchor);
+            local.cleanup=()=>{for(const name of ['pointerdown','click','keydown'])video.ownerDocument.removeEventListener(name,input,true);video.removeEventListener('pause',pause);video.removeEventListener('playing',playing);video.removeEventListener('seeking',anchor);video.removeEventListener('seeked',anchor);};
+            local.release=backgroundPlaybackGuard?.activate({video,canProtect:()=>state===local&&!local.manualPaused&&!local.blocked&&allowed(video),onSuppressed:()=>{}});
+        };
+        const tick=()=>{
+            if(closed)return;
+            if(courseRunActive(owner)){release();status='自动刷课运行中，使用刷课播放保护';return;}
+            const videos=courseFrameTree(owner).documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible);
+            const playing=videos.filter(video=>!video.paused&&!video.ended);
+            if(playing.length>1){release();status='多个视频同时播放，等待单个视频';return;}
+            if(state&&(!videos.includes(state.video)||!state.video.isConnected||state.video.ended))release();
+            if(playing.length===1&&state?.video!==playing[0])bind(playing[0]);
+            if(!state){status='播放视频后生效';return;}
+            const local=state,video=local.video,at=clock(),seconds=Number(video.currentTime),elapsed=Math.max(0,(at-local.lastAt)/1000);
+            const delta=seconds-local.lastTime;
+            const position=courseVideoPositionDecision({seconds:local.lastTime,at:local.lastAt,rate:local.rate},
+                {seconds,at,rate:Number(video.playbackRate)||1,duration:Number(video.duration),seeking:video.seeking,readyState:video.readyState},courseVideoPlayedRanges(video),COURSE_RUN_LIMITS);
+            if(!video.paused&&elapsed>0&&delta>0&&position.kind==='continuous')local.progress+=delta;
+            local.lastTime=seconds;local.lastAt=at;local.rate=Number(video.playbackRate)||1;
+            if(local.progress>=progressSeconds){local.attempts=0;local.blocked=false;local.progress=0;}
+            if(!allowed(video)) {
+                const foreground=courseOwnerForegroundState(owner);
+                if(courseVideoForegroundPolicy(video).required&&(!foreground.visible||!foreground.focused)&&!video.paused)video.pause();
+                status='等待页面观看条件或人工处理';return;
+            }
+            if(local.manualPaused){status='已手动暂停，等待你继续播放';return;}
+            if(!video.paused){status='视频播放保护中';return;}
+            if(local.blocked){status='自动恢复已达上限，请手动播放';return;}
+            if(local.pending||video.readyState<2||at-local.lastAttemptAt<resumeMs){status='等待恢复播放';return;}
+            local.lastAttemptAt=at;local.attempts++;local.pending=true;
+            if(local.attempts>=maxResumes)local.blocked=true;
+            status=`正在恢复播放 ${local.attempts}/${maxResumes}`;
+            try {
+                Promise.resolve(video.play()).catch(error=>{if(state===local&&error?.name==='NotAllowedError')local.blocked=true;})
+                    .finally(()=>{if(state===local)local.pending=false;});
+            } catch(error){local.pending=false;if(error?.name==='NotAllowedError')local.blocked=true;}
+        };
+        return {tick,get status(){return status;},get activeVideo(){return state?.video||null;},close(){if(closed)return;closed=true;release();}};
+    }
+    function initOtherFeatures(doc=document) {
+        const existing=otherFeatureManagers.get(doc);if(existing)return existing;
+        const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
+        const controlsPlayback=doc===document&&view.top===view.self&&view.location.hostname==='mooc1.chaoxing.com'&&view.location.pathname==='/mycourse/studentstudy';
+        const render=()=>{
+            for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
+                shadow.getElementById('other-hide-platform-ai').checked=settings.hidePlatformAi;
+                shadow.getElementById('other-keep-video-playing').checked=settings.keepVideoPlaying;
+                shadow.getElementById('other-video-status').textContent=settings.keepVideoPlaying?(protection?.status||'在课程页面播放视频后生效'):'按需开启';
+            }
+        };
+        const tick=()=>{protection?.tick();render();};
+        const apply=()=>{
+            if(closed)return;settings=otherFeatureSettings();
+            let style=doc.getElementById('cx-ai-platform-widgets-style');
+            if(!style){style=doc.createElement('style');style.id='cx-ai-platform-widgets-style';(doc.head||doc.documentElement)?.append(style);}
+            // Confirmed CxRobotSdkJs roots; never hide a generic .resizer or our assistant host.
+            style.textContent=settings.hidePlatformAi?'.cx-robot-wrapper,.cx-robot-side,.cx-robot-side-tips{display:none!important}':'';
+            if(controlsPlayback&&settings.keepVideoPlaying&&!protection){protection=createManualVideoProtection(doc);timer=view.setInterval(tick,500);}
+            if(!settings.keepVideoPlaying){if(timer!==null)view.clearInterval(timer);timer=null;protection?.close();protection=null;}
+            tick();
+        };
+        const listener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener(OTHER_FEATURES_KEY,apply):null;
+        const close=()=>{if(closed)return;closed=true;if(timer!==null)view.clearInterval(timer);protection?.close();
+            if(listener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(listener);
+            doc.removeEventListener('cx-ai-course-update',tick);view.removeEventListener('pagehide',close);panels.clear();otherFeatureManagers.delete(doc);};
+        const manager={apply,close,bind(shadow){panels.add(shadow);render();}};
+        otherFeatureManagers.set(doc,manager);doc.addEventListener('cx-ai-course-update',tick);view.addEventListener('pagehide',close,{once:true});
+        if(doc===document&&!otherFeaturePageShows.has(doc)){otherFeaturePageShows.add(doc);view.addEventListener('pageshow',()=>initOtherFeatures(doc));}
+        apply();return manager;
+    }
+    function initOtherFeatureControls(shadow,doc) {
+        const manager=initOtherFeatures(doc);manager.bind(shadow);
+        for(const [id,field] of [['other-hide-platform-ai','hidePlatformAi'],['other-keep-video-playing','keepVideoPlaying']]) {
+            const control=shadow.getElementById(id);
+            control.addEventListener('change',event=>{
+                if(!trustedAssistantActivation(event,control,'change')){manager.apply();return;}
+                set(OTHER_FEATURES_KEY,{...otherFeatureSettings(),[field]:control.checked});manager.apply();
+            });
+        }
     }
     // 原生 select 仍负责值、禁用状态与 change 通知；可见列表使用官方标识。
     const brandedModelPickers = new WeakMap();
@@ -8449,7 +8987,7 @@ Typr["U"] = {
     }
 
     function switchPanelView(view, { focus = false } = {}) {
-        if (!panelView || !['model','questions','chapters'].includes(view)) return;
+        if (!panelView || !['model','questions','chapters','other'].includes(view)) return;
         const { shadow } = panelView;
         for (const button of shadow.querySelectorAll('[data-panel-view]')) {
             const selected = button.dataset.panelView === view;
@@ -8652,6 +9190,7 @@ Typr["U"] = {
           .panel-body{flex:1;display:grid;grid-template-columns:54px minmax(0,1fr);min-height:0;max-height:var(--content-height,none);overflow:hidden}.nav-rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0;background:#f7f9fc;border-right:1px solid var(--line)}.nav-button{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:8px;border-radius:7px;background:transparent;color:#78889d}.nav-model-bottom{margin-top:auto;flex-shrink:0}.nav-button svg{width:20px;height:20px;flex:none}.nav-button[aria-selected=true]{background:#e7effc;color:var(--accent)}.nav-button[aria-selected=true]::before{content:"";position:absolute;left:-9px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}.assistant-main{min-width:0;min-height:0;overflow:hidden}.view-page{height:100%;min-height:0;min-width:0;padding:18px;overflow:auto;overscroll-behavior:contain}.view-heading{flex:none;margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;gap:8px}.view-heading h2{font-size:17px;line-height:1.4;letter-spacing:.3px;margin:0;font-weight:700}.view-tag{font-size:11px;color:var(--muted);padding:2px 7px;background:#f3f6fa;border-radius:4px}
           .settings-block{border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:17px}.settings-block:last-child{border:0;margin:0}.field-caption{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{max-width:100%}.row>label{min-width:65px}input,select{background:#fff;color:var(--ink);border:1px solid #cbd5e3;border-radius:6px;padding:8px;min-width:0}input[type=password]{min-width:120px;flex:1;width:180px}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent);flex:none}.check-label{display:inline-flex;align-items:center;gap:7px}.row select{max-width:100%}.setting-label{font-size:13px;color:var(--muted)}
           #model-test-status[data-state="ok"]{color:#226342}#model-test-status[data-state="error"]{color:#b13b32}
+          .other-feature{padding:16px 0;border-bottom:1px solid var(--line)}.other-feature:first-of-type{padding-top:0}.other-feature:last-child{border:0}.other-feature .check-label{font-weight:600}.other-feature p{margin:7px 0 0 23px}.other-feature-status{font-size:12px;color:var(--accent)}
           .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
@@ -8668,9 +9207,9 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.20</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.21</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.20.08 1.725 1.20 1.725 1.20 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.20-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.203a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.203 3.092-1.203.615 1.55.228 2.695.112 2.98.722.788 1.209 1.79 1.209 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.21.08 1.725 1.21 1.725 1.21 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.21-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.213a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.213 3.092-1.213.615 1.55.228 2.695.112 2.98.722.788 1.219 1.79 1.219 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -8679,6 +9218,7 @@ Typr["U"] = {
             <nav class="nav-rail" role="tablist" aria-label="助手导航" aria-orientation="vertical">
               <button type="button" class="nav-button" id="nav-questions" data-panel-view="questions" role="tab" aria-label="题目" title="题目" aria-controls="view-questions" aria-selected="true" tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6m-6 4h6m-6 4h4"/></svg></button>
               <button type="button" class="nav-button" id="nav-chapters" data-panel-view="chapters" role="tab" aria-label="章节" title="章节" aria-controls="view-chapters" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Zm0 0v15M6 8h3m-3 4h3m6-4h3m-3 4h3"/></svg></button>
+              <button type="button" class="nav-button" id="nav-other" data-panel-view="other" role="tab" aria-label="其他功能" title="其他功能" aria-controls="view-other" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7m-3.5-3.5v7"/></svg></button>
               <button type="button" class="nav-button nav-model-bottom" id="nav-model" data-panel-view="model" role="tab" aria-label="设置" title="设置" aria-controls="view-model" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m9.5 3-.5 2a8 8 0 0 0-2 1.2L5 5.7 3 9.2l1.5 1.4a8 8 0 0 0 0 2.8L3 14.8l2 3.5 2-.5a8 8 0 0 0 2 1.2l.5 2h5l.5-2a8 8 0 0 0 2-1.2l2 .5 2-3.5-1.5-1.4a8 8 0 0 0 0-2.8L21 9.2l-2-3.5-2 .5A8 8 0 0 0 15 5l-.5-2Z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </nav>
             <main class="assistant-main">
@@ -8725,6 +9265,18 @@ Typr["U"] = {
                   <p class="note">本页运行详情用于本地查看；复制仅包含安全摘要及当前页面最近 100 条诊断，刷新清除。</p>
                   <div id="course-report" role="region" aria-label="详细运行报告" tabindex="0"></div>
                 </section>
+              </section>
+              <section id="view-other" class="view-page" role="tabpanel" aria-labelledby="nav-other" hidden>
+                <div class="view-heading"><h2>其他功能</h2></div>
+                <div class="other-feature">
+                  <label class="check-label"><input type="checkbox" id="other-hide-platform-ai" /> 隐藏平台 AI 助教</label>
+                  <p class="note">隐藏小黄人、AI 助教入口及相关气泡。</p>
+                </div>
+                <div class="other-feature">
+                  <label class="check-label"><input type="checkbox" id="other-keep-video-playing" /> 视频不暂停</label>
+                  <p class="note">手动观看时启用后台播放保护；自动刷课期间沿用刷课保护。手动暂停后等待你继续播放。</p>
+                  <p id="other-video-status" class="other-feature-status" role="status">按需开启</p>
+                </div>
               </section>
               <section id="view-questions" class="view-page" role="tabpanel" aria-labelledby="nav-questions">
                 <div class="view-heading"><h2>题目与答案</h2></div>
@@ -8789,6 +9341,7 @@ Typr["U"] = {
         }, { once: true });
         initCourseSidebar();
         initPanelNavigation();
+        initOtherFeatureControls(shadow,doc);
         initCourseRunControls(doc, ctl);
         const el = id => shadow.getElementById(id);
         el('copy-error-report').onclick = async () => {
@@ -9409,7 +9962,7 @@ Typr["U"] = {
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.20',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.21',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -9732,6 +10285,7 @@ Typr["U"] = {
         renderRunState(controller.state);
     }
     function startQuizObserver() {
+        initOtherFeatures(document);
         startAssistantUpdateCheck();
         let scheduled = false;
         const refresh = () => {
