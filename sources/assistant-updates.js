@@ -44,6 +44,11 @@
         s.getElementById('update-status').textContent = assistantUpdateMessage || (newer ? `发现新版本 v${cache.version}` : cache.status === 'verified' ? `当前版本 v${ASSISTANT_VERSION}，暂无新版` : cache.status === 'none' ? '尚未找到公开脚本' : `当前版本 v${ASSISTANT_VERSION}`);
     }
     function requestPublicUpdateText(url, signal) {
+        // force bypasses storage TTL; a unique URL also bypasses browser/CDN caches.
+        // Keep the original logical URL for source/404 policy and validate the exact request target.
+        const requestURL = new URL(url);
+        requestURL.searchParams.set('_cx_update', `${Date.now()}-${assistantUpdateGeneration}`);
+        const targetURL = requestURL.href;
         return new Promise((resolve, reject) => {
             let handle, settled = false;
             const finish = (callback, value) => { if (settled) return; settled = true; signal.removeEventListener('abort', abort); callback(value); };
@@ -51,10 +56,10 @@
             if (signal.aborted) { abort(); return; }
             signal.addEventListener('abort', abort, {once:true});
             try {
-                handle = GM_xmlhttpRequest({method:'GET',url,anonymous:true,timeout:20000,
-                    headers:{Accept:'text/plain'},
+                handle = GM_xmlhttpRequest({method:'GET',url:targetURL,anonymous:true,timeout:20000,
+                    headers:{Accept:'text/plain','Cache-Control':'no-cache','Pragma':'no-cache'},
                     onload(response) {
-                        if (response.finalUrl && response.finalUrl !== url) return finish(reject, new Error('更新地址发生变化，请前往 GitHub 核对'));
+                        if (response.finalUrl && response.finalUrl !== targetURL) return finish(reject, new Error('更新地址发生变化，请前往 GitHub 核对'));
                         if (response.status === 404 && url === ASSISTANT_UPDATE_SOURCE) return finish(resolve, null);
                         if ([403,429].includes(response.status)) return finish(reject, new Error('检查暂时受限，请稍后重试'));
                         if (response.status !== 200 || typeof response.responseText !== 'string' || response.responseText.length > 8 * 1024 * 1024)
