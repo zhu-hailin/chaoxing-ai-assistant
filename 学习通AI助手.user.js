@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.23
+// @version      1.24
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -30,6 +30,7 @@
 // @connect      api.moonshot.cn
 // @connect      open.bigmodel.cn
 // @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // @connect      self
 // @connect      chaoxing.com
 // @connect      mooc1.xuexitong.com
@@ -2909,7 +2910,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.23';
+    const ASSISTANT_VERSION = '1.24';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2957,7 +2958,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.23', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.24', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -3826,7 +3827,8 @@ Typr["U"] = {
     });
     window.addEventListener('pageshow', initCredentialSettings);
     const ASSISTANT_UPDATE_KEY = 'cx_assistant_update';
-    const ASSISTANT_UPDATE_SOURCE = 'https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js';
+    const ASSISTANT_UPDATE_SOURCE = 'https://api.github.com/repos/zhu-hailin/chaoxing-ai-assistant/releases/latest';
+    const ASSISTANT_UPDATE_CACHE_SOURCE = 'github-release-v1';
     const assistantUpdateOpen = window.open.bind(window);
     let assistantUpdatePending = null, assistantUpdateAbort = null;
     let assistantUpdateStartup = null, assistantUpdateStarted = false;
@@ -3843,9 +3845,22 @@ Typr["U"] = {
     function assistantUpdateCache() {
         const value = get(ASSISTANT_UPDATE_KEY, {}), now = Date.now();
         const timestamp = raw => Number.isFinite(raw) && raw >= 0 && raw <= now + 60000 ? raw : 0;
-        return {checkedAt:timestamp(value?.checkedAt), attemptedAt:timestamp(value?.attemptedAt),
+        const releaseSource = value?.source === ASSISTANT_UPDATE_CACHE_SOURCE;
+        return {source:releaseSource ? ASSISTANT_UPDATE_CACHE_SOURCE : '',
+            checkedAt:releaseSource ? timestamp(value?.checkedAt) : 0,
+            attemptedAt:releaseSource ? timestamp(value?.attemptedAt) : 0,
+            latestVersion:releaseSource && assistantVersionParts(value?.latestVersion) ? String(value.latestVersion).replace(/^v/,'') : '',
             version:value?.status === 'verified' && assistantVersionParts(value.version) ? String(value.version).replace(/^v/,'') : '',
             status:['verified','none'].includes(value?.status) ? value.status : ''};
+    }
+    function assistantReleaseVersion(text) {
+        let release;
+        try { release = JSON.parse(text); } catch { throw new Error('正式发行版信息无效，请稍后重试'); }
+        const version = release && assistantVersionParts(release.tag_name);
+        if (!version || release.draft !== false || release.prerelease !== false
+            || release.tag_name !== `v${version[0]}.${String(version[1]).padStart(2,'0')}`)
+            throw new Error('正式发行版信息无效，请稍后重试');
+        return release.tag_name.slice(1);
     }
     function assistantUpdateDownloadURL(version) {
         if (!assistantVersionParts(version)) return '';
@@ -3868,7 +3883,17 @@ Typr["U"] = {
         install.textContent = newer ? `下载更新 v${cache.version}` : '下载更新';
         s.getElementById('check-update').disabled = Boolean(assistantUpdatePending);
         s.getElementById('check-update').textContent = assistantUpdatePending ? '正在检查…' : '检查更新';
-        s.getElementById('update-status').textContent = assistantUpdateMessage || (newer ? `发现新版本 v${cache.version}` : cache.status === 'verified' ? `当前版本 v${ASSISTANT_VERSION}，暂无新版` : cache.status === 'none' ? '尚未找到公开脚本' : `当前版本 v${ASSISTANT_VERSION}`);
+        let status = newer ? `此前已核验 v${cache.version}，尚未核对最新发行版` : '尚未核对正式发行版';
+        if (cache.source === ASSISTANT_UPDATE_CACHE_SOURCE) {
+            if (cache.status === 'none') status = '暂无公开发行版';
+            else if (cache.latestVersion) {
+                status = `最新发行版 v${cache.latestVersion}，`;
+                if (assistantVersionIsNewer(cache.latestVersion)) status += cache.version === cache.latestVersion ? '可下载更新' : '等待核验下载';
+                else status += cache.latestVersion === ASSISTANT_VERSION ? '已是最新发行版' : '本地版本较新';
+            }
+        }
+        const checked = cache.checkedAt ? `；上次检查 ${new Date(cache.checkedAt).toLocaleString()}` : '';
+        s.getElementById('update-status').textContent = `当前版本 v${ASSISTANT_VERSION}；${assistantUpdateMessage || status}${checked}`;
     }
     function requestPublicUpdateText(url, signal) {
         // force bypasses storage TTL; a unique URL also bypasses browser/CDN caches.
@@ -3884,11 +3909,11 @@ Typr["U"] = {
             signal.addEventListener('abort', abort, {once:true});
             try {
                 handle = GM_xmlhttpRequest({method:'GET',url:targetURL,anonymous:true,timeout:20000,
-                    headers:{Accept:'text/plain','Cache-Control':'no-cache','Pragma':'no-cache'},
+                    headers:{Accept:url === ASSISTANT_UPDATE_SOURCE ? 'application/vnd.github+json' : 'text/plain','Cache-Control':'no-cache','Pragma':'no-cache'},
                     onload(response) {
                         if (response.finalUrl && response.finalUrl !== targetURL) return finish(reject, new Error('更新地址发生变化，请前往 GitHub 核对'));
                         if (response.status === 404 && url === ASSISTANT_UPDATE_SOURCE) return finish(resolve, null);
-                        if ([403,429].includes(response.status)) return finish(reject, new Error('检查暂时受限，请稍后重试'));
+                        if ([403,429].includes(response.status)) return finish(reject, new Error(`检查暂时受限（HTTP ${response.status}），请稍后重试`));
                         if (response.status !== 200 || typeof response.responseText !== 'string' || response.responseText.length > 8 * 1024 * 1024)
                             return finish(reject, new Error('无法获取有效更新信息，请重试'));
                         finish(resolve, response.responseText);
@@ -3905,27 +3930,35 @@ Typr["U"] = {
         const cache = assistantUpdateCache(), now = Date.now();
         if (!force && now - Math.max(cache.checkedAt, cache.attemptedAt) < 24 * 60 * 60 * 1000) return Promise.resolve(cache);
         const generation = ++assistantUpdateGeneration, abort = new AbortController(); assistantUpdateAbort = abort;
-        set(ASSISTANT_UPDATE_KEY, {...cache, attemptedAt:now});
-        assistantUpdateMessage = '正在检查公开更新…';
+        set(ASSISTANT_UPDATE_KEY, {...cache,source:ASSISTANT_UPDATE_CACHE_SOURCE,
+            status:cache.version ? 'verified' : cache.source === ASSISTANT_UPDATE_CACHE_SOURCE ? cache.status : '',attemptedAt:now});
+        assistantUpdateMessage = '正在检查正式发行版…';
+        const current = () => generation === assistantUpdateGeneration && !abort.signal.aborted;
         const run = async () => {
+            let latestVersion = '', checkingDownload = false;
             try {
                 const text = await requestPublicUpdateText(ASSISTANT_UPDATE_SOURCE, abort.signal);
+                if (!current()) return null;
                 let version = '', status = 'none';
                 if (text !== null) {
-                    version = assistantUpdateScriptVersion(text); status = 'verified';
-                    if (assistantVersionIsNewer(version)) {
-                        assistantUpdateMessage = `发现 v${version}，正在核对下载…`; renderAssistantUpdates();
-                        const script = await requestPublicUpdateText(assistantUpdateDownloadURL(version), abort.signal);
+                    latestVersion = assistantReleaseVersion(text); status = 'verified';
+                    if (assistantVersionIsNewer(latestVersion)) {
+                        checkingDownload = true;
+                        assistantUpdateMessage = `发现正式发行版 v${latestVersion}，正在核对下载…`; renderAssistantUpdates();
+                        const script = await requestPublicUpdateText(assistantUpdateDownloadURL(latestVersion), abort.signal);
+                        if (!current()) return null;
                         let installedVersion;
                         try { installedVersion = assistantUpdateScriptVersion(script); } catch {}
-                        if (installedVersion !== version) throw new Error('新版脚本尚未就绪，请稍后检查更新');
-                    }
+                        if (installedVersion !== latestVersion) throw new Error('标签脚本版本不一致或脚本信息无效');
+                        version = latestVersion;
+                    } else if (cache.version === latestVersion) version = cache.version;
                 }
-                if (generation !== assistantUpdateGeneration || abort.signal.aborted) return null;
-                const result = {status,version,checkedAt:Date.now(),attemptedAt:now};
+                if (!current()) return null;
+                const result = {source:ASSISTANT_UPDATE_CACHE_SOURCE,status,version,latestVersion,checkedAt:Date.now(),attemptedAt:now};
                 set(ASSISTANT_UPDATE_KEY, result); assistantUpdateMessage = ''; return result;
             } catch (error) {
-                if (generation === assistantUpdateGeneration && !abort.signal.aborted) assistantUpdateMessage = error.message;
+                if (current()) assistantUpdateMessage = checkingDownload
+                    ? `已发现发行版 v${latestVersion}，下载核验失败：${error.message}` : error.message;
                 return null;
             } finally {
                 if (generation === assistantUpdateGeneration) { assistantUpdatePending = null; assistantUpdateAbort = null; renderAssistantUpdates(); }
@@ -5608,7 +5641,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.23');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.24');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -9225,9 +9258,9 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.23</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.24</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.23.08 1.725 1.23 1.725 1.23 1.005 1.722 2.637 1.234 3.279.936.102-.728.393-1.235.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.23-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.233a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.233 3.092-1.233.615 1.55.228 2.695.112 2.98.722.788 1.239 1.79 1.239 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.24.08 1.725 1.24 1.725 1.24 1.005 1.722 2.637 1.244 3.279.936.102-.728.393-1.245.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.24.44-2.232 1.24-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.243a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.243 3.092-1.243.615 1.55.228 2.695.112 2.98.722.788 1.249 1.79 1.249 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -9980,7 +10013,7 @@ Typr["U"] = {
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.23',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.24',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
