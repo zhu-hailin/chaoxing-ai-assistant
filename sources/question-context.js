@@ -75,7 +75,8 @@
     }
     function questionBindingNodes(binding) {
         return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
-            ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()]].filter(Boolean))];
+            ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()],
+            binding.mooc2?.savedInput,...(binding.mooc2?.records || []).flatMap(record=>[record.marker,record.content])].filter(Boolean))];
     }
     function createQuestionSnapshot(graph, runtime = {}) {
         if (graph?.schemaVersion !== 3) throw questionContextError('CX-PAR-008', '题目快照结构不匹配');
@@ -124,6 +125,8 @@
             if (questionGraphContentSignature(current) !== state.signature) throw questionContextError('CX-PAR-008', '题干、选项或关联已变化');
             for (const [id, binding] of state.graph.bindings) {
                 const live = current.bindings.get(id);
+                if ((binding.mooc2 || live?.mooc2) && !sameMooc2ChoiceBindings(binding.mooc2,live?.mooc2))
+                    throw questionContextError('CX-CTL-006', 'mooc2 选项与原生保存标识已变化');
                 const before = questionBindingNodes(binding), after = live ? questionBindingNodes(live) : [];
                 if (before.length !== after.length || before.some((node, index) => node !== after[index])) throw questionContextError('CX-CTL-006', '作答控件已替换');
             }

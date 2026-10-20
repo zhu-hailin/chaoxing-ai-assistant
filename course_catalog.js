@@ -38,13 +38,55 @@
         return { score, chapterId, quizId, title: clean(doc.querySelector('#RightCon .ceyan_name h3')?.textContent) };
     }
 
+    function courseURLContext(url) {
+        let conflict = false;
+        const read = names => {
+            const values = new Set([...(url?.searchParams || [])].filter(([key]) => names.includes(key.toLowerCase())).map(([,value]) => value.trim()).filter(Boolean));
+            if (values.size > 1) conflict = true;
+            return values.size === 1 ? [...values][0] : '';
+        };
+        const course = read(['courseid']), classroom = read(['clazzid','classid']), student = read(['cpi']);
+        const chapterId = read(['chapterid','knowledgeid']);
+        return {course,classroom,student,chapterId,conflict};
+    }
+    function courseStudyContext(sourceDoc) {
+        const base = pageURL(sourceDoc), top = courseURLContext(base);
+        let frame = null, declared = null, loaded = null;
+        const view = sourceDoc?.defaultView;
+        // Only the real top-level course frame may supply missing identity fields.
+        if (view && view === view.top && isCourseStudyURL(base)) frame = sourceDoc.querySelector('#mainid #iframe');
+        const cards = raw => {
+            if (!raw) return null;
+            try {
+                const url = new URL(raw,base);
+                return url.origin === base.origin && !url.username && !url.password && url.pathname === '/mooc-ans/knowledge/cards'
+                    ? {...courseURLContext(url),url} : null;
+            } catch { return null; }
+        };
+        if (frame) {
+            declared = cards(frame.getAttribute('src'));
+            try { loaded = cards(frame.contentDocument?.URL); } catch { /* Cross-origin content never supplies identity. */ }
+        }
+        const {course,classroom} = top;
+        let student = top.student, reason = top.conflict ? 'parameter-conflict' : '';
+        for (const candidate of [declared,loaded].filter(Boolean)) {
+            if (candidate.conflict) reason = 'parameter-conflict';
+            if (course && candidate.course && course !== candidate.course || classroom && candidate.classroom && classroom !== candidate.classroom
+                || student && candidate.student && student !== candidate.student) reason = 'identity-conflict';
+            // A cpi is usable only after both course and class agree with the top page.
+            if (course && classroom && candidate.course === course && candidate.classroom === classroom && candidate.student && !student) student = candidate.student;
+        }
+        const complete = Boolean(!reason && course && classroom && student);
+        if (!reason && !complete) reason = 'identity-incomplete';
+        // The loaded cards URL proves the current chapter; clicking a link or its colour does not.
+        const chapterId = complete && loaded && loaded.course === course && loaded.classroom === classroom && loaded.chapterId
+            && (!declared?.chapterId || declared.chapterId === loaded.chapterId) ? loaded.chapterId : null;
+        return {course,classroom,student,complete,reason,chapterId,frame,cardsURL:declared?.url || null,loadedCardsURL:loaded?.url || null};
+    }
     function courseScoreKey(sourceDoc) {
-        const params = pageURL(sourceDoc)?.searchParams;
-        const course = params?.get('courseId') || params?.get('courseid');
-        const classroom = params?.get('clazzid') || params?.get('classId');
-        const student = params?.get('cpi');
-        // 无完整课程、班级、账号标识时不持久化，避免不同课程或账号混用成绩。
-        return course && classroom && student ? COURSE_SCORE_PREFIX + [course, classroom, student].map(encodeURIComponent).join(':') : null;
+        const context = courseStudyContext(sourceDoc);
+        // Keep course, class and account isolation; incomplete/conflicting identities never persist.
+        return context.complete ? COURSE_SCORE_PREFIX + [context.course,context.classroom,context.student].map(encodeURIComponent).join(':') : null;
     }
 
     function courseCatalogMarker(row, selector) {
@@ -64,6 +106,7 @@
         const { sourceDoc, root } = context;
         const entries = [];
         const seenIds = new Set();
+        let structure = 'pos-catalog';
         for (const row of root.querySelectorAll('.posCatalog_select')) {
             const target = row.querySelector(':scope > .posCatalog_name');
             const label = target || row.querySelector(':scope > .posCatalog_title');
@@ -80,6 +123,27 @@
             entries.push({ id: row.id, chapterId: row.id.replace(/^cur/, ''), number, title, parentId,
                 isGroup: !target, target, active: row.classList.contains('posCatalog_active'),
                 completed, pending, scores: [] });
+        }
+        if (!entries.length) {
+            // Confirmed legacy layout: no li ancestry or colour-to-status mapping is known.
+            structure = 'legacy-h4';
+            const currentChapterId = courseStudyContext(sourceDoc).chapterId;
+            const switchesChapter = node => /^\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('onclick') || '')
+                || /^\s*javascript:\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('href') || '');
+            for (const row of root.querySelectorAll('h4[id^="cur"]')) {
+                if (row.id.length <= 3 || seenIds.has(row.id)) continue;
+                const links = [...row.querySelectorAll('a[title]')].filter(link => link.closest('h4[id^="cur"]') === row);
+                if (links.length !== 1) continue;
+                const link = links[0], title = clean(link.getAttribute('title'));
+                if (!title) continue;
+                const number = clean(row.querySelector('.hideChapterNumber')?.textContent);
+                // Delegate to the original link/row handler; never evaluate its arguments ourselves.
+                const target = switchesChapter(link) || switchesChapter(row) ? link : null;
+                seenIds.add(row.id);
+                entries.push({ id:row.id, chapterId:row.id.replace(/^cur/, ''), number, title,
+                    parentId:null, hierarchyKnown:false, isGroup:false, target,
+                    active:currentChapterId ? row.id.replace(/^cur/, '') === currentChapterId : null, completed:null, pending:null, scores:[] });
+            }
         }
         const scopeKey = courseScoreKey(sourceDoc);
         const stored = scopeKey ? get(scopeKey, {}) : {};
@@ -98,7 +162,8 @@
         for (const entry of entries) {
             entry.scores = Object.values(scores[entry.chapterId] || {}).filter(item => item && Number.isFinite(item.score) && item.score >= 0);
         }
-        return { ...context, entries, scopeKey };
+        // An existing container with unknown rows is not an empty/completed course.
+        return { ...context, entries, scopeKey, structure: entries.length ? structure : 'unrecognized' };
     }
 
     function catalogStatus(entry) {
@@ -159,7 +224,7 @@
                     row.append(fold);
                 } else row.append(make('span', 'catalog-fold-space'));
                 const button = make('button', 'catalog-link'); button.type = 'button';
-                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = controller.state.busy || courseRunActive(); }
+                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = !entry.target || controller.state.busy || courseRunActive(); }
                 if (entry.active) button.setAttribute('aria-current', 'page');
                 button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
                 const meta = make('span', 'catalog-meta');
@@ -189,9 +254,11 @@
         };
         const fragment = doc.createDocumentFragment();
         appendEntries(null, fragment);
-        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : '未读取到课程目录，请在课程学习页面打开。'));
+        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
         list.replaceChildren(fragment);
-        shadow.getElementById('catalog-status').textContent = entries.length ? `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
+        shadow.getElementById('catalog-status').textContent = entries.length ? catalog.context?.structure === 'legacy-h4'
+            ? `共 ${entries.length} 个章节；旧版目录层级与完成状态未确认`
+            : `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
     }
 
     function navigateCourseChapter(id) {
@@ -216,7 +283,7 @@
                     if (catalog.timer) return;
                     catalog.timer = setTimeout(() => { catalog.timer = null; refreshCourseSidebar(); }, 100);
                 });
-                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title'], characterData: true });
+                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title', 'id', 'onclick', 'href'], characterData: true });
             }
         }
         renderCourseCatalog();

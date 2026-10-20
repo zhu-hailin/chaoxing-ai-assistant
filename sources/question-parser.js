@@ -99,9 +99,47 @@
         collect(stem?.closest('.Zy_TItle') || stem, 'stem');
         return { media, imageNodes };
     }
+    function isMooc2HomeworkDocument(doc) {
+        try { return /^\/mooc-ans\/mooc2\/work\/dowork\/?$/.test(new URL(doc.URL).pathname); }
+        catch { return false; }
+    }
+    function readMooc2ChoiceBindings(node) {
+        // Display letters are model keys. The platform's data values stay in private bindings.
+        const records=[],diagnostics=[],keys=new Set(),values=new Set(),doc=node.ownerDocument;
+        const rows=[...node.querySelectorAll('.stem_answer .answerBg')].filter(row=>row.closest('.questionLi.singleQuesId')===node);
+        let qid='',qtype='';
+        for (const row of rows) {
+            const markers=[...row.querySelectorAll('.num_option')],contents=[...row.querySelectorAll('.answer_p')];
+            const marker=markers[0],content=contents[0],key=clean(marker?.textContent),value=marker?.getAttribute('data') || '';
+            const rowId=row.getAttribute('qid') || '',rowType=row.getAttribute('qtype') || '';
+            if (!qid) { qid=rowId;qtype=rowType; }
+            if (markers.length!==1 || contents.length!==1 || !/^[A-Z]$/.test(key) || !value || value!==value.trim()
+                || keys.has(key) || values.has(value) || !/^\d+$/.test(rowId) || rowId!==qid || !rowType || rowType!==qtype
+                || !['radio','checkbox'].includes(row.getAttribute('role'))
+                || !/^\s*(?:return\s+)?addChoice\(\s*this\s*\)\s*;?\s*$/.test(row.getAttribute('onclick') || '')
+                || row.querySelector('input[type="radio"],input[type="checkbox"],.answerBg'))
+                diagnostics.push('mooc2 选项字母、内部标识或原生点击结构无法唯一对应');
+            keys.add(key);values.add(value);
+            records.push({key,value,row,marker,content,qtype:rowType,role:row.getAttribute('role'),handler:row.getAttribute('onclick')});
+        }
+        if (!rows.length) diagnostics.push('mooc2 选项尚未加载或结构未适配');
+        if (qid && [...doc.querySelectorAll('.answerBg[qid]')].some(row=>row.getAttribute('qid')===qid && !rows.includes(row)))
+            diagnostics.push('mooc2 题目选项组跨题共享，暂不预填');
+        const saved=qid ? [...doc.querySelectorAll('[id]')].filter(element=>element.id==='answer'+qid) : [];
+        const savedInput=saved[0] || null;
+        if (saved.length!==1 || !savedInput?.matches('input[type="hidden"]') || savedInput.form!==node.closest('form'))
+            diagnostics.push('mooc2 原生答案字段无法唯一关联');
+        return {valid:diagnostics.length===0,qid,qtype,records,savedInput,diagnostics:[...new Set(diagnostics)]};
+    }
+    function sameMooc2ChoiceBindings(before,after) {
+        if (!before || !after) return !before && !after;
+        return before.valid===after.valid && before.qid===after.qid && before.qtype===after.qtype
+            && before.savedInput===after.savedInput && before.records.length===after.records.length
+            && before.records.every((record,index)=>['key','value','row','marker','content','qtype','role','handler'].every(key=>record[key]===after.records[index][key]));
+    }
     function rawQuestion(node, index, adapter, videoContext = {}) {
-        // 仅视频适配器可传入已验证的局部题干/题型；普通章节选择器保持原样。
-        const local = adapter === 'video-quiz' ? videoContext : {};
+        // Only verified local adapters supply context; ordinary chapter selectors stay unchanged.
+        const local = ['video-quiz','chaoxing-mooc2-work'].includes(adapter) ? videoContext : {};
         const stem = local.stem || node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
@@ -114,8 +152,12 @@
             questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
+        const mooc2=adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node) : null;
         let optionTargets, options, writer;
-        if (legacy.length) {
+        if (mooc2) {
+            options=mooc2.records.map(record=>({key:record.key,text:clean(questionContentText(record.content))}));
+            optionTargets=new Map(mooc2.records.map(record=>[record.key,record.row]));writer='mooc2-choice';
+        } else if (legacy.length) {
             const type = detectType(typeLabel || question);
             options = legacy.map((li, i) => { const key = optionKey(li, i, type); return { key, text: optionText(li, key) }; });
             optionTargets = new Map(options.map((option, i) => [option.key, legacy[i]])); writer = 'chapter-choice';
@@ -144,8 +186,13 @@
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, adapterHints:local.graphHints || {} } };
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, adapterHints:local.graphHints || {} } };
     }
+    registerPageAdapter({
+        id:'chaoxing-mooc2-work',
+        collect:(doc,context={})=>context.scope==='video-quiz' || !isMooc2HomeworkDocument(doc) ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId')],
+        read:(node,index)=>rawQuestion(node,index,'chaoxing-mooc2-work',{typeLabel:clean(node.getAttribute('typename')) || undefined})
+    });
     registerPageAdapter({
         id: 'chaoxing-chapter',
         collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.singleQuesId')].filter(node => !node.closest('.fanyaMarking_left')),
@@ -153,7 +200,7 @@
     });
     registerPageAdapter({
         id: 'chaoxing-homework',
-        collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
+        collect: (doc, context = {}) => context.scope === 'video-quiz' || isMooc2HomeworkDocument(doc) ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
         read: (node, index) => rawQuestion(node, index, 'chaoxing-homework')
     });
     function canonicalType(raw) {
@@ -213,6 +260,8 @@
         const choice = ['single','multiple','judge'].includes(type);
         const nativeCompatible = type === 'multiple' ? raw.controls.checkboxes === raw.options.length : raw.controls.radios === raw.options.length;
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
+        const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
+        if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
         const ownMedia = raw.media || [];
         if (!raw.question && !ownMedia.length) { diagnostics.push('缺少可读取题干'); prefill = false; }
         if (!uniqueOptions) { diagnostics.push('选项键重复，无法可靠对应控件'); prefill = false; }
@@ -234,7 +283,7 @@
             groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:[],
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
-            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages, prefill }, diagnostics
+            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages && !mooc2Invalid, prefill }, diagnostics
         };
         question.answerPolicy=questionLocalAnswerPolicy(question);
         return { question, binding: { ...raw.binding, type, canPrefill: prefill } };
@@ -349,7 +398,7 @@
             controls.push(descriptor); runtime.set(id, target);
         };
         for (const [key, target] of binding.optionTargets || []) add(target,
-            binding.writer === 'chapter-choice' ? 'chapter-choice' : target.type === 'checkbox' ? 'checkbox' : 'radio',
+            ['chapter-choice','mooc2-choice'].includes(binding.writer) ? binding.writer : target.type === 'checkbox' ? 'checkbox' : 'radio',
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
             ['blank','essay'].includes(question.type) && !question.controls?.richText);

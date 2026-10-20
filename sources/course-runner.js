@@ -248,25 +248,30 @@
         const limits = { ...COURSE_RUN_LIMITS, ...options.limits };
         const now = options.now || (() => Date.now());
         const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
-        const scope = courseScoreKey(owner);
-        const key = scope ? `cx_course_run:${scope}` : null;
+        let scope = courseScoreKey(owner);
+        let key = scope ? `cx_course_run:${scope}` : null;
         let session;
         try {
             session = owner.defaultView.sessionStorage.getItem('cx-ai-course-session');
             if (!session) { session = crypto.randomUUID(); owner.defaultView.sessionStorage.setItem('cx-ai-course-session',session); }
         } catch { session = crypto.randomUUID(); }
         let current = null;
-        const api = { owner, key, get busy() { return Boolean(current && !current.cancelled); },
+        const refreshScope = () => {
+            if (current) return; // A running session keeps its frozen identity and account-change guard.
+            scope = courseScoreKey(owner);key = scope ? `cx_course_run:${scope}` : null;
+        };
+        const api = { owner, get key() { refreshScope();return key; }, get busy() { return Boolean(current && !current.cancelled); },
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
             get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
-            get canRetry() { return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
+            get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
+                refreshScope();
                 const candidate=courseRetryCandidate(owner,key?get(key,null):null);
                 if(!candidate.allowed || token!==undefined&&token!==candidate.token){ctl.report(candidate.allowed?'运行记录已变化，请重新确认重试':candidate.reason,'error');return;}
                 return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
-            get report() { return current?.report || (key ? get(key,null)?.report : null); },
+            get report() { refreshScope();return current?.report || (key ? get(key,null)?.report : null); },
             stop(reason = '用户停止自动学习', diagnosticError = null) {
                 if (!current || current.cancelled) return;
                 const cancellation=cancelledError();cancellation.message=reason;
@@ -288,12 +293,28 @@
             },
             async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
-                if (!scope || studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
+                if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
+                }
+                refreshScope();
+                const identity=courseStudyContext(owner);
+                if (!scope) {
+                    ctl.report(['identity-conflict','parameter-conflict'].includes(identity.reason)
+                        ? '课程身份冲突：课程页面与课程 iframe 的课程、班级或账号标识不一致，已停止'
+                        : '已识别课程页面，但课程、班级或账号标识尚未就绪；等待所属课程 iframe 加载后再开始','error');return;
                 }
                 if (ctl.state.busy) return;
                 const catalog = readCourseCatalog(owner);
-                if (!catalog?.entries.some(item => !item.isGroup)) { ctl.report('没有读取到可遍历的课程目录','error'); return; }
+                if (!catalog?.entries.some(item => !item.isGroup)) { ctl.report(catalog?.structure==='unrecognized'
+                    ? '已找到课程目录，但尚未识别章节结构；加载后仍为空时，请提供章节项 HTML 以适配'
+                    : '没有读取到可遍历的课程目录','error'); return; }
+                if(catalog.structure==='legacy-h4') {
+                    const active=catalog.entries.filter(item=>!item.isGroup&&item.active===true),tree=courseFrameTree(owner);
+                    if(active.length!==1||!identity.loadedCardsURL||!courseContentReady(owner)||tree.inaccessible.length
+                        ||!coursePageTasks(tree).some(task=>['video','document','quiz','knowledge-graph'].includes(task.type))) {
+                        ctl.report('已识别旧版课程目录，但当前章节或实际任务尚未就绪；请等待课程内容加载后再开始','error');return;
+                    }
+                }
                 const previous = get(key,null);
                 let retryCandidate=null;
                 if(retry) {
@@ -1129,6 +1150,7 @@
                         },limits.submitMs,'测验提交后未收到成功状态，请人工核对；不会重试提交');
                         context.submitting=false;context.submissionFrames=null;task.status='done';task.questionCount=data.total;report.quizzes++;
                     };
+                    const legacyCatalog=readCourseCatalog(owner)?.structure==='legacy-h4';
                     const boundary=run.rangeStart?.chapterId===chapter.id?run.rangeStart:null;
                     const firstIndex=Math.max(run.tabIndex,boundary?.tabIndex||0);
                     const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
@@ -1258,12 +1280,12 @@
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
-                            if(!tasks.length && lastTab && (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
+                            if(!tasks.length && lastTab && (legacyCatalog ? pendingHere() : (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed)) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if(!pendingHere() && (rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
+                                    if(!pendingHere() && (legacyCatalog||rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -1294,6 +1316,10 @@
                         chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
                         chapter.reason='已遍历全部标签，最后一页无任务控件，已继续下一节；目录仍未确认完成，保留待人工核对';
                         save();return;
+                    }
+                    if(legacyCatalog && !pending()?.completed && pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已处理本章实际任务；旧版目录未提供整章完成标记，保留待核对并继续下一节';save();return;
                     }
                     if(!pending()?.completed && pending()?.pending!==0) await until(()=>pending()?.completed||pending()?.pending===0,limits.completionMs,'本章仍有未完成任务或状态未提供，已停止');
                     chapter.status='done';save();
@@ -1403,6 +1429,7 @@
                 return report;
             },
             resumeIfNeeded() {
+                refreshScope();
                 const previous=key?get(key,null):null;
                 if(!previous?.protection?.triggered && previous?.status==='running' && previous.handoff===true && previous.session===session && now()-previous.heartbeat<60000) return api.start({resume:true});
             }
@@ -1412,12 +1439,14 @@
         let starting=false;
         api.start=async options=>{
             if(starting || current || courseRunActive(owner))return;
+            refreshScope();const startScope=scope;
             starting=true;
             try {
                 const locks=owner.defaultView.navigator.locks;
                 if(!scope || !locks?.request)return await startUnlocked(options);
                 return await locks.request(`cx-ai-course-run:${scope}`,{ifAvailable:true},lock=>{
                     if(!lock){ctl.report('另一个页面正在运行本课程，请先停止该页面','error');return;}
+                    if(courseScoreKey(owner)!==startScope){ctl.report('获取运行锁期间课程或账号已变化，请重新开始','error');return;}
                     return startUnlocked(options);
                 });
             } catch(error) {ctl.report(error.message,'error');}

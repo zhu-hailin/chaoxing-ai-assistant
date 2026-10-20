@@ -564,7 +564,7 @@
     }
     const chapterContextCache = new WeakMap();
     function chapterContextIdentity(doc) {
-        const owner=studyOwnerDocument(doc),chapterId=owner?.querySelector('#curChapterId')?.value;
+        const owner=studyOwnerDocument(doc),chapterId=owner&&(courseStudyContext(owner).chapterId||owner.querySelector('#curChapterId')?.value);
         const scope=owner && courseScoreKey(owner);
         return owner && scope && chapterId ? {owner,chapterId:String(chapterId),id:`${scope}:${chapterId}`} : null;
     }
@@ -1296,7 +1296,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.25',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.26',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

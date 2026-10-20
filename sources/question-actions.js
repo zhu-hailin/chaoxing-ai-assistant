@@ -7,10 +7,84 @@
     function questionActionDisabled(node) {
         return !node || node.disabled || node.readOnly || node.hasAttribute('disabled') || node.matches('.disabled,.x-item-disabled') || node.getAttribute('aria-disabled')==='true';
     }
-    function questionActionState(binding, question, parseContext) {
-        const keys=[...binding.optionTargets].filter(([,node])=>selected(node)).map(([key])=>key);
+    function questionActionChapterInputs(binding, question, parseContext) {
+        if (parseContext?.scope==='video-quiz' || binding.writer!=='chapter-choice' || !['single','multiple','judge'].includes(question.type)) return null;
+        const targets=new Map(),nativeTargets=new Map(),doc=binding.node.ownerDocument;
+        for (const [key,row] of binding.optionTargets) {
+            const inputs=[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')];
+            if (!inputs.length) { targets.set(key,row);continue; } // Existing num_option/native row writer.
+            const input=inputs[0],kind=question.type==='multiple'?'checkbox':'radio';
+            if (inputs.length!==1 || input.closest('li')!==row || input.type!==kind)
+                throw questionActionError('CX-MAT-005','选项与原生选择控件无法唯一对应');
+            if (questionActionDisabled(row) || questionActionDisabled(input) || input.matches(':disabled'))
+                throw questionActionError('CX-CTL-004','原生选择控件不可用');
+            targets.set(key,input);nativeTargets.set(key,input);
+        }
+        if (!nativeTargets.size) return null;
+        const radios=[...nativeTargets.values()].filter(input=>input.type==='radio');
+        if (radios.some(input=>!input.name || input.name!==radios[0].name || input.form!==radios[0].form
+            || [...doc.getElementsByName(input.name)].some(other=>other.type==='radio' && other.form===input.form && !radios.includes(other))))
+            throw questionActionError('CX-MAT-005','原生单选控件组缺失或跨题共享');
+        return {targets,nativeTargets};
+    }
+    function questionActionChapterCheckbox(binding, question, parseContext) {
+        if (parseContext?.scope === 'video-quiz' || binding.writer !== 'chapter-choice' || question.type !== 'multiple'
+            || ![...binding.optionTargets.values()].some(node => node.matches('li.before-after-checkbox'))) return null;
+        try { if (!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(binding.node.ownerDocument.URL).pathname)) return null; }
+        catch { return null; }
+        const doc=binding.node.ownerDocument,id=String(question.id),controls=new Map();
+        if (!/^\d+$/.test(id)) throw questionActionError('CX-MAT-005','旧版选项与题目编号无法可靠对应');
+        for (const [key,row] of binding.optionTargets) {
+            const inputs=[...row.querySelectorAll('input')],input=inputs[0];
+            const call=/^\s*addcheck\(\s*(\d+)\s*\)\s*;?\s*$/.exec(row.getAttribute('onclick') || '');
+            if (!row.matches('li.before-after-checkbox') || inputs.length!==1 || !input?.matches('input[type="checkbox"]')
+                || input.closest('li')!==row || !input.closest('label.before') || input.name!==`answercheck${id}`
+                || input.value!==key || !/^[A-Z]$/.test(key) || call?.[1]!==id)
+                throw questionActionError('CX-MAT-005','旧版多选控件结构或关联已变化');
+            if (questionActionDisabled(row) || questionActionDisabled(input) || input.matches(':disabled'))
+                throw questionActionError('CX-CTL-004','旧版多选控件不可用');
+            controls.set(key,input);
+        }
+        // addcheck reads the whole named group in document order; reject controls shared with another question.
+        const order=[...doc.getElementsByName(`answercheck${id}`)],saved=[...doc.querySelectorAll(`[id="answer${id}"]`)];
+        if (order.length!==controls.size || order.some(input=>![...controls.values()].includes(input)) || saved.length>1
+            || saved.length===1 && (!saved[0].matches('input[type="hidden"]') || order.some(input=>input.form!==saved[0].form)))
+            throw questionActionError('CX-MAT-005','旧版多选选项组或原生答案字段无法唯一对应');
+        if (saved[0] && questionActionDisabled(saved[0])) throw questionActionError('CX-CTL-004','原生答案字段不可用');
+        return {controls,order,savedInput:saved[0] || null};
+    }
+    function questionActionNativeChoiceVerified(unit) {
+        const keys=[...unit.chapterInputs.targets].filter(([,node])=>selected(node)).map(([key])=>key);
+        return keys.length===unit.targetKeys.size && keys.every(key=>unit.targetKeys.has(key));
+    }
+    function questionActionCheckboxVerified(unit,expected=unit.targetKeys) {
+        const adapter=unit.chapterCheckbox,inputs=adapter.order.filter(input=>input.checked),keys=inputs.map(input=>input.value);
+        return keys.length===expected.size && keys.every(key=>expected.has(key)) && (!adapter.savedInput || adapter.savedInput.value===keys.join(''));
+    }
+    function questionActionMooc2State(binding,question) {
+        const adapter=binding.mooc2,keys=[],values=[];
+        let consistent=adapter.valid;
+        for (const record of adapter.records) {
+            const checked=record.marker.classList.contains('check_answer'),aria=record.row.getAttribute('aria-checked');
+            const pressed=record.row.getAttribute('aria-pressed');
+            if ((aria!==null && !['true','false'].includes(aria)) || (checked ? aria!=='true' : aria==='true')) consistent=false;
+            if (pressed!==null && pressed!==(checked?'true':'false')) consistent=false;
+            if (checked) { keys.push(record.key);values.push(record.value); }
+        }
+        const saved=adapter.savedInput?.value || '';
+        if (saved!==values.join('') || question.type!=='multiple' && keys.length>1) consistent=false;
+        return {keys:[...keys].sort(),values:[],saved,unknownSaved:!consistent};
+    }
+    function questionActionMooc2Verified(unit,expected=unit.targetKeys) {
+        const state=questionActionMooc2State(unit.binding,unit.question);
+        return !state.unknownSaved && state.keys.length===expected.size && state.keys.every(key=>expected.has(key));
+    }
+    function questionActionState(binding, question, parseContext, chapterCheckbox = null, chapterInputs = null) {
+        if (binding.mooc2) return questionActionMooc2State(binding,question);
+        const keys=chapterCheckbox ? chapterCheckbox.order.filter(input=>input.checked).map(input=>input.value)
+            : [...binding.optionTargets].filter(([key,node])=>selected(chapterInputs?.targets.get(key) || node)).map(([key])=>key);
         // This saved value protects ordinary existing answers. Never read video hidden answers.
-        const hidden=parseContext?.scope==='video-quiz'?null:[...binding.node.querySelectorAll('input[type="hidden"]')].find(node=>node.name===`answer${question.id}`);
+        const hidden=parseContext?.scope==='video-quiz'?null:chapterCheckbox?.savedInput || [...binding.node.querySelectorAll('input[type="hidden"]')].find(node=>node.name===`answer${question.id}`);
         const saved=clean(hidden?.value),savedParts=saved?savedKeys(saved,binding.optionTargets):[],unknownSaved=Boolean(saved && (!savedParts.length || !savedParts.every(key=>binding.optionTargets.has(key))));
         if(saved && !keys.length && !unknownSaved) keys.push(...savedParts);
         return {keys:[...new Set(keys)].sort(),values:binding.inputs.map(input=>String(input.value)),saved,unknownSaved};
@@ -45,11 +119,12 @@
             if(!binding.canPrefill || current.capabilities?.prefill===false){failUnit(question,entry,`${current.diagnostics?.join('；') || '控件映射不可靠'}，跳过`);continue;}
             const responseUnit=graph.questions.flatMap(item=>item.responseUnits).find(item=>item.id===entry.id);
             if(!responseUnit || !graph.relations.some(relation=>relation.responseUnitId===entry.id&&relation.status==='confirmed')){failUnit(question,entry,'题目与控件缺少已确认的关联，跳过');continue;}
-            const state=questionActionState(binding,current,parseContext),text=['blank','essay'].includes(current.type);
+            const chapterInputs=questionActionChapterInputs(binding,current,parseContext),chapterCheckbox=questionActionChapterCheckbox(binding,current,parseContext);
+            const state=questionActionState(binding,current,parseContext,chapterCheckbox,chapterInputs),text=['blank','essay'].includes(current.type);
             const original=parseContext.scope==='video-quiz'?options.ownedAnswers?.get(entry.id):null;
             const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
             const owns=Boolean(previous && previous.node===binding.node);
-            const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,text,previous,owns,state,actions:[],targets:new Map()};
+            const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,chapterInputs,chapterCheckbox,text,previous,owns,state,actions:[],targets:new Map()};
             if(text) {
                 const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
                 if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
@@ -62,6 +137,7 @@
                 const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
                 if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
                 if(state.unknownSaved){failUnit(question,entry,'已有无法识别的手工答案，跳过');continue;}
+                if((chapterCheckbox || binding.mooc2) && (state.keys.length || state.saved) && (state.keys.length!==targetKeys.size || state.keys.some(key=>!targetKeys.has(key)))) {failUnit(question,entry,'已有手工作答，未覆盖');continue;}
                 if(owns && (!previous.keys || previous.keys.length!==state.keys.length || previous.keys.some(key=>!state.keys.includes(key))))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
                 if(parseContext.scope==='video-quiz' && state.keys.length && !owns){failUnit(question,entry,'已有手工作答，等待人工处理');continue;}
                 if(!owns && state.keys.some(key=>!targetKeys.has(key))){failUnit(question,entry,'已有不同选项，未覆盖');continue;}
@@ -100,7 +176,19 @@
             validate();
             const {binding}=unit,nodes=[binding.node,...binding.inputs,...binding.optionTargets.values()];
             if(nodes.some(node=>!node?.isConnected || node.ownerDocument!==live.doc || node!==binding.node&&!binding.node.contains(node)))throw questionActionError('CX-CTL-006','作答控件已替换，请重新分析');
-            if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
+            const native=questionActionChapterInputs(binding,unit.question,live.parseContext);
+            if(Boolean(native)!==Boolean(unit.chapterInputs) || native && (native.targets.size!==unit.chapterInputs.targets.size
+                || [...unit.chapterInputs.targets].some(([key,node])=>native.targets.get(key)!==node)))
+                throw questionActionError('CX-CTL-006','原生选项控件已替换');
+            if(unit.chapterCheckbox) {
+                const current=questionActionChapterCheckbox(binding,unit.question,live.parseContext),before=unit.chapterCheckbox;
+                if(!current || current.savedInput!==before.savedInput || current.order.length!==before.order.length
+                    || current.order.some((input,index)=>input!==before.order[index]) || [...before.controls].some(([key,input])=>current.controls.get(key)!==input))
+                    throw questionActionError('CX-CTL-006','旧版多选原生控件已替换');
+            }
+            if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
+            if(binding.mooc2 && (questionActionDisabled(binding.mooc2.savedInput) || binding.mooc2.records.some(record=>questionActionDisabled(record.marker))))
+                throw questionActionError('CX-CTL-004','mooc2 原生选项或答案字段不可用');
             if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
         };
         const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
@@ -112,7 +200,14 @@
             unitLoop:for(const unit of live.units) {
                 activeUnit=unit;activeWrites=0;activeRecorded=false;
                 validateUnit(unit);
-                if(!unit.actions.length){result(unit,'already');continue;}
+                if(!unit.actions.length){
+                    if(unit.chapterInputs || unit.binding.mooc2) {
+                        const verified=()=>unit.binding.mooc2 ? questionActionMooc2Verified(unit) : unit.chapterCheckbox ? questionActionCheckboxVerified(unit) : questionActionNativeChoiceVerified(unit);
+                        await waitFor(verified,unit.chapterCheckbox?750:450);validateUnit(unit,false);
+                        if(!verified()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：原生选中状态与已有答案不同步，已停止后续填写`);break;}
+                    }
+                    result(unit,'already');continue;
+                }
                 if(unit.text) {
                     const input=unit.input;
                     write(()=>{
@@ -134,15 +229,24 @@
                         validateUnit(unit);
                         const target=unit.targets.get(action.targetId);
                         if(questionActionDisabled(target))throw questionActionError('CX-CTL-004','作答控件不可编辑');
-                        write(()=>target.click());
+                        const input=unit.chapterInputs?.targets.get(action.value),expected=new Set(unit.state.keys);
+                        if(action.type==='select')expected.add(action.value);else expected.delete(action.value);
+                        if(unit.chapterInputs && !input)throw questionActionError('CX-MAT-005','选项与原生点击目标的关联已变化');
+                        const clickTarget=unit.chapterInputs ? input : target;
+                        // A previous native action may already have produced the desired state; do not toggle it again.
+                        if(unit.chapterInputs?.nativeTargets.has(action.value) && selected(clickTarget)===(action.type==='select'))continue;
+                        // The input owns native selection; its click bubbles to the original row handler once.
+                        write(()=>clickTarget.click());
                         activeWrites++;
-                        await waitFor(()=>selected(target)===(action.type==='select'));
+                        const notBefore=Date.now()+200;
+                        const verifiedAction=()=>unit.binding.mooc2 ? questionActionMooc2Verified(unit,expected) : unit.chapterCheckbox ? Date.now()>=notBefore && questionActionCheckboxVerified(unit,expected) : selected(clickTarget)===(action.type==='select');
+                        await waitFor(()=>{if(unit.chapterCheckbox && (signal?.aborted || userEdited))validate();return verifiedAction();},unit.chapterCheckbox?750:450);
                         validateUnit(unit,false);
-                        if(selected(target)!==(action.type==='select')){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：控件状态未确认，已停止后续填写`);break unitLoop;}
-                        // Capture only after the script-owned native action; trusted user events still cancel.
-                        unit.state=questionActionState(unit.binding,unit.question,live.parseContext);
+                        if(!verifiedAction()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：${unit.chapterCheckbox?'checkbox 状态或原生答案同步未确认':'控件状态未确认'}，已停止后续填写`);break unitLoop;}
+                        // Capture after the platform's saved-answer timer; do not misclassify it as user input.
+                        unit.state=questionActionState(unit.binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs);
                     }
-                    const verified=()=>{const state=questionActionState(unit.binding,unit.question,live.parseContext);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key));};
+                    const verified=()=>{if(unit.binding.mooc2)return questionActionMooc2Verified(unit);if(unit.chapterCheckbox)return questionActionCheckboxVerified(unit);const state=questionActionState(unit.binding,unit.question,live.parseContext,null,unit.chapterInputs);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key)) && (!unit.chapterInputs || questionActionNativeChoiceVerified(unit));};
                     await waitFor(verified);validateUnit(unit,false);
                     if(verified())result(unit,'filled');else{result(unit,'unverified');summary.details.push(`第${unit.question.number}题：已触发点击，请手动检查是否选中`);break;}
                 }

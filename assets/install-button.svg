@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="104" viewBox="0 0 480 104" role="img" aria-labelledby="title desc">
+  <title id="title">一键安装 / 更新脚本</title>
+  <desc id="desc">点击进入学习通AI助手完整用户脚本的篡改猴安装或更新页面</desc>
+  <rect x="4" y="8" width="472" height="92" rx="18" fill="#12368e"/>
+  <rect x="4" y="4" width="472" height="92" rx="18" fill="#1d4ed8" stroke="#ffffff" stroke-opacity=".3"/>
+  <rect x="22" y="22" width="58" height="56" rx="13" fill="#ffffff" fill-opacity=".14"/>
+  <path d="M51 32v25m-10-10 10 10 10-10M37 64v7h28v-7" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="102" y="61" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="29" font-weight="700">一键安装 / 更新脚本</text>
+  <path d="m432 42 8 8-8 8" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

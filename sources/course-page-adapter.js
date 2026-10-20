@@ -270,14 +270,14 @@
         try {
             const scope=courseScoreKey(owner),base=pageURL(owner),frame=owner.querySelector('#mainid #iframe');
             const template=new URL(frame?.getAttribute('src')||'',base);
-            const course=base?.searchParams.get('courseId')||base?.searchParams.get('courseid');
-            const classroom=base?.searchParams.get('clazzid')||base?.searchParams.get('classId'),student=base?.searchParams.get('cpi');
-            if(!scope||!base||base.pathname!=='/mycourse/studentstudy'||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
-                ||template.searchParams.get('courseid')!==course||template.searchParams.get('clazzid')!==classroom||template.searchParams.get('cpi')!==student)return unknown('native-url-unavailable');
+            const {course,classroom,student}=courseStudyContext(owner),templateContext=courseURLContext(template);
+            if(!scope||!isCourseStudyURL(base)||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
+                ||templateContext.conflict||templateContext.course!==course||templateContext.classroom!==classroom||templateContext.student!==student)return unknown('native-url-unavailable');
             const parseHeader=(root,cardTemplate)=>{
                 if(!root||root.querySelector('#chapterFaceState,[data-captcha],form[action*="login"]'))return unknown('page-gate');
-                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||cardTemplate.searchParams.get('courseid')!==course
-                    ||cardTemplate.searchParams.get('clazzid')!==classroom||cardTemplate.searchParams.get('cpi')!==student||cardTemplate.searchParams.get('knowledgeid')!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
+                const identity=courseURLContext(cardTemplate);
+                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||identity.conflict||identity.course!==course
+                    ||identity.classroom!==classroom||identity.student!==student||identity.chapterId!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
                 const nodes=[...root.querySelectorAll('#prev_tab li[id^="dct"]')],tabs=[];
                 for(const node of nodes) {
                     const call=/^\s*changeDisplayContent\(\s*(\d+)\s*,\s*(\d+)\s*,/.exec(node.getAttribute('onclick')||'');

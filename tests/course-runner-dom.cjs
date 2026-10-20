@@ -7,7 +7,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
-const code=source.replace(entry,'globalThis.courseAPI={isCourseStudyURL,isCourseStudyOrigin,studyOwnerDocument,mediaAddressAllowed,courseTaskTargetReady,courseInvalidateTaskProbe,createManualVideoProtection,initOtherFeatures,readCourseCatalog,courseProbeMarkup,courseProbeArguments,courseProbeSummary,courseTaskProbe,courseTaskEligibility,findNextCourseTask,courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
+const code=source.replace(entry,'globalThis.courseAPI={isCourseStudyURL,isCourseStudyOrigin,studyOwnerDocument,mediaAddressAllowed,courseTaskTargetReady,courseContentReady,coursePageWithoutTasks,courseInvalidateTaskProbe,createManualVideoProtection,initOtherFeatures,readCourseCatalog,courseURLContext,courseStudyContext,courseScoreKey,catalogStatus,refreshCourseSidebar,navigateCourseChapter,courseProbeMarkup,courseProbeArguments,courseProbeSummary,courseTaskProbe,courseTaskEligibility,findNextCourseTask,courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
 // DOM 模拟环境不能生成浏览器可信输入；只在测试代码替换激活检查。安全用例使用原始检查。
 const activationCheck='/* TRUSTED_ASSISTANT_ACTIVATION */';
 assert(code.includes(activationCheck));
@@ -273,9 +273,9 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
 (async()=>{
 
  // These domain-compatibility cases are added for user-authorized future runs; not executed for this repair.
- for(const host of ['mooc1.chaoxing.com','mooc1.xuexitong.com']) {
+ for(const [host,studyPath] of [['mooc1.chaoxing.com','/mycourse/studentstudy'],['mooc1.xuexitong.com','/mycourse/studentstudy'],['mooc1-2.chaoxing.com','/mooc-ans/mycourse/studentstudy']]) {
   await test(`课程域名：${host} 初始化、嵌套归属和重复挂载`,()=>{
-   const f=fixture([{tabs:[video()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+   const f=fixture([{tabs:[video()]}],{url:`https://${host}${studyPath}?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
     assert(f.d.getElementById('cx-ai-study-root'));assert(f.d.getElementById('cx-ai-study-toolbar'));
     assert.equal(f.api.studyOwnerDocument(f.doc),f.d);
     const nested=f.doc.createElement('iframe');f.doc.body.append(nested);assert.equal(f.api.studyOwnerDocument(nested.contentDocument),f.d);
@@ -286,7 +286,7 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    }finally{f.close();}
   });
   await test(`课程域名：${host} 后台保护保留激活和释放规则`,async()=>{
-   const f=fixture([{tabs:[video()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+   const f=fixture([{tabs:[video()]}],{url:`https://${host}${studyPath}?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
     const guard=f.api.backgroundPlaybackGuard;assert(guard);assert.equal(f.api.initBackgroundPlayback(),guard);
     await f.videos[0].play();let intercepted=0,received=0;
     const release=guard.activate({video:f.videos[0],canProtect:()=>true,onSuppressed:()=>intercepted++});
@@ -296,7 +296,7 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    }finally{f.close();}
   });
   await test(`课程域名：${host} 视频资料继续处理、关闭测验不提交`,async()=>{
-   const f=fixture([{tabs:[video(),ppt(),quiz()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+   const f=fixture([{tabs:[video(),ppt(),quiz()]}],{url:`https://${host}${studyPath}?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
     const result=await f.runner.start({submit:false});assert.equal(result.status,'done',result.reason);assert.equal(result.videos,1);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
    }finally{f.close();}
   });
@@ -304,7 +304,7 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
  await test('课程域名：元数据保留两类安装匹配、普通页与伪造主机不创建入口',()=>{
   assert.match(source,/^\/\/ @match\s+\*:\/\/\*\.chaoxing\.com\/\*$/m);assert.match(source,/^\/\/ @match\s+\*:\/\/\*\.xuexitong\.com\/\*$/m);
   const f=fixture([{tabs:[video()]}]);try{
-   for(const url of ['https://other.example/mycourse/studentstudy','https://mooc1.xuexitong.com.evil.invalid/mycourse/studentstudy','https://mooc1.xuexitong.com/mycourse/list'])assert.equal(f.api.isCourseStudyURL(new URL(url)),false);
+   for(const url of ['https://other.example/mycourse/studentstudy','https://mooc1.xuexitong.com.evil.invalid/mycourse/studentstudy','https://mooc1.xuexitong.com/mycourse/list','https://mooc1-2.chaoxing.com.evil.invalid/mooc-ans/mycourse/studentstudy','https://mooc1-2.chaoxing.com/mooc-ans/work/doHomeWorkNew','https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudyAjax','https://other.chaoxing.com/mooc-ans/mycourse/studentstudy'])assert.equal(f.api.isCourseStudyURL(new URL(url)),false);
    f.w.history.replaceState({},'','/mycourse/list');f.d.getElementById('cx-ai-study-root').remove();f.d.getElementById('cx-ai-study-toolbar').remove();f.api.initStudyAssistant();assert.equal(f.d.getElementById('cx-ai-study-root'),null);assert.equal(f.d.getElementById('cx-ai-study-toolbar'),null);assert.equal(f.api.initBackgroundPlayback(),null);
   }finally{f.close();}
  });
@@ -319,6 +319,164 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    send('https://mooc1.xuexitong.com',f.w);assert.equal(responses.length,1);assert.equal(responses[0].kind,'result');
   }finally{f.close();}
  });
+ // Reconstructed from the user's confirmed legacy selectors; colours/current item/hierarchy remain unverified.
+ const legacyDirectory = (f, html) => {const root=f.d.getElementById('coursetree');root.innerHTML=html;f.api.refreshCourseSidebar();return root;};
+ const legacyRow = (id, number, title, handler='onclick="getTeacherAjax(11,22,33)"') => `<h4 id="${id}"><a title="${title}" ${handler}><span class="hideChapterNumber">${number}</span>${title}</a><span class="roundpointStudent blue"></span></h4>`;
+ const legacyFixture = () => fixture([{tabs:[video()]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
+ await test('目录专项：旧版 h4 无 li 仍提取编号标题与本地章节 ID',()=>{
+  const f=legacyFixture();try{
+   const root=legacyDirectory(f,legacyRow('cur876543','1.2','矩阵的变换')+legacyRow('cur765432','2.1','行列式'));
+   const catalog=f.api.readCourseCatalog(f.d);assert.equal(catalog.structure,'legacy-h4');assert.equal(catalog.entries.length,2);assert.equal(root.querySelector('h4').closest('li'),null);
+   assert.deepEqual(Array.from(catalog.entries,e=>[e.id,e.chapterId,e.number,e.title]),[['cur876543','876543','1.2','矩阵的变换'],['cur765432','765432','2.1','行列式']]);
+   for(const entry of catalog.entries){assert.equal(entry.parentId,null);assert.equal(entry.hierarchyKnown,false);assert.equal(entry.isGroup,false);assert.equal(entry.target,root.querySelector('#'+entry.id+' a'));}
+   assert.equal(f.api.readCourseCatalog(f.doc).sourceDoc,f.d);
+  }finally{f.close();}
+ });
+ await test('目录专项：蓝色与未验证样式不推断完成数层级或当前选中',()=>{
+  const f=legacyFixture();try{
+   legacyDirectory(f,legacyRow('cur1001','1','父标题')+legacyRow('cur1002','1.1','子标题'));
+   const row=f.d.getElementById('cur1001');row.className='blue active posCatalog_active';row.insertAdjacentHTML('beforeend','<span class="orangeNew">0</span><i class="icon_Completed"></i>');
+   for(const entry of f.api.readCourseCatalog(f.d).entries){assert.equal(entry.completed,null);assert.equal(entry.pending,null);assert.equal(entry.active,null);assert.equal(entry.parentId,null);assert.equal(f.api.catalogStatus(entry),'状态未提供');}
+   assert.equal(f.submits,0);assert.equal(f.requests.length,0);
+  }finally{f.close();}
+ });
+ await test('目录专项：旧版章节点击只委托原生 getTeacherAjax 链接',()=>{
+  const f=legacyFixture();try{
+   const root=legacyDirectory(f,legacyRow('cur4512','3.1','原生跳转'));let clicked=0;const link=root.querySelector('a');link.addEventListener('click',event=>{event.preventDefault();clicked++;});
+   f.api.navigateCourseChapter('cur4512');assert.equal(clicked,1);assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert.equal(f.api.readCourseCatalog(f.d).entries[0].active,null);
+   const button=f.d.getElementById('cx-ai-study-root').shadowRoot.querySelector('[data-chapter-button="cur4512"]');assert(button);button.click();assert.equal(clicked,2);
+  }finally{f.close();}
+ });
+ await test('目录专项：href 与行级原生处理器可绑定未知链接保持禁用',()=>{
+  const f=legacyFixture();try{
+   const root=legacyDirectory(f,legacyRow('cur401','1','href','href="javascript:getTeacherAjax(77,88,99)"')+legacyRow('cur402','2','行处理器','')+legacyRow('cur403','3','未知链接','onclick="unverifiedAction()"'));
+   root.querySelector('#cur402').setAttribute('onclick','return getTeacherAjax(77,88,100)');f.api.refreshCourseSidebar();
+   const entries=f.api.readCourseCatalog(f.d).entries;assert(entries[0].target);assert(entries[1].target);assert.equal(entries[2].target,null);
+   const s=f.d.getElementById('cx-ai-study-root').shadowRoot;assert.equal(s.querySelector('[data-chapter-button="cur401"]').disabled,false);assert.equal(s.querySelector('[data-chapter-button="cur403"]').disabled,true);
+  }finally{f.close();}
+ });
+ await test('目录专项：重复 ID 多候选标题及空标题不会制造可执行章节',()=>{
+  const f=legacyFixture();try{
+   legacyDirectory(f,legacyRow('cur991','1','保留首项')+legacyRow('cur991','2','重复项')+'<h4 id="cur992"><a title="甲"></a><a title="乙"></a></h4>'+legacyRow('cur993','3',''));
+   const entries=f.api.readCourseCatalog(f.d).entries;assert.equal(entries.length,1);assert.equal(entries[0].title,'保留首项');
+  }finally{f.close();}
+ });
+ await test('目录专项：旧版平铺展示搜索与不可信标题使用文本渲染',()=>{
+  const f=legacyFixture();try{
+   const root=legacyDirectory(f,legacyRow('cur601','1.1','矩阵')+legacyRow('cur602','1.2','行列式'));root.querySelector('#cur602 a').title='<img src=x onerror=alert(1)>';f.api.refreshCourseSidebar();
+   const s=f.d.getElementById('cx-ai-study-root').shadowRoot,list=s.getElementById('catalog-list');assert.equal(list.querySelectorAll('[data-chapter-button]').length,2);assert.equal(list.querySelector('img'),null);assert.match(list.textContent,/<img src=x onerror=alert\(1\)>/);assert.match(s.getElementById('catalog-status').textContent,/2 个章节.*未确认/);
+   const search=s.getElementById('catalog-search');search.value='矩阵';search.dispatchEvent(new f.w.Event('input'));assert.equal(list.querySelectorAll('[data-chapter-button]').length,1);assert.equal(list.querySelector('[data-chapter-button]').dataset.chapterButton,'cur601');
+  }finally{f.close();}
+ });
+ await test('目录专项：后加载旧版章节和原生处理器更新可刷新展示',async()=>{
+  const f=legacyFixture();try{
+   const root=legacyDirectory(f,'<div>目录正在加载</div>');assert.equal(f.api.readCourseCatalog(f.d).structure,'unrecognized');root.innerHTML=legacyRow('cur711','7.1','后加载章节','');await delay(140);
+   const s=f.d.getElementById('cx-ai-study-root').shadowRoot;assert.equal(s.querySelector('[data-chapter-button="cur711"]').disabled,true);
+   root.querySelector('a').setAttribute('onclick','getTeacherAjax(44,55,66)');await delay(140);assert.equal(s.querySelector('[data-chapter-button="cur711"]').disabled,false);assert.equal(f.api.readCourseCatalog(f.d).structure,'legacy-h4');
+  }finally{f.close();}
+ });
+ await test('目录专项：新版目录层级完成标记待完成数及当前项保持原解析',()=>{
+  const f=legacyFixture();try{
+   legacyDirectory(f,'<ul><li><div class="posCatalog_select" id="curGroup"><span class="posCatalog_title" title="课程分组">课程分组</span></div><ul><li><div class="posCatalog_select posCatalog_active" id="cur31"><a class="posCatalog_name" title="新版完成章节"><em class="posCatalog_sbar">3.1</em>新版完成章节</a><i class="icon_Completed"></i></div></li><li><div class="posCatalog_select" id="cur32"><a class="posCatalog_name" title="新版待完成章节"><em class="posCatalog_sbar">3.2</em>新版待完成章节</a><span class="orangeNew">2</span></div></li></ul></li></ul>'+legacyRow('cur999','9','旁侧旧模板'));
+   const catalog=f.api.readCourseCatalog(f.d);assert.equal(catalog.structure,'pos-catalog');assert.equal(catalog.entries.length,3);const done=catalog.entries.find(e=>e.id==='cur31'),pending=catalog.entries.find(e=>e.id==='cur32');assert.equal(done.parentId,'curGroup');assert.equal(done.completed,true);assert.equal(done.active,true);assert.equal(pending.pending,2);assert.equal(pending.completed,false);assert.equal(f.api.catalogStatus(pending),'待完成 · 2项');assert.equal(done.target,f.d.querySelector('#cur31 .posCatalog_name'));
+  }finally{f.close();}
+ });
+
+ // Legacy runtime identity cases: source only in this repair, awaiting a future authorized run.
+ const legacyCardsContext = (f,params={}) => {
+  const query=new URLSearchParams({courseid:'mock-course',clazzid:'mock-class',cpi:'mock-account',knowledgeid:'1',num:'0',...params});
+  const url=new URL('/mooc-ans/knowledge/cards',f.w.location.href);url.search=query.toString();
+  const frame=f.d.querySelector('#mainid #iframe'),get=frame.getAttribute.bind(frame);frame.getAttribute=name=>name==='src'?url.href:get(name);
+  Object.defineProperty(f.doc,'URL',{value:url.href,configurable:true});return url;
+ };
+ const legacyNoCpiFixture = () => fixture([{tabs:[video({manual:true})]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?chapterId=1&courseId=mock-course&clazzid=mock-class&enc=mock-enc'});
+ await test('旧版启动：顶层缺 cpi 从已核对课程 iframe 补齐且启动时重新读取',async()=>{
+  const f=legacyNoCpiFixture();let pending;try{
+   assert.equal(f.runner.key,null);assert.equal(f.api.studyOwnerDocument(f.d),f.d);legacyCardsContext(f);
+   legacyDirectory(f,Array.from({length:113},(_,i)=>legacyRow('cur'+(i+1),String(i+1),'旧版章节'+(i+1),'href="javascript:getTeacherAjax(1,2,3)"')).join(''));
+   const catalog=f.api.readCourseCatalog(f.d);assert.equal(catalog.entries.length,113);assert.equal(catalog.entries.filter(e=>e.active).length,1);assert.equal(catalog.entries.find(e=>e.active).id,'cur1');assert(f.runner.key?.includes('mock-account'));
+   pending=f.runner.start({fromCurrent:true,submit:false});await waitForTest(()=>f.events.some(e=>e.startsWith('play:')));assert(!f.api.controller.state.message.includes('独立作业页'));f.runner.stop();await pending;assert.equal(f.submits,0);
+  }finally{f.runner.stop();if(pending)await pending;f.close();}
+ });
+ await test('旧版启动：字段大小写及别名统一且重复冲突参数拒绝',()=>{
+  const f=legacyNoCpiFixture();try{
+   f.w.history.replaceState({},'','?CourseID=mock-course&CLASSID=mock-class&chapterId=9');const url=legacyCardsContext(f);
+   url.search='CourseID=mock-course&ClassId=mock-class&CPI=mock-account&ChapterID=1';const frame=f.d.querySelector('#mainid #iframe');frame.getAttribute=name=>name==='src'?url.href:null;Object.defineProperty(f.doc,'URL',{value:url.href,configurable:true});
+   assert.equal(f.api.courseStudyContext(f.d).complete,true);assert.equal(f.api.readCourseCatalog(f.d).scopeKey,f.api.courseScoreKey(f.d));
+   const ambiguous=f.api.courseURLContext(new URL('https://mooc1-2.chaoxing.com/mooc-ans/knowledge/cards?courseId=one&courseid=two'));assert(ambiguous.conflict);
+  }finally{f.close();}
+ });
+ for(const field of ['courseid','clazzid','cpi'])await test('旧版启动：顶层与 iframe 身份冲突停止 '+field,async()=>{
+  const f=legacyNoCpiFixture();try{
+   f.w.history.replaceState({},'','?courseId=mock-course&clazzid=mock-class&cpi=mock-account');legacyCardsContext(f,{[field]:'other-identity'});assert.equal(f.api.courseScoreKey(f.d),null);
+   await f.runner.start({submit:false});assert.match(f.api.controller.state.message,/课程身份冲突/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,0);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
+  }finally{f.close();}
+ });
+ await test('旧版启动：跨域或非 cards URL 不提供缺失账号且独立作业仍拒绝',async()=>{
+  const f=legacyNoCpiFixture();try{
+   const frame=f.d.querySelector('#mainid #iframe');for(const url of ['https://unknown.invalid/mooc-ans/knowledge/cards?courseid=mock-course&clazzid=mock-class&cpi=other','https://mooc1-2.chaoxing.com/unrelated?courseid=mock-course&clazzid=mock-class&cpi=other']){frame.getAttribute=name=>name==='src'?url:null;assert.equal(f.api.courseScoreKey(f.d),null);}
+   f.w.history.replaceState({},'','/mooc-ans/work/doHomeWorkNew?courseId=mock-course&clazzid=mock-class&cpi=mock-account');assert.equal(f.api.studyOwnerDocument(f.d),null);await f.runner.start({submit:false});assert.match(f.api.controller.state.message,/独立作业页/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,0);
+  }finally{f.close();}
+ });
+ await test('旧版启动：src 元数据不冒充已加载章节或视频任务',async()=>{
+  const f=legacyNoCpiFixture();try{
+   legacyCardsContext(f);legacyDirectory(f,legacyRow('cur1','1','旧版章节'));Object.defineProperty(f.doc,'URL',{value:'about:blank',configurable:true});assert.equal(f.api.courseStudyContext(f.d).complete,true);assert.equal(f.api.readCourseCatalog(f.d).entries[0].active,null);
+   await f.runner.start({fromCurrent:true,submit:false});assert.match(f.api.controller.state.message,/实际任务尚未就绪/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,0);
+  }finally{f.close();}
+ });
+ await test('旧版启动：顶层初始章节参数不覆盖实际加载章节',()=>{
+  const f=legacyNoCpiFixture();try{
+   f.w.history.replaceState({},'','?courseId=mock-course&clazzid=mock-class&chapterId=113');legacyCardsContext(f,{knowledgeid:'2'});legacyDirectory(f,legacyRow('cur1','1','第一章')+legacyRow('cur2','2','第二章'));
+   assert.equal(f.api.readCourseCatalog(f.d).entries.find(e=>e.active).id,'cur2');assert.equal(f.api.courseStudyContext(f.d).chapterId,'2');
+  }finally{f.close();}
+ });
+
+ await test('旧版启动：实际 cards 已加载但没有任务节点时保留启动检查',async()=>{
+  const f=legacyNoCpiFixture();try{
+   legacyCardsContext(f);legacyDirectory(f,legacyRow('cur1','1','旧版章节'));f.videos[0].remove();await f.runner.start({fromCurrent:true,submit:false});assert.match(f.api.controller.state.message,/实际任务尚未就绪/);assert.equal(f.events.filter(e=>e.startsWith('play:')).length,0);assert.equal(f.submits,0);
+  }finally{f.close();}
+ });
+ await test('旧版启动：运行中 iframe 账号改变仍停止且保留原会话身份',async()=>{
+  const f=legacyNoCpiFixture();let pending;try{
+   legacyCardsContext(f);legacyDirectory(f,legacyRow('cur1','1','旧版章节'));pending=f.runner.start({fromCurrent:true,submit:false});await waitForTest(()=>f.events.some(e=>e.startsWith('play:')));legacyCardsContext(f,{cpi:'changed-account'});
+   const report=await pending;assert.equal(report.status,'stopped');assert.match(report.reason,/课程或账号已变化/);assert.equal(f.submits,0);
+  }finally{f.runner.stop();if(pending)await pending;f.close();}
+ });
+
+ // Synthetic unknown rows only: the real legacy chapter markup is still pending user collection.
+ await test('旧版课程：目录容器已存在但章节结构未知，保留入口且不启动空队列',async()=>{
+  const f=fixture([{tabs:[video()]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
+  try{
+   const root=f.d.getElementById('coursetree'),original=[...root.childNodes];root.replaceChildren(f.d.createTextNode('模拟未适配目录'));
+   f.api.initStudyAssistant();const catalog=f.api.readCourseCatalog(f.d);
+   assert.equal(catalog.root,root);assert.equal(catalog.structure,'unrecognized');assert.equal(catalog.entries.length,0);
+   assert.equal(f.d.querySelectorAll('#cx-ai-study-root').length,1);assert.equal(f.d.querySelectorAll('#cx-ai-study-toolbar').length,1);
+   await f.runner.start({submit:false});assert.match(f.api.controller.state.message,/尚未识别章节结构/);assert.equal(f.events.filter(x=>x.startsWith('play:')).length,0);assert.equal(f.requests.length,0);assert.equal(f.submits,0);
+   root.replaceChildren(...original);assert.equal(f.api.readCourseCatalog(f.d).structure,'pos-catalog');assert.equal(f.api.readCourseCatalog(f.d).entries.length,1);
+  }finally{f.close();}
+ });
+ await test('旧版课程：多层框架延迟视频与节点替换均重新读取，不把空框架当作无任务',()=>{
+  const f=fixture([{tabs:[video({manual:true})]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
+  try{
+   const video=f.videos[0],container=f.api.courseTaskContainer(video),mount=video.parentElement;video.remove();
+   const middle=f.doc.createElement('iframe');mount.append(middle);const inner=middle.contentDocument.createElement('iframe');middle.contentDocument.body.append(inner);
+   let tree=f.api.courseFrameTree(f.d);assert.equal(tree.documents.length,4);assert.equal(f.api.coursePageTasks(tree).filter(t=>t.type==='video').length,0);assert.equal(f.api.courseContentReady(f.d),false);assert.equal(f.api.coursePageWithoutTasks(tree,[]),false);
+   inner.contentDocument.body.append(video);tree=f.api.courseFrameTree(f.d);assert.equal(f.api.coursePageTasks(tree).find(t=>t.type==='video').node,video);assert.equal(f.api.courseTaskContainer(video),container);assert(f.api.courseTaskContains(container,video));
+   const replacement=middle.contentDocument.createElement('iframe');inner.replaceWith(replacement);tree=f.api.courseFrameTree(f.d);assert(!tree.documents.includes(video.ownerDocument));assert(!f.api.coursePageTasks(tree).some(t=>t.node===video));assert.equal(f.api.courseContentReady(f.d),false);
+   const next=replacement.contentDocument.createElement('video');replacement.contentDocument.body.append(next);assert.equal(f.api.coursePageTasks(f.api.courseFrameTree(f.d)).find(t=>t.type==='video').node,next);
+   Object.defineProperty(replacement,'contentDocument',{configurable:true,get(){throw new f.w.DOMException('blocked','SecurityError');}});tree=f.api.courseFrameTree(f.d);assert(tree.inaccessible.includes(replacement));assert.equal(f.api.courseContentReady(f.d),false);assert.equal(f.api.coursePageWithoutTasks(tree,[]),false);
+  }finally{f.close();}
+ });
+ await test('旧版课程：编号域名与课件来源保持精确边界',()=>{
+  const f=fixture([{tabs:[ppt()]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
+  try{
+   for(const url of ['https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy','https://mooc1-3.chaoxing.com/mooc-ans/mycourse/studentstudy','https://mooc1.chaoxing.com/mycourse/studentstudy'])assert.equal(f.api.isCourseStudyURL(new URL(url)),true);
+   assert(f.api.isCourseStudyOrigin('https://mooc1-2.chaoxing.com'));
+   for(const origin of ['https://mooc1-2.chaoxing.com:8443','http://mooc1-2.chaoxing.com','https://mooc1-2.chaoxing.com.evil.invalid','https://mooc1-2.chaoxing.com/path','https://user@mooc1-2.chaoxing.com'])assert.equal(f.api.isCourseStudyOrigin(origin),false);
+   const holder=f.doc.createElement('div');holder.id='img';holder.className='imglook';holder.innerHTML='<iframe id="panView" src="https://mooc1-2.chaoxing.com/mooc-ans/screen/file/mock"></iframe>';f.doc.body.append(holder);assert(f.api.courseRemoteReaderFrame(holder.firstChild));holder.firstChild.src='https://mooc1-2.chaoxing.com/mooc-ans/knowledge/cards';assert.equal(f.api.courseRemoteReaderFrame(holder.firstChild),false);
+  }finally{f.close();}
+ });
+
  await test('课程域名：阅读器路径与旧站图片资源边界保留',()=>{
   const f=fixture([{tabs:[ppt()]}]);try{
    const holder=f.doc.createElement('div');holder.id='img';holder.className='imglook';holder.innerHTML='<iframe id="panView" src="https://mooc1.xuexitong.com/mooc-ans/screen/file/mock"></iframe>';f.doc.body.append(holder);
@@ -2105,7 +2263,7 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.25');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.26');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{

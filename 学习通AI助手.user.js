@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.25
+// @version      1.26
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2895,14 +2895,21 @@ Typr["U"] = {
     const { Typr, md5 } = bundledFontDependencies;
 
     // Initialize before the document-start playback guard; independent of panel/DOM setup.
-    const COURSE_STUDY_HOSTS = Object.freeze(['mooc1.chaoxing.com', 'mooc1.xuexitong.com']);
+    const COURSE_STUDY_HOSTS = Object.freeze(['mooc1.chaoxing.com', 'mooc1.xuexitong.com', 'mooc1-2.chaoxing.com']);
+    function isCourseStudyHost(hostname) {
+        // Numbered mooc1 course servers only; unrelated Chaoxing subdomains stay excluded.
+        return COURSE_STUDY_HOSTS.includes(hostname) || /^mooc1-[1-9]\d*\.chaoxing\.com$/.test(hostname);
+    }
     function isCourseStudyURL(url) {
         return Boolean(url && ['http:', 'https:'].includes(url.protocol)
-            && COURSE_STUDY_HOSTS.includes(url.hostname) && url.pathname.startsWith('/mycourse/studentstudy'));
+            && isCourseStudyHost(url.hostname) && /^\/(?:mooc-ans\/)?mycourse\/studentstudy\/?$/.test(url.pathname));
     }
     function isCourseStudyOrigin(origin) {
-        // Bridge senders retain exact HTTPS origins, without arbitrary ports or subdomains.
-        return COURSE_STUDY_HOSTS.some(host => origin === `https://${host}`);
+        // Course senders require exact HTTPS origins; reader paths and ancestor checks remain separate.
+        try {
+            const url = new URL(origin);
+            return origin === `https://${url.hostname}` && isCourseStudyHost(url.hostname);
+        } catch { return false; }
     }
 
     // 尽早安装旧鼠标移出监听；只有 runner 的当前视频上下文能激活。
@@ -2910,7 +2917,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.25';
+    const ASSISTANT_VERSION = '1.26';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2958,7 +2965,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.25', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.26', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -3405,7 +3412,8 @@ Typr["U"] = {
     }
     function questionBindingNodes(binding) {
         return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
-            ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()]].filter(Boolean))];
+            ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()],
+            binding.mooc2?.savedInput,...(binding.mooc2?.records || []).flatMap(record=>[record.marker,record.content])].filter(Boolean))];
     }
     function createQuestionSnapshot(graph, runtime = {}) {
         if (graph?.schemaVersion !== 3) throw questionContextError('CX-PAR-008', '题目快照结构不匹配');
@@ -3454,6 +3462,8 @@ Typr["U"] = {
             if (questionGraphContentSignature(current) !== state.signature) throw questionContextError('CX-PAR-008', '题干、选项或关联已变化');
             for (const [id, binding] of state.graph.bindings) {
                 const live = current.bindings.get(id);
+                if ((binding.mooc2 || live?.mooc2) && !sameMooc2ChoiceBindings(binding.mooc2,live?.mooc2))
+                    throw questionContextError('CX-CTL-006', 'mooc2 选项与原生保存标识已变化');
                 const before = questionBindingNodes(binding), after = live ? questionBindingNodes(live) : [];
                 if (before.length !== after.length || before.some((node, index) => node !== after[index])) throw questionContextError('CX-CTL-006', '作答控件已替换');
             }
@@ -4221,9 +4231,47 @@ Typr["U"] = {
         collect(stem?.closest('.Zy_TItle') || stem, 'stem');
         return { media, imageNodes };
     }
+    function isMooc2HomeworkDocument(doc) {
+        try { return /^\/mooc-ans\/mooc2\/work\/dowork\/?$/.test(new URL(doc.URL).pathname); }
+        catch { return false; }
+    }
+    function readMooc2ChoiceBindings(node) {
+        // Display letters are model keys. The platform's data values stay in private bindings.
+        const records=[],diagnostics=[],keys=new Set(),values=new Set(),doc=node.ownerDocument;
+        const rows=[...node.querySelectorAll('.stem_answer .answerBg')].filter(row=>row.closest('.questionLi.singleQuesId')===node);
+        let qid='',qtype='';
+        for (const row of rows) {
+            const markers=[...row.querySelectorAll('.num_option')],contents=[...row.querySelectorAll('.answer_p')];
+            const marker=markers[0],content=contents[0],key=clean(marker?.textContent),value=marker?.getAttribute('data') || '';
+            const rowId=row.getAttribute('qid') || '',rowType=row.getAttribute('qtype') || '';
+            if (!qid) { qid=rowId;qtype=rowType; }
+            if (markers.length!==1 || contents.length!==1 || !/^[A-Z]$/.test(key) || !value || value!==value.trim()
+                || keys.has(key) || values.has(value) || !/^\d+$/.test(rowId) || rowId!==qid || !rowType || rowType!==qtype
+                || !['radio','checkbox'].includes(row.getAttribute('role'))
+                || !/^\s*(?:return\s+)?addChoice\(\s*this\s*\)\s*;?\s*$/.test(row.getAttribute('onclick') || '')
+                || row.querySelector('input[type="radio"],input[type="checkbox"],.answerBg'))
+                diagnostics.push('mooc2 选项字母、内部标识或原生点击结构无法唯一对应');
+            keys.add(key);values.add(value);
+            records.push({key,value,row,marker,content,qtype:rowType,role:row.getAttribute('role'),handler:row.getAttribute('onclick')});
+        }
+        if (!rows.length) diagnostics.push('mooc2 选项尚未加载或结构未适配');
+        if (qid && [...doc.querySelectorAll('.answerBg[qid]')].some(row=>row.getAttribute('qid')===qid && !rows.includes(row)))
+            diagnostics.push('mooc2 题目选项组跨题共享，暂不预填');
+        const saved=qid ? [...doc.querySelectorAll('[id]')].filter(element=>element.id==='answer'+qid) : [];
+        const savedInput=saved[0] || null;
+        if (saved.length!==1 || !savedInput?.matches('input[type="hidden"]') || savedInput.form!==node.closest('form'))
+            diagnostics.push('mooc2 原生答案字段无法唯一关联');
+        return {valid:diagnostics.length===0,qid,qtype,records,savedInput,diagnostics:[...new Set(diagnostics)]};
+    }
+    function sameMooc2ChoiceBindings(before,after) {
+        if (!before || !after) return !before && !after;
+        return before.valid===after.valid && before.qid===after.qid && before.qtype===after.qtype
+            && before.savedInput===after.savedInput && before.records.length===after.records.length
+            && before.records.every((record,index)=>['key','value','row','marker','content','qtype','role','handler'].every(key=>record[key]===after.records[index][key]));
+    }
     function rawQuestion(node, index, adapter, videoContext = {}) {
-        // 仅视频适配器可传入已验证的局部题干/题型；普通章节选择器保持原样。
-        const local = adapter === 'video-quiz' ? videoContext : {};
+        // Only verified local adapters supply context; ordinary chapter selectors stay unchanged.
+        const local = ['video-quiz','chaoxing-mooc2-work'].includes(adapter) ? videoContext : {};
         const stem = local.stem || node.querySelector(adapter === 'video-quiz' ? STEM_SELECTOR + ",legend" : STEM_SELECTOR);
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
@@ -4236,8 +4284,12 @@ Typr["U"] = {
             questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
+        const mooc2=adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node) : null;
         let optionTargets, options, writer;
-        if (legacy.length) {
+        if (mooc2) {
+            options=mooc2.records.map(record=>({key:record.key,text:clean(questionContentText(record.content))}));
+            optionTargets=new Map(mooc2.records.map(record=>[record.key,record.row]));writer='mooc2-choice';
+        } else if (legacy.length) {
             const type = detectType(typeLabel || question);
             options = legacy.map((li, i) => { const key = optionKey(li, i, type); return { key, text: optionText(li, key) }; });
             optionTargets = new Map(options.map((option, i) => [option.key, legacy[i]])); writer = 'chapter-choice';
@@ -4266,8 +4318,13 @@ Typr["U"] = {
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, adapterHints:local.graphHints || {} } };
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, adapterHints:local.graphHints || {} } };
     }
+    registerPageAdapter({
+        id:'chaoxing-mooc2-work',
+        collect:(doc,context={})=>context.scope==='video-quiz' || !isMooc2HomeworkDocument(doc) ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId')],
+        read:(node,index)=>rawQuestion(node,index,'chaoxing-mooc2-work',{typeLabel:clean(node.getAttribute('typename')) || undefined})
+    });
     registerPageAdapter({
         id: 'chaoxing-chapter',
         collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.singleQuesId')].filter(node => !node.closest('.fanyaMarking_left')),
@@ -4275,7 +4332,7 @@ Typr["U"] = {
     });
     registerPageAdapter({
         id: 'chaoxing-homework',
-        collect: (doc, context = {}) => context.scope === 'video-quiz' ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
+        collect: (doc, context = {}) => context.scope === 'video-quiz' || isMooc2HomeworkDocument(doc) ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
         read: (node, index) => rawQuestion(node, index, 'chaoxing-homework')
     });
     function canonicalType(raw) {
@@ -4335,6 +4392,8 @@ Typr["U"] = {
         const choice = ['single','multiple','judge'].includes(type);
         const nativeCompatible = type === 'multiple' ? raw.controls.checkboxes === raw.options.length : raw.controls.radios === raw.options.length;
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
+        const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
+        if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
         const ownMedia = raw.media || [];
         if (!raw.question && !ownMedia.length) { diagnostics.push('缺少可读取题干'); prefill = false; }
         if (!uniqueOptions) { diagnostics.push('选项键重复，无法可靠对应控件'); prefill = false; }
@@ -4356,7 +4415,7 @@ Typr["U"] = {
             groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:[],
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
-            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages, prefill }, diagnostics
+            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages && !mooc2Invalid, prefill }, diagnostics
         };
         question.answerPolicy=questionLocalAnswerPolicy(question);
         return { question, binding: { ...raw.binding, type, canPrefill: prefill } };
@@ -4471,7 +4530,7 @@ Typr["U"] = {
             controls.push(descriptor); runtime.set(id, target);
         };
         for (const [key, target] of binding.optionTargets || []) add(target,
-            binding.writer === 'chapter-choice' ? 'chapter-choice' : target.type === 'checkbox' ? 'checkbox' : 'radio',
+            ['chapter-choice','mooc2-choice'].includes(binding.writer) ? binding.writer : target.type === 'checkbox' ? 'checkbox' : 'radio',
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
             ['blank','essay'].includes(question.type) && !question.controls?.richText);
@@ -4818,10 +4877,84 @@ Typr["U"] = {
     function questionActionDisabled(node) {
         return !node || node.disabled || node.readOnly || node.hasAttribute('disabled') || node.matches('.disabled,.x-item-disabled') || node.getAttribute('aria-disabled')==='true';
     }
-    function questionActionState(binding, question, parseContext) {
-        const keys=[...binding.optionTargets].filter(([,node])=>selected(node)).map(([key])=>key);
+    function questionActionChapterInputs(binding, question, parseContext) {
+        if (parseContext?.scope==='video-quiz' || binding.writer!=='chapter-choice' || !['single','multiple','judge'].includes(question.type)) return null;
+        const targets=new Map(),nativeTargets=new Map(),doc=binding.node.ownerDocument;
+        for (const [key,row] of binding.optionTargets) {
+            const inputs=[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')];
+            if (!inputs.length) { targets.set(key,row);continue; } // Existing num_option/native row writer.
+            const input=inputs[0],kind=question.type==='multiple'?'checkbox':'radio';
+            if (inputs.length!==1 || input.closest('li')!==row || input.type!==kind)
+                throw questionActionError('CX-MAT-005','选项与原生选择控件无法唯一对应');
+            if (questionActionDisabled(row) || questionActionDisabled(input) || input.matches(':disabled'))
+                throw questionActionError('CX-CTL-004','原生选择控件不可用');
+            targets.set(key,input);nativeTargets.set(key,input);
+        }
+        if (!nativeTargets.size) return null;
+        const radios=[...nativeTargets.values()].filter(input=>input.type==='radio');
+        if (radios.some(input=>!input.name || input.name!==radios[0].name || input.form!==radios[0].form
+            || [...doc.getElementsByName(input.name)].some(other=>other.type==='radio' && other.form===input.form && !radios.includes(other))))
+            throw questionActionError('CX-MAT-005','原生单选控件组缺失或跨题共享');
+        return {targets,nativeTargets};
+    }
+    function questionActionChapterCheckbox(binding, question, parseContext) {
+        if (parseContext?.scope === 'video-quiz' || binding.writer !== 'chapter-choice' || question.type !== 'multiple'
+            || ![...binding.optionTargets.values()].some(node => node.matches('li.before-after-checkbox'))) return null;
+        try { if (!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(binding.node.ownerDocument.URL).pathname)) return null; }
+        catch { return null; }
+        const doc=binding.node.ownerDocument,id=String(question.id),controls=new Map();
+        if (!/^\d+$/.test(id)) throw questionActionError('CX-MAT-005','旧版选项与题目编号无法可靠对应');
+        for (const [key,row] of binding.optionTargets) {
+            const inputs=[...row.querySelectorAll('input')],input=inputs[0];
+            const call=/^\s*addcheck\(\s*(\d+)\s*\)\s*;?\s*$/.exec(row.getAttribute('onclick') || '');
+            if (!row.matches('li.before-after-checkbox') || inputs.length!==1 || !input?.matches('input[type="checkbox"]')
+                || input.closest('li')!==row || !input.closest('label.before') || input.name!==`answercheck${id}`
+                || input.value!==key || !/^[A-Z]$/.test(key) || call?.[1]!==id)
+                throw questionActionError('CX-MAT-005','旧版多选控件结构或关联已变化');
+            if (questionActionDisabled(row) || questionActionDisabled(input) || input.matches(':disabled'))
+                throw questionActionError('CX-CTL-004','旧版多选控件不可用');
+            controls.set(key,input);
+        }
+        // addcheck reads the whole named group in document order; reject controls shared with another question.
+        const order=[...doc.getElementsByName(`answercheck${id}`)],saved=[...doc.querySelectorAll(`[id="answer${id}"]`)];
+        if (order.length!==controls.size || order.some(input=>![...controls.values()].includes(input)) || saved.length>1
+            || saved.length===1 && (!saved[0].matches('input[type="hidden"]') || order.some(input=>input.form!==saved[0].form)))
+            throw questionActionError('CX-MAT-005','旧版多选选项组或原生答案字段无法唯一对应');
+        if (saved[0] && questionActionDisabled(saved[0])) throw questionActionError('CX-CTL-004','原生答案字段不可用');
+        return {controls,order,savedInput:saved[0] || null};
+    }
+    function questionActionNativeChoiceVerified(unit) {
+        const keys=[...unit.chapterInputs.targets].filter(([,node])=>selected(node)).map(([key])=>key);
+        return keys.length===unit.targetKeys.size && keys.every(key=>unit.targetKeys.has(key));
+    }
+    function questionActionCheckboxVerified(unit,expected=unit.targetKeys) {
+        const adapter=unit.chapterCheckbox,inputs=adapter.order.filter(input=>input.checked),keys=inputs.map(input=>input.value);
+        return keys.length===expected.size && keys.every(key=>expected.has(key)) && (!adapter.savedInput || adapter.savedInput.value===keys.join(''));
+    }
+    function questionActionMooc2State(binding,question) {
+        const adapter=binding.mooc2,keys=[],values=[];
+        let consistent=adapter.valid;
+        for (const record of adapter.records) {
+            const checked=record.marker.classList.contains('check_answer'),aria=record.row.getAttribute('aria-checked');
+            const pressed=record.row.getAttribute('aria-pressed');
+            if ((aria!==null && !['true','false'].includes(aria)) || (checked ? aria!=='true' : aria==='true')) consistent=false;
+            if (pressed!==null && pressed!==(checked?'true':'false')) consistent=false;
+            if (checked) { keys.push(record.key);values.push(record.value); }
+        }
+        const saved=adapter.savedInput?.value || '';
+        if (saved!==values.join('') || question.type!=='multiple' && keys.length>1) consistent=false;
+        return {keys:[...keys].sort(),values:[],saved,unknownSaved:!consistent};
+    }
+    function questionActionMooc2Verified(unit,expected=unit.targetKeys) {
+        const state=questionActionMooc2State(unit.binding,unit.question);
+        return !state.unknownSaved && state.keys.length===expected.size && state.keys.every(key=>expected.has(key));
+    }
+    function questionActionState(binding, question, parseContext, chapterCheckbox = null, chapterInputs = null) {
+        if (binding.mooc2) return questionActionMooc2State(binding,question);
+        const keys=chapterCheckbox ? chapterCheckbox.order.filter(input=>input.checked).map(input=>input.value)
+            : [...binding.optionTargets].filter(([key,node])=>selected(chapterInputs?.targets.get(key) || node)).map(([key])=>key);
         // This saved value protects ordinary existing answers. Never read video hidden answers.
-        const hidden=parseContext?.scope==='video-quiz'?null:[...binding.node.querySelectorAll('input[type="hidden"]')].find(node=>node.name===`answer${question.id}`);
+        const hidden=parseContext?.scope==='video-quiz'?null:chapterCheckbox?.savedInput || [...binding.node.querySelectorAll('input[type="hidden"]')].find(node=>node.name===`answer${question.id}`);
         const saved=clean(hidden?.value),savedParts=saved?savedKeys(saved,binding.optionTargets):[],unknownSaved=Boolean(saved && (!savedParts.length || !savedParts.every(key=>binding.optionTargets.has(key))));
         if(saved && !keys.length && !unknownSaved) keys.push(...savedParts);
         return {keys:[...new Set(keys)].sort(),values:binding.inputs.map(input=>String(input.value)),saved,unknownSaved};
@@ -4856,11 +4989,12 @@ Typr["U"] = {
             if(!binding.canPrefill || current.capabilities?.prefill===false){failUnit(question,entry,`${current.diagnostics?.join('；') || '控件映射不可靠'}，跳过`);continue;}
             const responseUnit=graph.questions.flatMap(item=>item.responseUnits).find(item=>item.id===entry.id);
             if(!responseUnit || !graph.relations.some(relation=>relation.responseUnitId===entry.id&&relation.status==='confirmed')){failUnit(question,entry,'题目与控件缺少已确认的关联，跳过');continue;}
-            const state=questionActionState(binding,current,parseContext),text=['blank','essay'].includes(current.type);
+            const chapterInputs=questionActionChapterInputs(binding,current,parseContext),chapterCheckbox=questionActionChapterCheckbox(binding,current,parseContext);
+            const state=questionActionState(binding,current,parseContext,chapterCheckbox,chapterInputs),text=['blank','essay'].includes(current.type);
             const original=parseContext.scope==='video-quiz'?options.ownedAnswers?.get(entry.id):null;
             const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
             const owns=Boolean(previous && previous.node===binding.node);
-            const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,text,previous,owns,state,actions:[],targets:new Map()};
+            const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,chapterInputs,chapterCheckbox,text,previous,owns,state,actions:[],targets:new Map()};
             if(text) {
                 const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
                 if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
@@ -4873,6 +5007,7 @@ Typr["U"] = {
                 const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
                 if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
                 if(state.unknownSaved){failUnit(question,entry,'已有无法识别的手工答案，跳过');continue;}
+                if((chapterCheckbox || binding.mooc2) && (state.keys.length || state.saved) && (state.keys.length!==targetKeys.size || state.keys.some(key=>!targetKeys.has(key)))) {failUnit(question,entry,'已有手工作答，未覆盖');continue;}
                 if(owns && (!previous.keys || previous.keys.length!==state.keys.length || previous.keys.some(key=>!state.keys.includes(key))))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
                 if(parseContext.scope==='video-quiz' && state.keys.length && !owns){failUnit(question,entry,'已有手工作答，等待人工处理');continue;}
                 if(!owns && state.keys.some(key=>!targetKeys.has(key))){failUnit(question,entry,'已有不同选项，未覆盖');continue;}
@@ -4911,7 +5046,19 @@ Typr["U"] = {
             validate();
             const {binding}=unit,nodes=[binding.node,...binding.inputs,...binding.optionTargets.values()];
             if(nodes.some(node=>!node?.isConnected || node.ownerDocument!==live.doc || node!==binding.node&&!binding.node.contains(node)))throw questionActionError('CX-CTL-006','作答控件已替换，请重新分析');
-            if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
+            const native=questionActionChapterInputs(binding,unit.question,live.parseContext);
+            if(Boolean(native)!==Boolean(unit.chapterInputs) || native && (native.targets.size!==unit.chapterInputs.targets.size
+                || [...unit.chapterInputs.targets].some(([key,node])=>native.targets.get(key)!==node)))
+                throw questionActionError('CX-CTL-006','原生选项控件已替换');
+            if(unit.chapterCheckbox) {
+                const current=questionActionChapterCheckbox(binding,unit.question,live.parseContext),before=unit.chapterCheckbox;
+                if(!current || current.savedInput!==before.savedInput || current.order.length!==before.order.length
+                    || current.order.some((input,index)=>input!==before.order[index]) || [...before.controls].some(([key,input])=>current.controls.get(key)!==input))
+                    throw questionActionError('CX-CTL-006','旧版多选原生控件已替换');
+            }
+            if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
+            if(binding.mooc2 && (questionActionDisabled(binding.mooc2.savedInput) || binding.mooc2.records.some(record=>questionActionDisabled(record.marker))))
+                throw questionActionError('CX-CTL-004','mooc2 原生选项或答案字段不可用');
             if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
         };
         const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
@@ -4923,7 +5070,14 @@ Typr["U"] = {
             unitLoop:for(const unit of live.units) {
                 activeUnit=unit;activeWrites=0;activeRecorded=false;
                 validateUnit(unit);
-                if(!unit.actions.length){result(unit,'already');continue;}
+                if(!unit.actions.length){
+                    if(unit.chapterInputs || unit.binding.mooc2) {
+                        const verified=()=>unit.binding.mooc2 ? questionActionMooc2Verified(unit) : unit.chapterCheckbox ? questionActionCheckboxVerified(unit) : questionActionNativeChoiceVerified(unit);
+                        await waitFor(verified,unit.chapterCheckbox?750:450);validateUnit(unit,false);
+                        if(!verified()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：原生选中状态与已有答案不同步，已停止后续填写`);break;}
+                    }
+                    result(unit,'already');continue;
+                }
                 if(unit.text) {
                     const input=unit.input;
                     write(()=>{
@@ -4945,15 +5099,24 @@ Typr["U"] = {
                         validateUnit(unit);
                         const target=unit.targets.get(action.targetId);
                         if(questionActionDisabled(target))throw questionActionError('CX-CTL-004','作答控件不可编辑');
-                        write(()=>target.click());
+                        const input=unit.chapterInputs?.targets.get(action.value),expected=new Set(unit.state.keys);
+                        if(action.type==='select')expected.add(action.value);else expected.delete(action.value);
+                        if(unit.chapterInputs && !input)throw questionActionError('CX-MAT-005','选项与原生点击目标的关联已变化');
+                        const clickTarget=unit.chapterInputs ? input : target;
+                        // A previous native action may already have produced the desired state; do not toggle it again.
+                        if(unit.chapterInputs?.nativeTargets.has(action.value) && selected(clickTarget)===(action.type==='select'))continue;
+                        // The input owns native selection; its click bubbles to the original row handler once.
+                        write(()=>clickTarget.click());
                         activeWrites++;
-                        await waitFor(()=>selected(target)===(action.type==='select'));
+                        const notBefore=Date.now()+200;
+                        const verifiedAction=()=>unit.binding.mooc2 ? questionActionMooc2Verified(unit,expected) : unit.chapterCheckbox ? Date.now()>=notBefore && questionActionCheckboxVerified(unit,expected) : selected(clickTarget)===(action.type==='select');
+                        await waitFor(()=>{if(unit.chapterCheckbox && (signal?.aborted || userEdited))validate();return verifiedAction();},unit.chapterCheckbox?750:450);
                         validateUnit(unit,false);
-                        if(selected(target)!==(action.type==='select')){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：控件状态未确认，已停止后续填写`);break unitLoop;}
-                        // Capture only after the script-owned native action; trusted user events still cancel.
-                        unit.state=questionActionState(unit.binding,unit.question,live.parseContext);
+                        if(!verifiedAction()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：${unit.chapterCheckbox?'checkbox 状态或原生答案同步未确认':'控件状态未确认'}，已停止后续填写`);break unitLoop;}
+                        // Capture after the platform's saved-answer timer; do not misclassify it as user input.
+                        unit.state=questionActionState(unit.binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs);
                     }
-                    const verified=()=>{const state=questionActionState(unit.binding,unit.question,live.parseContext);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key));};
+                    const verified=()=>{if(unit.binding.mooc2)return questionActionMooc2Verified(unit);if(unit.chapterCheckbox)return questionActionCheckboxVerified(unit);const state=questionActionState(unit.binding,unit.question,live.parseContext,null,unit.chapterInputs);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key)) && (!unit.chapterInputs || questionActionNativeChoiceVerified(unit));};
                     await waitFor(verified);validateUnit(unit,false);
                     if(verified())result(unit,'filled');else{result(unit,'unverified');summary.details.push(`第${unit.question.number}题：已触发点击，请手动检查是否选中`);break;}
                 }
@@ -5307,13 +5470,55 @@ Typr["U"] = {
         return { score, chapterId, quizId, title: clean(doc.querySelector('#RightCon .ceyan_name h3')?.textContent) };
     }
 
+    function courseURLContext(url) {
+        let conflict = false;
+        const read = names => {
+            const values = new Set([...(url?.searchParams || [])].filter(([key]) => names.includes(key.toLowerCase())).map(([,value]) => value.trim()).filter(Boolean));
+            if (values.size > 1) conflict = true;
+            return values.size === 1 ? [...values][0] : '';
+        };
+        const course = read(['courseid']), classroom = read(['clazzid','classid']), student = read(['cpi']);
+        const chapterId = read(['chapterid','knowledgeid']);
+        return {course,classroom,student,chapterId,conflict};
+    }
+    function courseStudyContext(sourceDoc) {
+        const base = pageURL(sourceDoc), top = courseURLContext(base);
+        let frame = null, declared = null, loaded = null;
+        const view = sourceDoc?.defaultView;
+        // Only the real top-level course frame may supply missing identity fields.
+        if (view && view === view.top && isCourseStudyURL(base)) frame = sourceDoc.querySelector('#mainid #iframe');
+        const cards = raw => {
+            if (!raw) return null;
+            try {
+                const url = new URL(raw,base);
+                return url.origin === base.origin && !url.username && !url.password && url.pathname === '/mooc-ans/knowledge/cards'
+                    ? {...courseURLContext(url),url} : null;
+            } catch { return null; }
+        };
+        if (frame) {
+            declared = cards(frame.getAttribute('src'));
+            try { loaded = cards(frame.contentDocument?.URL); } catch { /* Cross-origin content never supplies identity. */ }
+        }
+        const {course,classroom} = top;
+        let student = top.student, reason = top.conflict ? 'parameter-conflict' : '';
+        for (const candidate of [declared,loaded].filter(Boolean)) {
+            if (candidate.conflict) reason = 'parameter-conflict';
+            if (course && candidate.course && course !== candidate.course || classroom && candidate.classroom && classroom !== candidate.classroom
+                || student && candidate.student && student !== candidate.student) reason = 'identity-conflict';
+            // A cpi is usable only after both course and class agree with the top page.
+            if (course && classroom && candidate.course === course && candidate.classroom === classroom && candidate.student && !student) student = candidate.student;
+        }
+        const complete = Boolean(!reason && course && classroom && student);
+        if (!reason && !complete) reason = 'identity-incomplete';
+        // The loaded cards URL proves the current chapter; clicking a link or its colour does not.
+        const chapterId = complete && loaded && loaded.course === course && loaded.classroom === classroom && loaded.chapterId
+            && (!declared?.chapterId || declared.chapterId === loaded.chapterId) ? loaded.chapterId : null;
+        return {course,classroom,student,complete,reason,chapterId,frame,cardsURL:declared?.url || null,loadedCardsURL:loaded?.url || null};
+    }
     function courseScoreKey(sourceDoc) {
-        const params = pageURL(sourceDoc)?.searchParams;
-        const course = params?.get('courseId') || params?.get('courseid');
-        const classroom = params?.get('clazzid') || params?.get('classId');
-        const student = params?.get('cpi');
-        // 无完整课程、班级、账号标识时不持久化，避免不同课程或账号混用成绩。
-        return course && classroom && student ? COURSE_SCORE_PREFIX + [course, classroom, student].map(encodeURIComponent).join(':') : null;
+        const context = courseStudyContext(sourceDoc);
+        // Keep course, class and account isolation; incomplete/conflicting identities never persist.
+        return context.complete ? COURSE_SCORE_PREFIX + [context.course,context.classroom,context.student].map(encodeURIComponent).join(':') : null;
     }
 
     function courseCatalogMarker(row, selector) {
@@ -5333,6 +5538,7 @@ Typr["U"] = {
         const { sourceDoc, root } = context;
         const entries = [];
         const seenIds = new Set();
+        let structure = 'pos-catalog';
         for (const row of root.querySelectorAll('.posCatalog_select')) {
             const target = row.querySelector(':scope > .posCatalog_name');
             const label = target || row.querySelector(':scope > .posCatalog_title');
@@ -5349,6 +5555,27 @@ Typr["U"] = {
             entries.push({ id: row.id, chapterId: row.id.replace(/^cur/, ''), number, title, parentId,
                 isGroup: !target, target, active: row.classList.contains('posCatalog_active'),
                 completed, pending, scores: [] });
+        }
+        if (!entries.length) {
+            // Confirmed legacy layout: no li ancestry or colour-to-status mapping is known.
+            structure = 'legacy-h4';
+            const currentChapterId = courseStudyContext(sourceDoc).chapterId;
+            const switchesChapter = node => /^\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('onclick') || '')
+                || /^\s*javascript:\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('href') || '');
+            for (const row of root.querySelectorAll('h4[id^="cur"]')) {
+                if (row.id.length <= 3 || seenIds.has(row.id)) continue;
+                const links = [...row.querySelectorAll('a[title]')].filter(link => link.closest('h4[id^="cur"]') === row);
+                if (links.length !== 1) continue;
+                const link = links[0], title = clean(link.getAttribute('title'));
+                if (!title) continue;
+                const number = clean(row.querySelector('.hideChapterNumber')?.textContent);
+                // Delegate to the original link/row handler; never evaluate its arguments ourselves.
+                const target = switchesChapter(link) || switchesChapter(row) ? link : null;
+                seenIds.add(row.id);
+                entries.push({ id:row.id, chapterId:row.id.replace(/^cur/, ''), number, title,
+                    parentId:null, hierarchyKnown:false, isGroup:false, target,
+                    active:currentChapterId ? row.id.replace(/^cur/, '') === currentChapterId : null, completed:null, pending:null, scores:[] });
+            }
         }
         const scopeKey = courseScoreKey(sourceDoc);
         const stored = scopeKey ? get(scopeKey, {}) : {};
@@ -5367,7 +5594,8 @@ Typr["U"] = {
         for (const entry of entries) {
             entry.scores = Object.values(scores[entry.chapterId] || {}).filter(item => item && Number.isFinite(item.score) && item.score >= 0);
         }
-        return { ...context, entries, scopeKey };
+        // An existing container with unknown rows is not an empty/completed course.
+        return { ...context, entries, scopeKey, structure: entries.length ? structure : 'unrecognized' };
     }
 
     function catalogStatus(entry) {
@@ -5428,7 +5656,7 @@ Typr["U"] = {
                     row.append(fold);
                 } else row.append(make('span', 'catalog-fold-space'));
                 const button = make('button', 'catalog-link'); button.type = 'button';
-                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = controller.state.busy || courseRunActive(); }
+                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = !entry.target || controller.state.busy || courseRunActive(); }
                 if (entry.active) button.setAttribute('aria-current', 'page');
                 button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
                 const meta = make('span', 'catalog-meta');
@@ -5458,9 +5686,11 @@ Typr["U"] = {
         };
         const fragment = doc.createDocumentFragment();
         appendEntries(null, fragment);
-        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : '未读取到课程目录，请在课程学习页面打开。'));
+        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
         list.replaceChildren(fragment);
-        shadow.getElementById('catalog-status').textContent = entries.length ? `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
+        shadow.getElementById('catalog-status').textContent = entries.length ? catalog.context?.structure === 'legacy-h4'
+            ? `共 ${entries.length} 个章节；旧版目录层级与完成状态未确认`
+            : `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
     }
 
     function navigateCourseChapter(id) {
@@ -5485,7 +5715,7 @@ Typr["U"] = {
                     if (catalog.timer) return;
                     catalog.timer = setTimeout(() => { catalog.timer = null; refreshCourseSidebar(); }, 100);
                 });
-                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title'], characterData: true });
+                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title', 'id', 'onclick', 'href'], characterData: true });
             }
         }
         renderCourseCatalog();
@@ -5641,7 +5871,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.25');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.26');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -5922,14 +6152,14 @@ Typr["U"] = {
         try {
             const scope=courseScoreKey(owner),base=pageURL(owner),frame=owner.querySelector('#mainid #iframe');
             const template=new URL(frame?.getAttribute('src')||'',base);
-            const course=base?.searchParams.get('courseId')||base?.searchParams.get('courseid');
-            const classroom=base?.searchParams.get('clazzid')||base?.searchParams.get('classId'),student=base?.searchParams.get('cpi');
-            if(!scope||!base||base.pathname!=='/mycourse/studentstudy'||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
-                ||template.searchParams.get('courseid')!==course||template.searchParams.get('clazzid')!==classroom||template.searchParams.get('cpi')!==student)return unknown('native-url-unavailable');
+            const {course,classroom,student}=courseStudyContext(owner),templateContext=courseURLContext(template);
+            if(!scope||!isCourseStudyURL(base)||template.origin!==base.origin||template.pathname!=='/mooc-ans/knowledge/cards'
+                ||templateContext.conflict||templateContext.course!==course||templateContext.classroom!==classroom||templateContext.student!==student)return unknown('native-url-unavailable');
             const parseHeader=(root,cardTemplate)=>{
                 if(!root||root.querySelector('#chapterFaceState,[data-captcha],form[action*="login"]'))return unknown('page-gate');
-                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||cardTemplate.searchParams.get('courseid')!==course
-                    ||cardTemplate.searchParams.get('clazzid')!==classroom||cardTemplate.searchParams.get('cpi')!==student||cardTemplate.searchParams.get('knowledgeid')!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
+                const identity=courseURLContext(cardTemplate);
+                if(cardTemplate.origin!==base.origin||cardTemplate.pathname!==template.pathname||identity.conflict||identity.course!==course
+                    ||identity.classroom!==classroom||identity.student!==student||identity.chapterId!==String(chapter.chapterId))return unknown('chapter-url-mismatch');
                 const nodes=[...root.querySelectorAll('#prev_tab li[id^="dct"]')],tabs=[];
                 for(const node of nodes) {
                     const call=/^\s*changeDisplayContent\(\s*(\d+)\s*,\s*(\d+)\s*,/.exec(node.getAttribute('onclick')||'');
@@ -6976,25 +7206,30 @@ Typr["U"] = {
         const limits = { ...COURSE_RUN_LIMITS, ...options.limits };
         const now = options.now || (() => Date.now());
         const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
-        const scope = courseScoreKey(owner);
-        const key = scope ? `cx_course_run:${scope}` : null;
+        let scope = courseScoreKey(owner);
+        let key = scope ? `cx_course_run:${scope}` : null;
         let session;
         try {
             session = owner.defaultView.sessionStorage.getItem('cx-ai-course-session');
             if (!session) { session = crypto.randomUUID(); owner.defaultView.sessionStorage.setItem('cx-ai-course-session',session); }
         } catch { session = crypto.randomUUID(); }
         let current = null;
-        const api = { owner, key, get busy() { return Boolean(current && !current.cancelled); },
+        const refreshScope = () => {
+            if (current) return; // A running session keeps its frozen identity and account-change guard.
+            scope = courseScoreKey(owner);key = scope ? `cx_course_run:${scope}` : null;
+        };
+        const api = { owner, get key() { refreshScope();return key; }, get busy() { return Boolean(current && !current.cancelled); },
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
             get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
-            get canRetry() { return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
+            get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
+                refreshScope();
                 const candidate=courseRetryCandidate(owner,key?get(key,null):null);
                 if(!candidate.allowed || token!==undefined&&token!==candidate.token){ctl.report(candidate.allowed?'运行记录已变化，请重新确认重试':candidate.reason,'error');return;}
                 return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
-            get report() { return current?.report || (key ? get(key,null)?.report : null); },
+            get report() { refreshScope();return current?.report || (key ? get(key,null)?.report : null); },
             stop(reason = '用户停止自动学习', diagnosticError = null) {
                 if (!current || current.cancelled) return;
                 const cancellation=cancelledError();cancellation.message=reason;
@@ -7016,12 +7251,28 @@ Typr["U"] = {
             },
             async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
-                if (!scope || studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
+                if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
+                }
+                refreshScope();
+                const identity=courseStudyContext(owner);
+                if (!scope) {
+                    ctl.report(['identity-conflict','parameter-conflict'].includes(identity.reason)
+                        ? '课程身份冲突：课程页面与课程 iframe 的课程、班级或账号标识不一致，已停止'
+                        : '已识别课程页面，但课程、班级或账号标识尚未就绪；等待所属课程 iframe 加载后再开始','error');return;
                 }
                 if (ctl.state.busy) return;
                 const catalog = readCourseCatalog(owner);
-                if (!catalog?.entries.some(item => !item.isGroup)) { ctl.report('没有读取到可遍历的课程目录','error'); return; }
+                if (!catalog?.entries.some(item => !item.isGroup)) { ctl.report(catalog?.structure==='unrecognized'
+                    ? '已找到课程目录，但尚未识别章节结构；加载后仍为空时，请提供章节项 HTML 以适配'
+                    : '没有读取到可遍历的课程目录','error'); return; }
+                if(catalog.structure==='legacy-h4') {
+                    const active=catalog.entries.filter(item=>!item.isGroup&&item.active===true),tree=courseFrameTree(owner);
+                    if(active.length!==1||!identity.loadedCardsURL||!courseContentReady(owner)||tree.inaccessible.length
+                        ||!coursePageTasks(tree).some(task=>['video','document','quiz','knowledge-graph'].includes(task.type))) {
+                        ctl.report('已识别旧版课程目录，但当前章节或实际任务尚未就绪；请等待课程内容加载后再开始','error');return;
+                    }
+                }
                 const previous = get(key,null);
                 let retryCandidate=null;
                 if(retry) {
@@ -7857,6 +8108,7 @@ Typr["U"] = {
                         },limits.submitMs,'测验提交后未收到成功状态，请人工核对；不会重试提交');
                         context.submitting=false;context.submissionFrames=null;task.status='done';task.questionCount=data.total;report.quizzes++;
                     };
+                    const legacyCatalog=readCourseCatalog(owner)?.structure==='legacy-h4';
                     const boundary=run.rangeStart?.chapterId===chapter.id?run.rangeStart:null;
                     const firstIndex=Math.max(run.tabIndex,boundary?.tabIndex||0);
                     const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
@@ -7986,12 +8238,12 @@ Typr["U"] = {
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
                                     && ![...manualNodes].some(quiz=>courseTaskContains(node,quiz)||courseTaskContains(quiz,node))));
                             // 中途标签处理结束后先遍历后续标签；整章剩余数不能阻止标签切换。
-                            if(!tasks.length && lastTab && (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed) {
+                            if(!tasks.length && lastTab && (legacyCatalog ? pendingHere() : (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed)) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
-                                    if(!pendingHere() && (rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
+                                    if(!pendingHere() && (legacyCatalog||rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
                                 },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
                                 tasks=next.tasks;
@@ -8022,6 +8274,10 @@ Typr["U"] = {
                         chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
                         chapter.reason='已遍历全部标签，最后一页无任务控件，已继续下一节；目录仍未确认完成，保留待人工核对';
                         save();return;
+                    }
+                    if(legacyCatalog && !pending()?.completed && pending()?.pending!==0) {
+                        chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
+                        chapter.reason='已处理本章实际任务；旧版目录未提供整章完成标记，保留待核对并继续下一节';save();return;
                     }
                     if(!pending()?.completed && pending()?.pending!==0) await until(()=>pending()?.completed||pending()?.pending===0,limits.completionMs,'本章仍有未完成任务或状态未提供，已停止');
                     chapter.status='done';save();
@@ -8131,6 +8387,7 @@ Typr["U"] = {
                 return report;
             },
             resumeIfNeeded() {
+                refreshScope();
                 const previous=key?get(key,null):null;
                 if(!previous?.protection?.triggered && previous?.status==='running' && previous.handoff===true && previous.session===session && now()-previous.heartbeat<60000) return api.start({resume:true});
             }
@@ -8140,12 +8397,14 @@ Typr["U"] = {
         let starting=false;
         api.start=async options=>{
             if(starting || current || courseRunActive(owner))return;
+            refreshScope();const startScope=scope;
             starting=true;
             try {
                 const locks=owner.defaultView.navigator.locks;
                 if(!scope || !locks?.request)return await startUnlocked(options);
                 return await locks.request(`cx-ai-course-run:${scope}`,{ifAvailable:true},lock=>{
                     if(!lock){ctl.report('另一个页面正在运行本课程，请先停止该页面','error');return;}
+                    if(courseScoreKey(owner)!==startScope){ctl.report('获取运行锁期间课程或账号已变化，请重新开始','error');return;}
                     return startUnlocked(options);
                 });
             } catch(error) {ctl.report(error.message,'error');}
@@ -8405,7 +8664,7 @@ Typr["U"] = {
     function initOtherFeatures(doc=document) {
         const existing=otherFeatureManagers.get(doc);if(existing)return existing;
         const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
-        const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location)&&view.location.pathname==='/mycourse/studentstudy';
+        const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location);
         const render=()=>{
             for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
                 shadow.getElementById('other-hide-platform-ai').checked=settings.hidePlatformAi;
@@ -9142,7 +9401,7 @@ Typr["U"] = {
     }
     const chapterContextCache = new WeakMap();
     function chapterContextIdentity(doc) {
-        const owner=studyOwnerDocument(doc),chapterId=owner?.querySelector('#curChapterId')?.value;
+        const owner=studyOwnerDocument(doc),chapterId=owner&&(courseStudyContext(owner).chapterId||owner.querySelector('#curChapterId')?.value);
         const scope=owner && courseScoreKey(owner);
         return owner && scope && chapterId ? {owner,chapterId:String(chapterId),id:`${scope}:${chapterId}`} : null;
     }
@@ -9261,7 +9520,7 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.25</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.26</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
@@ -10016,7 +10275,7 @@ Typr["U"] = {
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.25',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.26',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
