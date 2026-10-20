@@ -1,7 +1,6 @@
     // 字体解密部分源自 wyn665817 的 MIT 脚本；改为文本节点转换和可重入模块。
     function initBackgroundPlayback() {
-        if (window.top !== window.self || location.hostname !== 'mooc1.chaoxing.com'
-            || !location.pathname.startsWith('/mycourse/studentstudy')) return null;
+        if (window.top !== window.self || !isCourseStudyURL(location)) return null;
         if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
         let active = null, closed = false;
         const onMouseExit = event => {
@@ -257,7 +256,7 @@
             for (let depth = 0; view && depth < 12; depth++) {
                 const candidate = view.document;
                 const url = new URL(pageURL(candidate));
-                if (view === view.top && url.hostname === 'mooc1.chaoxing.com' && url.pathname.startsWith('/mycourse/studentstudy') && candidate.querySelector('#mainid #iframe')) return candidate;
+                if (view === view.top && isCourseStudyURL(url) && candidate.querySelector('#mainid #iframe')) return candidate;
                 if (view === view.parent) break;
                 view = view.parent;
             }
@@ -1297,7 +1296,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.22',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.23',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1587,7 +1586,7 @@
         const view = doc.defaultView;
         if (!view || view !== view.top || !doc.body) return;
         const url = new URL(pageURL(doc));
-        if (url.hostname !== 'mooc1.chaoxing.com' || !url.pathname.startsWith('/mycourse/studentstudy')) return;
+        if (!isCourseStudyURL(url)) return;
         const content = doc.querySelector('#mainid #iframe');
         if (!content) return;
         if (!controller) controller = createController();

@@ -17,7 +17,7 @@
             const url = new URL(value, doc.baseURI);
             if (url.protocol === 'data:') return /^data:image\/(png|jpeg|gif|webp)[;,]/i.test(value);
             if (url.protocol === 'blob:') return url.origin === new URL(doc.URL).origin;
-            return ['http:', 'https:'].includes(url.protocol) && (url.origin === new URL(doc.URL).origin || /(^|\.)chaoxing\.com$/i.test(url.hostname));
+            return ['http:', 'https:'].includes(url.protocol) && (url.origin === new URL(doc.URL).origin || /(^|\.)chaoxing\.com$/i.test(url.hostname) || url.hostname === 'mooc1.xuexitong.com');
         } catch { return false; }
     }
     function readMediaBytes(src, doc = document, signal) {

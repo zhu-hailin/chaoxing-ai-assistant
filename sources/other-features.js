@@ -71,7 +71,7 @@
     function initOtherFeatures(doc=document) {
         const existing=otherFeatureManagers.get(doc);if(existing)return existing;
         const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
-        const controlsPlayback=doc===document&&view.top===view.self&&view.location.hostname==='mooc1.chaoxing.com'&&view.location.pathname==='/mycourse/studentstudy';
+        const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location)&&view.location.pathname==='/mycourse/studentstudy';
         const render=()=>{
             for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
                 shadow.getElementById('other-hide-platform-ai').checked=settings.hidePlatformAi;

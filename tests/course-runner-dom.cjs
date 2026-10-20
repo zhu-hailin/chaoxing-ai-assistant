@@ -7,7 +7,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../学习通AI助手.user.js'),'utf8');
 const entry="    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry));
-const code=source.replace(entry,'globalThis.courseAPI={courseTaskTargetReady,courseInvalidateTaskProbe,createManualVideoProtection,initOtherFeatures,readCourseCatalog,courseProbeMarkup,courseProbeArguments,courseProbeSummary,courseTaskProbe,courseTaskEligibility,findNextCourseTask,courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
+const code=source.replace(entry,'globalThis.courseAPI={isCourseStudyURL,isCourseStudyOrigin,studyOwnerDocument,mediaAddressAllowed,courseTaskTargetReady,courseInvalidateTaskProbe,createManualVideoProtection,initOtherFeatures,readCourseCatalog,courseProbeMarkup,courseProbeArguments,courseProbeSummary,courseTaskProbe,courseTaskEligibility,findNextCourseTask,courseVideoSpeedCapability,courseApplyVideoSpeed,exportCxDiagnostics,backgroundPlaybackGuard,initBackgroundPlayback,courseVideoPauseInput,courseVideoQuizCandidate,courseVideoQuizSnapshot,courseRunProtection,courseRecordChapterOutcome,coursePendingChapters,courseRetryCandidate,courseLearningSettings,courseVideoForegroundPolicy,courseOwnerForegroundState,courseVideoPlayedRanges,courseVideoPositionDecision,initCourseDocumentBridge,courseDocumentBridgeRequest,courseRemoteReaderFrame,initStudyAssistant,initQuizAssistant,runAnswerFlow,createCourseRunner,courseTabs,courseFrameTree,courseTaskContainer,courseTaskContains,coursePageTasks,courseTaskRequired,courseDocumentReader,courseScrollToBottom,courseDocumentScrollState,courseTaskComplete,courseSubmitButton,courseSubmitConfirmation,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};');
 // DOM 模拟环境不能生成浏览器可信输入；只在测试代码替换激活检查。安全用例使用原始检查。
 const activationCheck='/* TRUSTED_ASSISTANT_ACTIVATION */';
 assert(code.includes(activationCheck));
@@ -271,6 +271,62 @@ const taskProbeFixture=name=>fs.readFileSync(path.join(__dirname,'fixtures/task-
 const probeRange=f=>f.api.readCourseCatalog(f.d).entries.filter(entry=>!entry.isGroup);
 const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
 (async()=>{
+
+ // These domain-compatibility cases are added for user-authorized future runs; not executed for this repair.
+ for(const host of ['mooc1.chaoxing.com','mooc1.xuexitong.com']) {
+  await test(`课程域名：${host} 初始化、嵌套归属和重复挂载`,()=>{
+   const f=fixture([{tabs:[video()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+    assert(f.d.getElementById('cx-ai-study-root'));assert(f.d.getElementById('cx-ai-study-toolbar'));
+    assert.equal(f.api.studyOwnerDocument(f.doc),f.d);
+    const nested=f.doc.createElement('iframe');f.doc.body.append(nested);assert.equal(f.api.studyOwnerDocument(nested.contentDocument),f.d);
+    const button=f.d.getElementById('cx-ai-study-toolbar').shadowRoot.getElementById('settings');assert.match(button.textContent,/学习通AI助手/);button.click();
+    f.api.initStudyAssistant();f.api.initStudyAssistant();assert.equal(f.d.querySelectorAll('#cx-ai-study-root').length,1);assert.equal(f.d.querySelectorAll('#cx-ai-study-toolbar').length,1);
+    const next=f.d.createElement('iframe');next.id='iframe';f.d.querySelector('#mainid #iframe').replaceWith(next);f.api.initStudyAssistant();
+    assert.equal(f.api.courseFrameTree(f.d).root,next);assert.equal(next.previousElementSibling.id,'cx-ai-study-toolbar');assert.equal(f.d.querySelectorAll('#cx-ai-study-root').length,1);
+   }finally{f.close();}
+  });
+  await test(`课程域名：${host} 后台保护保留激活和释放规则`,async()=>{
+   const f=fixture([{tabs:[video()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+    const guard=f.api.backgroundPlaybackGuard;assert(guard);assert.equal(f.api.initBackgroundPlayback(),guard);
+    await f.videos[0].play();let intercepted=0,received=0;
+    const release=guard.activate({video:f.videos[0],canProtect:()=>true,onSuppressed:()=>intercepted++});
+    const receive=()=>received++;f.w.addEventListener('mouseout',receive);
+    f.w.dispatchEvent(new f.w.MouseEvent('mouseout',{relatedTarget:null}));assert.equal(intercepted,1);assert.equal(received,0);
+    release();f.w.dispatchEvent(new f.w.MouseEvent('mouseout',{relatedTarget:null}));assert.equal(received,1);f.w.removeEventListener('mouseout',receive);
+   }finally{f.close();}
+  });
+  await test(`课程域名：${host} 视频资料继续处理、关闭测验不提交`,async()=>{
+   const f=fixture([{tabs:[video(),ppt(),quiz()]}],{url:`https://${host}/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account`});try{
+    const result=await f.runner.start({submit:false});assert.equal(result.status,'done',result.reason);assert.equal(result.videos,1);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
+   }finally{f.close();}
+  });
+ }
+ await test('课程域名：元数据保留两类安装匹配、普通页与伪造主机不创建入口',()=>{
+  assert.match(source,/^\/\/ @match\s+\*:\/\/\*\.chaoxing\.com\/\*$/m);assert.match(source,/^\/\/ @match\s+\*:\/\/\*\.xuexitong\.com\/\*$/m);
+  const f=fixture([{tabs:[video()]}]);try{
+   for(const url of ['https://other.example/mycourse/studentstudy','https://mooc1.xuexitong.com.evil.invalid/mycourse/studentstudy','https://mooc1.xuexitong.com/mycourse/list'])assert.equal(f.api.isCourseStudyURL(new URL(url)),false);
+   f.w.history.replaceState({},'','/mycourse/list');f.d.getElementById('cx-ai-study-root').remove();f.d.getElementById('cx-ai-study-toolbar').remove();f.api.initStudyAssistant();assert.equal(f.d.getElementById('cx-ai-study-root'),null);assert.equal(f.d.getElementById('cx-ai-study-toolbar'),null);assert.equal(f.api.initBackgroundPlayback(),null);
+  }finally{f.close();}
+ });
+ await test('课程域名：旧站课件仍校验发送者、来源与操作类型',()=>{
+  const f=fixture([{tabs:[ppt()]}],{url:'https://mooc1.xuexitong.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});try{
+   const frame=f.doc.createElement('iframe');f.doc.body.append(frame);const doc=frame.contentDocument,view=frame.contentWindow;
+   Object.defineProperty(doc,'URL',{value:'https://pan-yz.chaoxing.com/screen/v2/file_mock'});doc.body.innerHTML='<div class="fileBox"><ul><li><img></li></ul></div>';
+   const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
+   const send=(origin,sender,op='read')=>view.dispatchEvent(new view.MessageEvent('message',{origin,source:sender,data:{channel:'cx-ai-document-v1',kind:'request',id:'domain-reader',op}}));
+   send('https://unknown.invalid',f.w);send('https://mooc1.xuexitong.com.evil.invalid',f.w);send('https://mooc1.xuexitong.com',{postMessage(){throw new Error('Unrelated window accepted');}});send('https://mooc1.xuexitong.com',f.w,'invalid');assert.equal(responses.length,0);
+   assert.equal(f.api.isCourseStudyOrigin('https://mooc1.xuexitong.com:8443'),false);assert.equal(f.api.isCourseStudyOrigin('http://mooc1.xuexitong.com'),false);
+   send('https://mooc1.xuexitong.com',f.w);assert.equal(responses.length,1);assert.equal(responses[0].kind,'result');
+  }finally{f.close();}
+ });
+ await test('课程域名：阅读器路径与旧站图片资源边界保留',()=>{
+  const f=fixture([{tabs:[ppt()]}]);try{
+   const holder=f.doc.createElement('div');holder.id='img';holder.className='imglook';holder.innerHTML='<iframe id="panView" src="https://mooc1.xuexitong.com/mooc-ans/screen/file/mock"></iframe>';f.doc.body.append(holder);
+   const frame=holder.querySelector('iframe');assert.equal(f.api.courseRemoteReaderFrame(frame),true);frame.src='https://mooc1.xuexitong.com/other';assert.equal(f.api.courseRemoteReaderFrame(frame),false);frame.src='https://unknown.invalid/mooc-ans/screen/file/mock';assert.equal(f.api.courseRemoteReaderFrame(frame),false);
+   assert.equal(f.api.mediaAddressAllowed('https://mooc1.xuexitong.com/image/mock.png',f.doc),true);assert.equal(f.api.mediaAddressAllowed('https://mooc1.xuexitong.com.evil.invalid/image/mock.png',f.doc),false);
+  }finally{f.close();}
+ });
+
  await test('秒级定位：脱敏真实视频/测验/静态课件/讨论结构均可判定',()=>{
   const f=fixture([{tabs:[video()]}]);try{
    const result=name=>f.api.courseProbeSummary(f.api.courseProbeMarkup(f.d,taskProbeFixture(name)));
@@ -2049,7 +2105,7 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    const responses=[];f.w.postMessage=data=>responses.push(data);f.api.initCourseDocumentBridge(doc);
    const send=(id,op)=>view.dispatchEvent(new view.MessageEvent('message',{origin:'https://mooc1.chaoxing.com',source:f.w,data:{channel:'cx-ai-document-v1',kind:'request',id,op}}));
    send('one','step');send('one','step');assert.equal(doc.documentElement.scrollTop,160);assert.equal(responses.length,2);assert.equal(responses[1].state.top,160);
-   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.22');
+   send('one','read');assert.equal(responses.length,2);send('two','step');assert.equal(doc.documentElement.scrollTop,320);assert.equal(doc.documentElement.getAttribute('data-cx-document-bridge'),'v1.23');
   }finally{f.close();}
  });
  await test('跨域PPT重试途中取消或替换阅读器停止发消息',async()=>{

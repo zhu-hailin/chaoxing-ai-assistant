@@ -4,9 +4,10 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.22
+// @version      1.23
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
+// @match        *://*.xuexitong.com/*
 // @match        *://*.edu.cn/work/doHomeWorkNew*
 // @match        *://*.edu.cn/mooc-ans/work/doHomeWorkNew*
 // @run-at       document-start
@@ -31,6 +32,7 @@
 // @connect      raw.githubusercontent.com
 // @connect      self
 // @connect      chaoxing.com
+// @connect      mooc1.xuexitong.com
 // ==/UserScript==
 
 (() => {
@@ -2891,12 +2893,23 @@ Typr["U"] = {
     'use strict';
     const { Typr, md5 } = bundledFontDependencies;
 
+    // Initialize before the document-start playback guard; independent of panel/DOM setup.
+    const COURSE_STUDY_HOSTS = Object.freeze(['mooc1.chaoxing.com', 'mooc1.xuexitong.com']);
+    function isCourseStudyURL(url) {
+        return Boolean(url && ['http:', 'https:'].includes(url.protocol)
+            && COURSE_STUDY_HOSTS.includes(url.hostname) && url.pathname.startsWith('/mycourse/studentstudy'));
+    }
+    function isCourseStudyOrigin(origin) {
+        // Bridge senders retain exact HTTPS origins, without arbitrary ports or subdomains.
+        return COURSE_STUDY_HOSTS.some(host => origin === `https://${host}`);
+    }
+
     // 尽早安装旧鼠标移出监听；只有 runner 的当前视频上下文能激活。
     const backgroundPlaybackGuard = initBackgroundPlayback();
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.22';
+    const ASSISTANT_VERSION = '1.23';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2944,7 +2957,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.22', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.23', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -4551,7 +4564,7 @@ Typr["U"] = {
             const url = new URL(value, doc.baseURI);
             if (url.protocol === 'data:') return /^data:image\/(png|jpeg|gif|webp)[;,]/i.test(value);
             if (url.protocol === 'blob:') return url.origin === new URL(doc.URL).origin;
-            return ['http:', 'https:'].includes(url.protocol) && (url.origin === new URL(doc.URL).origin || /(^|\.)chaoxing\.com$/i.test(url.hostname));
+            return ['http:', 'https:'].includes(url.protocol) && (url.origin === new URL(doc.URL).origin || /(^|\.)chaoxing\.com$/i.test(url.hostname) || url.hostname === 'mooc1.xuexitong.com');
         } catch { return false; }
     }
     function readMediaBytes(src, doc = document, signal) {
@@ -5458,7 +5471,8 @@ Typr["U"] = {
     }
     // 仅控制已确认的超星 PPT 阅读器；不交换账户、资源地址、Key 或任务上报。
     const COURSE_DOCUMENT_CHANNEL = 'cx-ai-document-v1';
-    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com','https://mooc1.chaoxing.com'];
+    // Reader origins are distinct from permitted course senders; both still require their own path/window checks.
+    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com', ...COURSE_STUDY_HOSTS.map(host => `https://${host}`)];
     const COURSE_DOCUMENT_MAILBOX = 'cx-ai-ppt-request:';
     function courseDocumentStorageAvailable() {
         return typeof GM_addValueChangeListener==='function' && typeof GM_removeValueChangeListener==='function'
@@ -5582,7 +5596,7 @@ Typr["U"] = {
         };
         const receive=event=>{
             const data=event.data;
-            if(event.origin!=='https://mooc1.chaoxing.com' || !valid(data))return;
+            if(!isCourseStudyOrigin(event.origin) || !valid(data))return;
             if(data.kind==='bind' && courseDocumentStorageAvailable()){
                 // 扩展沙箱消息的 source 可能为 null。仅允许建立信箱，不接受其直接滚动命令。
                 // 此例外还须有真实父页的超星 referrer；网页无法写油猴私有信箱。
@@ -5594,7 +5608,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.22');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.23');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -8355,7 +8369,7 @@ Typr["U"] = {
     function initOtherFeatures(doc=document) {
         const existing=otherFeatureManagers.get(doc);if(existing)return existing;
         const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
-        const controlsPlayback=doc===document&&view.top===view.self&&view.location.hostname==='mooc1.chaoxing.com'&&view.location.pathname==='/mycourse/studentstudy';
+        const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location)&&view.location.pathname==='/mycourse/studentstudy';
         const render=()=>{
             for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
                 shadow.getElementById('other-hide-platform-ai').checked=settings.hidePlatformAi;
@@ -8528,8 +8542,7 @@ Typr["U"] = {
     }
     // 字体解密部分源自 wyn665817 的 MIT 脚本；改为文本节点转换和可重入模块。
     function initBackgroundPlayback() {
-        if (window.top !== window.self || location.hostname !== 'mooc1.chaoxing.com'
-            || !location.pathname.startsWith('/mycourse/studentstudy')) return null;
+        if (window.top !== window.self || !isCourseStudyURL(location)) return null;
         if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
         let active = null, closed = false;
         const onMouseExit = event => {
@@ -8785,7 +8798,7 @@ Typr["U"] = {
             for (let depth = 0; view && depth < 12; depth++) {
                 const candidate = view.document;
                 const url = new URL(pageURL(candidate));
-                if (view === view.top && url.hostname === 'mooc1.chaoxing.com' && url.pathname.startsWith('/mycourse/studentstudy') && candidate.querySelector('#mainid #iframe')) return candidate;
+                if (view === view.top && isCourseStudyURL(url) && candidate.querySelector('#mainid #iframe')) return candidate;
                 if (view === view.parent) break;
                 view = view.parent;
             }
@@ -9212,9 +9225,9 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.22</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.23</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
-            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.22.08 1.725 1.22 1.725 1.22 1.005 1.722 2.637 1.224 3.279.936.102-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.22-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.223a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.223 3.092-1.223.615 1.55.228 2.695.112 2.98.722.788 1.229 1.79 1.229 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
+            <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.23.08 1.725 1.23 1.725 1.23 1.005 1.722 2.637 1.234 3.279.936.102-.728.393-1.235.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.23.44-2.232 1.23-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.233a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.233 3.092-1.233.615 1.55.228 2.695.112 2.98.722.788 1.239 1.79 1.239 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -9967,7 +9980,7 @@ Typr["U"] = {
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.22',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.23',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -10257,7 +10270,7 @@ Typr["U"] = {
         const view = doc.defaultView;
         if (!view || view !== view.top || !doc.body) return;
         const url = new URL(pageURL(doc));
-        if (url.hostname !== 'mooc1.chaoxing.com' || !url.pathname.startsWith('/mycourse/studentstudy')) return;
+        if (!isCourseStudyURL(url)) return;
         const content = doc.querySelector('#mainid #iframe');
         if (!content) return;
         if (!controller) controller = createController();

@@ -1,6 +1,7 @@
     // 仅控制已确认的超星 PPT 阅读器；不交换账户、资源地址、Key 或任务上报。
     const COURSE_DOCUMENT_CHANNEL = 'cx-ai-document-v1';
-    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com','https://mooc1.chaoxing.com'];
+    // Reader origins are distinct from permitted course senders; both still require their own path/window checks.
+    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com', ...COURSE_STUDY_HOSTS.map(host => `https://${host}`)];
     const COURSE_DOCUMENT_MAILBOX = 'cx-ai-ppt-request:';
     function courseDocumentStorageAvailable() {
         return typeof GM_addValueChangeListener==='function' && typeof GM_removeValueChangeListener==='function'
@@ -124,7 +125,7 @@
         };
         const receive=event=>{
             const data=event.data;
-            if(event.origin!=='https://mooc1.chaoxing.com' || !valid(data))return;
+            if(!isCourseStudyOrigin(event.origin) || !valid(data))return;
             if(data.kind==='bind' && courseDocumentStorageAvailable()){
                 // 扩展沙箱消息的 source 可能为 null。仅允许建立信箱，不接受其直接滚动命令。
                 // 此例外还须有真实父页的超星 referrer；网页无法写油猴私有信箱。
@@ -136,7 +137,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.22');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.23');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
