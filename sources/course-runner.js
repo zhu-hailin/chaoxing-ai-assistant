@@ -257,6 +257,7 @@
         } catch { session = crypto.randomUUID(); }
         let current = null;
         const api = { owner, key, get busy() { return Boolean(current && !current.cancelled); },
+            get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
             get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
             get canRetry() { return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
@@ -1469,7 +1470,8 @@
             if(courseRunActive(doc)||ctl.state.busy)submitAuthorized=false;
             autoSubmit.checked=submitAuthorized;
         };
-        const takeSubmitPermission=()=>{const allowed=submitAuthorized;submitAuthorized=false;autoSubmit.checked=false;return allowed;};
+        // Consume the one-run authorization; render the checkbox from the active run separately.
+        const takeSubmitPermission=()=>{const allowed=submitAuthorized;submitAuthorized=false;return allowed;};
         skipUnanswerable.onchange=()=>{
             if(courseRunActive(doc)||ctl.state.busy){skipUnanswerable.checked=get('cx_course_skip_unanswerable',false)===true;return;}
             set('cx_course_skip_unanswerable',skipUnanswerable.checked);render();
@@ -1537,6 +1539,7 @@
             s.getElementById('course-start').disabled=!hasCommands||running||ctl.state.busy;
             s.getElementById('course-stop').disabled=!hasCommands||!running;
             s.getElementById('course-skip').disabled=!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner));
+            autoSubmit.checked=running ? courseRunController(owner)?.autoSubmitEnabled===true : submitAuthorized;
             s.getElementById('course-auto-submit').disabled=!hasCommands||running||ctl.state.busy;
             skipLearned.disabled=running||ctl.state.busy;
             fromCurrent.disabled=running||ctl.state.busy;
