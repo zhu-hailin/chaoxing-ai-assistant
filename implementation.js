@@ -294,6 +294,33 @@
         return (data.evidence?.[question.id] || []).filter(item => /^https?:\/\//i.test(item.url || ''));
     }
 
+    function questionPrefillCandidates(snapshot,answers) {
+        if(!snapshot?.graph)return [];
+        const projection=snapshot.requestUnits || buildQuestionRequestUnits(snapshot.graph);
+        const questions=new Map(projection.questions.map(question=>[question.id,question]));
+        return (answers || []).filter(entry=>{
+            const question=questions.get(entry.id);
+            return question && entry.answer?.length && question.capabilities.prefill===true
+                && projection.bindings.get(entry.id)?.canPrefill===true
+                && questionPrefillPolicy(question,entry).status==='auto';
+        });
+    }
+    function questionResultStatuses(data,question,entry) {
+        const policy=entry?.answerPolicy || data.answerPolicies?.[question.id] || question.answerPolicy || questionLocalAnswerPolicy(question);
+        const skipped=data.skippedQuestions?.find(item=>item.id===question.id);
+        const analysis=entry?.answer?.length ? (['manual','uncertain'].includes(policy.status)?'已生成部分答案，请核对其余作答区域':'已生成答案与解析')
+            : skipped ? skipped.reason : ['manual','uncertain'].includes(policy.status) ? policy.reason
+            : data.analysisProgress && !['complete','stopped','failed','stale'].includes(data.analysisProgress.status) ? '等待或正在分析'
+            : '';
+        const written=data.prefill?.perQuestion?.find(item=>item.questionId===question.id);
+        const prefillPolicy=questionPrefillPolicy(question,entry || {answerPolicy:policy});
+        const prefill=written ? ({filled:'已填写',already:'已有相同答案',unverified:'写入状态待核对',skipped:written.reason || prefillPolicy.reason || '已跳过，请手动填写'}[written.status] || '请核对写入状态')
+            : !entry?.answer?.length&&!['manual','uncertain'].includes(policy.status) ? ''
+            : question.capabilities?.prefill===false ? `暂不支持，请手动填写${question.controls?.richText?'（富文本或嵌入控件）':''}`
+            : ['manual','uncertain'].includes(prefillPolicy.status) ? prefillPolicy.reason
+            : question.supportLevel==='Partial Support' ? '仅支持已确认的作答区域' : entry?.answer?.length ? '可预填，等待操作' : '等待分析结果';
+        return {analysis,prefill};
+    }
     function formatResultText(data) {
         if (!data?.questions?.length) return '';
         const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
@@ -324,9 +351,10 @@
                 ids.forEach(id => optionImages.add(id));appendImages(ids);
             }
             appendImages(questionImageIds(question).filter(id => !optionImages.has(id)));
-            const skipped = data.skippedQuestions?.find(item => item.id === question.id);
-            if (skipped) lines.push(skipped.reason);
-            if (entry && !skipped && question.capabilities?.analyze !== false) {
+            const states=questionResultStatuses(data,question,entry);
+            if(states.analysis)lines.push(`AI 分析：${states.analysis}`);
+            if(states.prefill)lines.push(`自动预填：${states.prefill}`);
+            if (entry?.answer?.length) {
                 lines.push(`答案：${readableAnswer(question, entry)}`);
                 if (entry.reason) lines.push(`解析：${entry.reason}`);
             }
@@ -383,7 +411,7 @@
             fragment.append(node('p', 'result-empty', '提取后将在这里显示题目列表'));
         } else {
             const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
-            fragment.append(node('p', 'result-summary', `${hasAnswers ? '题目与答案' : '题目列表'} · 共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}${data.analysisProgress ? ' · ' + analysisProgressText(data.analysisProgress) : hasAnswers ? ' · AI 分析完成' : ''}${data.prefill ? ' · ' + summaryText(data.prefill) : ''}${data.manualCount || data.uncertainCount ? ` · ${data.manualCount || 0} 题需人工处理，${data.uncertainCount || 0} 题需人工确认` : ''}`));
+            fragment.append(node('p', 'result-summary', `共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}`));
             const list = node('ol', 'question-list');
             for (const question of data.questions) {
                 const entry = answers.get(question.id);
@@ -392,9 +420,9 @@
                 const heading = node('div', 'question-heading');
                 heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
                 card.append(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
-                const policy=entry?.answerPolicy || data.answerPolicies?.[question.id] || question.answerPolicy;
-                if(policy)card.append(node('p','note answer-policy',policy.status==='auto'?'可一键答题':
-                    `${policy.status==='manual'?'需人工处理':policy.status==='needs-classification'?'待判断作答要求':'需人工确认'}：${policy.reason || '请核对作答要求'}`));
+                const states=questionResultStatuses(data,question,entry);
+                if(states.analysis)card.append(node('p','note answer-policy',`AI 分析：${states.analysis}`));
+                if(states.prefill)card.append(node('p','note prefill-policy',`自动预填：${states.prefill}`));
                 if (question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
                 const skipped = data.skippedQuestions?.find(item => item.id === question.id);
                 if (skipped) card.append(node('p', 'note', skipped.reason));
@@ -415,7 +443,7 @@
                 }
                 const images = renderImages(question, questionImageIds(question).filter(id => !optionImages.has(id)));
                 if (images) card.append(images);
-                if (entry && !skipped && question.capabilities?.analyze !== false) {
+                if (entry?.answer?.length) {
                     card.append(node('p', `ai-answer${entry.answer.length ? '' : ' needs-review'}`, readableAnswer(question, entry)));
                     if (entry.reason) card.append(node('p', 'answer-reason', `解析：${entry.reason}`));
                 }
@@ -1109,7 +1137,7 @@
             s.getElementById('model-test-status').textContent=currentConnection?.message||'尚未检测';
             s.getElementById('model-test-status').dataset.state=currentConnection?.state||'idle';
             refreshModelCapabilities(s, busy);
-            s.getElementById('prefill').disabled = busy || !controller?.last;
+            s.getElementById('prefill').disabled = busy || !questionPrefillCandidates(controller?.last,controller?.last?.answers).length;
             const task=controller?.task;
             s.getElementById('analysis-stop').hidden = !state.busy || !task?.active;
             s.getElementById('analysis-stop').disabled = !state.busy || !task?.active || task.abortController.signal.aborted;
@@ -1154,8 +1182,8 @@
             const restricted=entries.find(a=>a.answerPolicy?.status==='manual')||entries.find(a=>a.answerPolicy?.status==='uncertain');
             return {id:q.id,number:q.number,type:q.type,
                 answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${i+1}. ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
-                reason:restricted?.answerPolicy?.reason||'按已确认的作答区域分别分析',
-                ...(restricted?{answerPolicy:restricted.answerPolicy}:{}),responseUnitIds:ids};
+                reason:ids.flatMap((id,i)=>byId.get(id)?.reason?[`${i+1}. ${byId.get(id).reason}`]:[]).join('\n\n') || restricted?.answerPolicy?.reason || '按作答区域分别分析',
+                ...((restricted || entries[0])?.answerPolicy?{answerPolicy:(restricted || entries[0]).answerPolicy}:{}),responseUnitIds:ids};
         }).filter(Boolean);
         return {...result,questionAnswers,responseUnitCount:working.questions.length};
     }
@@ -1183,7 +1211,10 @@
         return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,snapshot:snapshot.rootSnapshot || snapshot,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
-        return `预填完成：${s.filled} 道已填，${s.already} 道已有相同答案，${s.skipped} 道跳过，${s.unverified} 道需检查。${s.details.length ? '\n' + s.details.slice(0, 5).join('\n') : ''}`;
+        const counts=[[s.filled,'已填'],[s.already,'已有答案'],[s.skipped,'跳过'],[s.unverified,'待检查']]
+            .filter(([count])=>count>0).map(([count,label])=>`${label} ${count} 题`);
+        return (counts.join('，') || '未填写答案')+(s.requiresManualSave?'，请手动保存或提交':'')
+            +(s.details.length?'\n'+s.details.slice(0,5).join('\n'):'');
     }
     const MAX_BATCH_QUESTIONS = 10;
     const MAX_BATCH_CHARACTERS = 12000;
@@ -1248,7 +1279,7 @@
         const policies=progress?.answerPolicies || new Map();
         for(const q of snapshot.questions) {
             const local=questionLocalAnswerPolicy(q);
-            if(local.status==='manual' || local.status==='auto')policies.set(q.id,local);
+            if(['manual','auto','uncertain'].includes(local.status))policies.set(q.id,local);
             else if(questionImageIds(q).length && !modelSupportsImages(settings.model,settings))
                 policies.set(q.id,{status:'uncertain',category:'images',reason:'所选模型不支持图片，此题需人工确认',evidence:''});
         }
@@ -1257,7 +1288,11 @@
         for(const q of snapshot.questions.filter(q=>!policies.has(q.id) || policies.get(q.id).status==='auto')) {
             check();throwIfAborted(signal);
             const ids=new Set(questionImageIds(q));
-            try {await retry(()=>prepareQuestionMedia((snapshot.media || []).filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,{signal,prepared:preparedMedia}),'preparing-images');}
+            try {
+                if([...ids].some(id=>(snapshot.media || []).filter(item=>item.id===id).length!==1))throw new Error('图片引用缺失或重复，题目材料不完整');
+                await retry(()=>prepareQuestionMedia((snapshot.media || []).filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,{signal,prepared:preparedMedia}),'preparing-images');
+                if([...ids].some(id=>!preparedMedia.get(id)?.dataUrl))throw new Error('图片尚未完整读取');
+            }
             catch(error){check();throwIfAborted(signal);policies.set(q.id,{status:'uncertain',category:'images',reason:`图片材料无法读取，需人工确认：${error.message}`,evidence:''});}
         }
         const classify=pending.filter(q=>!policies.has(q.id));
@@ -1296,7 +1331,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.26',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.27',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }
@@ -1416,9 +1451,12 @@
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
             checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
-            if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('没有有效答案可以预填，请核对题目与模型结果');ctl.report(`没有可自动填写的答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
+            if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('模型未返回有效答案，请核对题目与模型结果');ctl.report(`本次未生成有效答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
             ctl.last={...task.snapshot,rootSnapshot:task.snapshot,answers:result.answers};
-            if(task.autoPrefill) {
+            const prefillable=questionPrefillCandidates(ctl.last,result.answers);
+            if(!prefillable.length) {
+                ctl.report(`AI 已分析 ${result.analyzedCount} 道题；当前作答控件暂不支持预填或需人工处理，答案与解析已保留，请核对后手动填写。`,'done');
+            } else if(task.autoPrefill) {
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
                 ctl.output({...ctl.result,prefill:summary});
@@ -1431,6 +1469,7 @@
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
             if(changed)task.preparedMedia.clear();
             renderAnalysisProgress(task);
+            if(error.prefillSummary)ctl.output({...ctl.result,prefill:error.prefillSummary});
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
             const prefill=error.prefillSummary?`；已确认填写 ${error.prefillSummary.filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
             ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
@@ -1488,7 +1527,7 @@
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async prefillLast() {
-                if (ctl.state.busy || courseRunActive() || !ctl.last) return;
+                if (ctl.state.busy || courseRunActive() || !questionPrefillCandidates(ctl.last,ctl.last?.answers).length) return;
                 const task=ctl.task;
                 if(task){task.active=true;task.abortController=new AbortController();}
                 ctl.report('正在校验并预填…', 'prefilling', true);
@@ -1500,6 +1539,7 @@
                 catch (e) {
                     ctl.last = null;
                     if(task){task.status=task.abortController.signal.aborted?'stopped':'stale';task.preparedMedia.clear();renderAnalysisProgress(task,true);}
+                    if(e.prefillSummary)ctl.output({...ctl.result,prefill:e.prefillSummary});
                     ctl.report(`预填中止：${assistantErrorMessage(e,{module:'actions',operation:'prefill'})}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
                 finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }

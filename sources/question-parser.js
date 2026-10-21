@@ -137,6 +137,84 @@
             && before.savedInput===after.savedInput && before.records.length===after.records.length
             && before.records.every((record,index)=>['key','value','row','marker','content','qtype','role','handler'].every(key=>record[key]===after.records[index][key]));
     }
+    function readChapterRowChoiceBindings(node,id,type,rows) {
+        if(!['single','multiple'].includes(type)||!rows.length||rows.some(row=>row.querySelector('input,.num_option')))return null;
+        try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
+        catch{return null;}
+        if(!rows.some(row=>row.matches('li.before-after,li.before-after-checkbox')||/add(?:Multiple)?Choice\s*\(/.test(row.getAttribute('onclick')||'')))return null;
+        const expected=type==='multiple'?'addMultipleChoice':'addChoice',records=[],keys=new Set();
+        const questionOwner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
+        let valid=/^\d+$/.test(String(id)),contentValid=true;
+        for(const row of rows) {
+            const labels=row.querySelectorAll(':scope > label.fl.before'),contents=row.querySelectorAll(':scope > a.fl.after');
+            const clears=row.querySelectorAll(':scope > div.clear'),label=labels[0],content=contents[0];
+            const key=clean(label?.textContent).match(/^([A-Z])(?:[.．、:：)）])?$/)?.[1]||'';
+            const handler=row.getAttribute('onclick')||'';
+            const call=/^\s*(?:return\s+)?(addChoice|addMultipleChoice)\(\s*this\s*\)\s*;?\s*$/.exec(handler);
+            const owns=questionOwner(row)===node;
+            if(!owns||labels.length!==1||contents.length!==1||!key||keys.has(key))contentValid=false;
+            if(!owns||labels.length!==1||contents.length!==1||clears.length!==1||!key||keys.has(key)
+                ||!row.matches(type==='multiple'?'li.before-after-checkbox':'li.before-after')||call?.[1]!==expected)valid=false;
+            keys.add(key);records.push({key,row,label,content,clear:clears[0],handler});
+        }
+        const saved=/^\d+$/.test(String(id))?[...node.ownerDocument.querySelectorAll(`[id="answer${id}"],[name="answer${id}"]`)]:[];
+        if(saved.length>1||saved.length===1&&(!saved[0].matches('input[type="hidden"]')
+            ||saved[0].id&&saved[0].id!==`answer${id}`||saved[0].name&&saved[0].name!==`answer${id}`
+            ||saved[0].form!==node.closest('form')||questionOwner(saved[0])&&questionOwner(saved[0])!==node))valid=false;
+        return {id:String(id),mode:expected,valid,contentValid,records,savedInput:saved.length===1?saved[0]:null,
+            diagnostics:valid?[]:['旧版选项字母、题目归属或原生处理函数尚未可靠对应，暂不预填']};
+    }
+    function sameChapterRowChoiceBindings(before,after) {
+        if(!before||!after)return !before&&!after;
+        return before.valid===after.valid&&before.contentValid===after.contentValid&&before.id===after.id&&before.mode===after.mode
+            &&before.savedInput===after.savedInput&&before.records.length===after.records.length
+            &&before.records.every((record,index)=>['key','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
+    }
+    function readQuestionUEditor(node,id) {
+        // 只读取已存在的实例；不调用 UE.getEditor，不按 uid 或题号顺序猜测实例。
+        try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
+        catch{return null;}
+        const candidates=[...node.querySelectorAll('textarea[id^="answerEditor"]')];
+        if(!candidates.length)return null;
+        const invalid=()=>({valid:false,diagnostics:['UEditor 尚未就绪或题目、实例、表单关联不唯一，暂不预填']});
+        const same=(a,b)=>Boolean(a&&b&&typeof a.isSameNode==='function'&&a.isSameNode(b));
+        const owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
+        try {
+            const doc=node.ownerDocument,input=candidates[0],form=input.form;
+            if(candidates.length!==1||!/^answerEditor\d+$/.test(input.id)||!/^\d+$/.test(String(id))||owner(input)!==node
+                ||doc.querySelectorAll(`[id="${input.id}"]`).length!==1||!form?.matches('form#form1')||node.closest('form')!==form
+                ||doc.querySelectorAll('[id="form1"]').length!==1||!input.name.trim()||input.name!==input.name.trim()
+                ||[...form.elements].filter(element=>element.name===input.name).length!==1
+                ||input.disabled||input.readOnly||input.matches(':disabled'))return invalid();
+            const view=typeof courseVideoPlayerWindow==='function'?courseVideoPlayerWindow(doc):doc.defaultView;
+            if(!same(view?.document,doc))return invalid();
+            const registry=view?.UE?.instants;
+            if(!registry||typeof registry!=='object')return invalid();
+            const instances=Object.values(registry).filter(Boolean),matches=instances.filter(editor=>editor.key===input.id);
+            if(matches.length!==1)return invalid();
+            const editor=matches[0],frames=[...node.querySelectorAll('iframe')];
+            const iframe=frames.find(frame=>same(frame,editor.iframe)),container=iframe?.closest('.edui-editor');
+            const inner=iframe?.contentDocument,body=inner?.body;
+            if(frames.length!==1||!iframe||!container||owner(container)!==node||container.closest('form')!==form
+                ||!same(container,editor.container)||!same(inner,editor.document)||!same(body,editor.body)
+                ||!same(inner?.defaultView?.frameElement,iframe)||!node.contains(container)||!container.contains(iframe)
+                ||!body?.isConnected||body.contentEditable!=='true'||editor.options?.readonly===true
+                ||![1,true].includes(editor.isReady)||!courseElementVisible(iframe)
+                ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true'
+                ||editor.textarea&&!same(editor.textarea,input)||editor.form&&!same(editor.form,form)
+                ||['setContent','getContent','sync'].some(key=>typeof editor[key]!=='function'))return invalid();
+            if(instances.filter(other=>other===editor).length!==1||instances.some(other=>other!==editor
+                &&(other.key===input.id||same(other.iframe,iframe)||same(other.container,container)||same(other.body,body)||same(other.document,inner))))return invalid();
+            return {valid:true,diagnostics:[],id:String(id),registry,editor,input,form,iframe,document:inner,body,container,
+                key:input.id,name:input.name,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
+        }catch{return invalid();}
+    }
+    function sameQuestionUEditor(before,after) {
+        if(!before||!after)return !before&&!after;
+        if(!before.valid||!after.valid)return before.valid===after.valid;
+        return ['id','registry','editor','input','form','iframe','document','body','container','key','name','setContent','getContent','sync']
+            .every(key=>before[key]===after[key]);
+    }
     function rawQuestion(node, index, adapter, videoContext = {}) {
         // Only verified local adapters supply context; ordinary chapter selectors stay unchanged.
         const local = ['video-quiz','chaoxing-mooc2-work'].includes(adapter) ? videoContext : {};
@@ -153,13 +231,14 @@
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         const mooc2=adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node) : null;
-        let optionTargets, options, writer;
+        let optionTargets, options, writer,chapterRows=null;
         if (mooc2) {
             options=mooc2.records.map(record=>({key:record.key,text:clean(questionContentText(record.content))}));
             optionTargets=new Map(mooc2.records.map(record=>[record.key,record.row]));writer='mooc2-choice';
         } else if (legacy.length) {
             const type = detectType(typeLabel || question);
-            options = legacy.map((li, i) => { const key = optionKey(li, i, type); return { key, text: optionText(li, key) }; });
+            if(adapter!=='video-quiz')chapterRows=readChapterRowChoiceBindings(node,id,type,legacy);
+            options = legacy.map((li, i) => { const key = chapterRows?chapterRows.records[i].key:optionKey(li, i, type); return { key, text: optionText(li, key) }; });
             optionTargets = new Map(options.map((option, i) => [option.key, legacy[i]])); writer = 'chapter-choice';
         } else {
             options = native.map((input, i) => {
@@ -174,6 +253,7 @@
         const radios = native.filter(input => input.type === 'radio');
         const radioGroupIsolated = !radios.length || radios.every(input => input.name && input.name === radios[0].name && [...node.ownerDocument.getElementsByName(input.name)].filter(other => other.type === 'radio' && other.form === input.form).every(other => node.contains(other)));
         const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
+        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id);
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const { media, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets);
         for (const option of options) {
@@ -186,7 +266,10 @@
             return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, adapterHints:local.graphHints || {} } };
+        const chapterEvidence=writer==='chapter-choice'&&adapter!=='video-quiz'?JSON.stringify([...optionTargets].map(([key,row])=>
+            [key,row.getAttribute('onclick'),[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')].map(input=>[input.type,input.name,input.value,input.id])])):null;
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, chapterRows, chapterEvidence,ueditor,
+            choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:local.graphHints || {} } };
     }
     registerPageAdapter({
         id:'chaoxing-mooc2-work',
@@ -225,6 +308,7 @@
         const rules = [
             ['handwriting', /(?:请|须|需要|需|必须|要求|用|采用|以|只能|仅限|只接受)(?:先|直接|本人|亲自|在纸上|用纸笔|使用纸笔|进行|采用|用|以|纸质|方式|作答|答案|纸笔|\s){0,8}(?:手写|手绘)|(?:^|[；;。！？])\s*手写|(?:拍照|扫描)[^。！？；;]{0,15}(?:上传|提交)|(?:上传|提交)[^。！？；;]{0,15}(?:手写|照片|手稿)/, '需要手写或拍照上传'],
             ['copying', /(?:请|须|需|要求|进行|完成)(?:先|逐字|认真|用笔|在纸上|英文|英语|\s){0,5}(?:抄写|誊写|临摹)|(?:^|[；;。！？])\s*(?:抄写|誊写|临摹)/, '需要抄写或书写练习'],
+            ['upload', /(?:请|必须|须|要求)(?:将|把)?(?:本题|你的|您的|作答|答案|答题结果|解答|结果|\s){0,6}(?:拍照|录音|录像|上传(?:附件|文件|照片|图片|音频|视频))|(?:以|通过)(?:附件|文件|照片|图片|音频|视频)(?:形式|方式)?(?:上传|提交)/, '需要拍照、录制或上传附件'],
             ['drawing', /(?:请|须|需要|需|要求)(?:先|根据材料|根据题意|用笔|自行|完成|制作|构建|一张|\s){0,6}(?:绘制|画出|手绘|思维导图|标注下图|标出图中)|(?:绘制|画出|制作|构建)[^。！？；;]{0,15}(?:图|曲线|示意|结构)/, '需要绘图、思维导图或标注']
         ];
         for (const [category, pattern, reason] of rules) {
@@ -233,20 +317,23 @@
         }
         if(question.type==='unknown' || question.capabilities?.analyze===false)
             return {status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''};
-        if(question.capabilities?.prefill===false)
-            return {status:'manual',category:'controls',reason:question.diagnostics?.join('；') || '控件暂不支持自动填写',evidence:''};
+        if(question.blocks?.some(block=>block.unreadable))
+            return {status:'uncertain',category:'materials',reason:'题目包含尚未可靠读取的材料，请人工核对',evidence:''};
         if(['single','multiple','judge'].includes(question.type) && question.question && !questionImageIds(question).length)
             return {status:'auto',category:'objective',reason:'明确的选择或判断题',evidence:question.source?.typeLabel || question.type};
         return {status:'needs-classification',category:'pending',reason:'需要判断作答要求',evidence:''};
     }
     function questionCanAutoAnswer(question, policy) {
         const local=questionLocalAnswerPolicy(question);
-        return local.status!=='manual' && question.capabilities?.analyze!==false &&
+        return !['manual','uncertain'].includes(local.status) && question.capabilities?.analyze!==false &&
             (policy || local).status==='auto';
     }
     function questionPrefillPolicy(question, entry) {
         const local=questionLocalAnswerPolicy(question);
         if(local.status==='manual')return local;
+        if(question.capabilities?.prefill===false)
+            return {status:'manual',category:'controls',reason:question.diagnostics?.join('；') || '控件暂不支持自动填写，请手动填写',evidence:''};
+        if(local.status==='uncertain')return local;
         // 已分类结果只能限制本地白名单，不能解除明确的人工要求。
         if(entry?.answerPolicy && ['auto','manual','uncertain'].includes(entry.answerPolicy.status))return entry.answerPolicy;
         if(local.status==='auto')return local;
@@ -260,8 +347,11 @@
         const choice = ['single','multiple','judge'].includes(type);
         const nativeCompatible = type === 'multiple' ? raw.controls.checkboxes === raw.options.length : raw.controls.radios === raw.options.length;
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
+        if(['blank','essay'].includes(type)&&raw.binding.ueditor)prefill=raw.binding.ueditor.valid
+            &&raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input;
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
+        if(raw.binding.chapterRows&&!raw.binding.chapterRows.valid){diagnostics.push(...raw.binding.chapterRows.diagnostics);prefill=false;}
         const ownMedia = raw.media || [];
         if (!raw.question && !ownMedia.length) { diagnostics.push('缺少可读取题干'); prefill = false; }
         if (!uniqueOptions) { diagnostics.push('选项键重复，无法可靠对应控件'); prefill = false; }
@@ -275,7 +365,8 @@
             if (textAnswer && raw.controls.textInputs !== 1) diagnostics.push('多个或缺失文本框，暂不自动预填');
             if (textAnswer && raw.controls.editableTextInputs === 0) diagnostics.push('文本控件不可编辑');
         }
-        if (raw.controls.richText) diagnostics.push('富文本或嵌入控件暂不自动预填');
+        if(raw.binding.ueditor&&!prefill)diagnostics.push(...raw.binding.ueditor.diagnostics);
+        if (raw.controls.richText&&!raw.binding.ueditor?.valid) diagnostics.push('富文本或嵌入控件暂不自动预填');
         if (type === 'unknown') { diagnostics.push('未识别题型，保留原始题目供核对'); prefill = false; }
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
         const question = {
@@ -283,10 +374,13 @@
             groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:[],
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
-            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && !raw.unboundOptionImages && !mooc2Invalid, prefill }, diagnostics
+            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && uniqueOptions
+                &&(!raw.binding.chapterRows||raw.binding.chapterRows.contentValid)
+                && !raw.options.some(option=>!option.text&&!ownMedia.some(item=>item.location==='option'&&item.optionKey===option.key))
+                && !raw.unboundOptionImages && !mooc2Invalid, prefill }, diagnostics
         };
         question.answerPolicy=questionLocalAnswerPolicy(question);
-        return { question, binding: { ...raw.binding, type, canPrefill: prefill } };
+        return { question, binding: { ...raw.binding, writer:prefill&&raw.binding.ueditor?.valid?'ueditor':raw.binding.writer, type, canPrefill: prefill } };
     }
     registerQuestionParser({ id: 'declared-type', match: raw => canonicalType(raw) !== 'unknown', parse: raw => finishQuestion(raw, canonicalType(raw), 'declared-type') });
     registerQuestionParser({
@@ -401,7 +495,7 @@
             ['chapter-choice','mooc2-choice'].includes(binding.writer) ? binding.writer : target.type === 'checkbox' ? 'checkbox' : 'radio',
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
-            ['blank','essay'].includes(question.type) && !question.controls?.richText);
+            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&binding.ueditor?.valid&&binding.ueditor.input===input));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
             if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
             add(target, target.tagName === 'SELECT' ? 'select' : target.tagName === 'CANVAS' ? 'canvas' : target.type === 'file' ? 'upload' : 'richtext', false);
@@ -465,7 +559,8 @@
                     canPrefill:unit.relationStatus === 'confirmed'});
             }
             const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
-            question.supportLevel = original.answerPolicy.status === 'manual' && original.answerPolicy.category !== 'controls' ? 'Manual Required'
+            question.answerPolicy=questionLocalAnswerPolicy(question);
+            question.supportLevel = question.answerPolicy.status === 'manual' ? 'Manual Required'
                 : !original.capabilities.analyze ? (original.type === 'unknown' ? 'Unsupported' : 'Unreadable')
                 : confirmed === matched.responseUnits.length ? 'Fully Supported' : confirmed ? 'Partial Support' : 'Analyze Only';
             return question;

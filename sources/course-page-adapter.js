@@ -70,6 +70,23 @@
                 active:node.classList.contains('active') || node.getAttribute('aria-selected') === 'true',
                 disabled:node.getAttribute('aria-disabled') === 'true' || node.classList.contains('disabled') }));
     }
+    function courseTabSnapshot(owner) {
+        const nodes=[...owner.querySelectorAll('#prev_tab li[id^="dct"],#prev_tab [data-course-tab]')];
+        const active=nodes.filter(node=>node.classList.contains('active')||node.getAttribute('aria-selected')==='true');
+        if(nodes.some(node=>!node.id)||new Set(nodes.map(node=>node.id)).size!==nodes.length)
+            return {ready:false,reason:'栏目 ID 缺失或重复',tabs:[],activeId:null};
+        if(!nodes.length)return {ready:true,tabs:[],activeId:null};
+        const tabs=courseTabs(owner);
+        // 原生页面会在只有一栏时隐藏整个栏目条；该栏仍由唯一 active 节点确认。
+        if(!tabs.length&&nodes.length===1&&active.length===1) {
+            const node=nodes[0];
+            tabs.push({id:node.id,title:clean(node.textContent),node,active:true,
+                disabled:node.getAttribute('aria-disabled')==='true'||node.classList.contains('disabled')});
+        }
+        return {ready:active.length===1&&tabs.some(tab=>tab.id===active[0].id),
+            reason:active.length!==1?'当前 active 栏目尚未唯一确定':'栏目仍在加载或隐藏',
+            tabs,activeId:active.length===1?active[0].id:null};
+    }
     // Detached template content stays inert: no player, iframe or returned script is mounted.
     function courseProbeMarkup(owner, html) {
         if(typeof html!=='string'||html.length>2*1024*1024)return null;
@@ -448,7 +465,8 @@
         return view;
     }
     function courseVideoSpeedCapability(video) {
-        const result = (status, evidence, extra = {}) => ({status, rates:[], evidence, ...extra});
+        let boundPlayer=null;
+        const result = (status, evidence, extra = {}) => ({status, rates:[], evidence, ...(boundPlayer?{player:boundPlayer}:{}), ...extra});
         try {
             const root = video?.closest('.video-js');
             if (!root || !video.isConnected || !courseElementVisible(video)) return result('unknown','player-unavailable');
@@ -460,13 +478,15 @@
             const player = players[0];
             if (player.isDisposed?.() || !player.el?.()?.isSameNode(root) || root.querySelectorAll('video').length !== 1
                 || root.querySelector('video') !== video) return result('unknown','player-mismatch');
+            boundPlayer=player;
             const options = typeof player.options === 'function' ? player.options() : player.options_;
             const configured = options?.playbackRates;
             const bar = player.getChild?.('controlBar') || player.controlBar;
             const button = bar?.getChild?.('playbackRateMenuButton') || bar?.playbackRateMenuButton;
             const buttonNode = button?.el?.();
             const menuAvailable = buttonNode?.ownerDocument?.isSameNode(video.ownerDocument) && root.contains(buttonNode)
-                && courseElementVisible(buttonNode) && !buttonNode.closest('.vjs-hidden,.vjs-disabled,[disabled],[aria-disabled="true"]');
+                && courseElementVisible(buttonNode) && !buttonNode.closest('.vjs-hidden,.vjs-disabled,[disabled],[aria-disabled="true"]')
+                && !buttonNode.querySelector('button:disabled,button.vjs-disabled,button[aria-disabled="true"]');
             if (configured === false) return result(menuAvailable ? 'unknown' : 'disabled',menuAvailable ? 'configuration-conflict' : 'native-disabled');
             if (!Array.isArray(configured) || !configured.length || configured.length > 64
                 || configured.some(rate => typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0)) return result('unknown','configuration-unavailable');
@@ -480,7 +500,7 @@
                     if (text.length <= 160 && /(?:不可|禁止|不得|不允许|不支持|无法).{0,8}(?:倍速|变速)|(?:倍速|变速).{0,8}(?:禁止|关闭|不可用)/.test(text)) return result('disabled','explicit-restriction');
                 }
             }
-            if (!menuAvailable || button.player?.() !== player || button.playbackRateSupported?.() === false) return result('unknown','menu-unavailable');
+            if (!menuAvailable || button.player?.() !== player || button.playbackRateSupported?.() !== true) return result('unknown','menu-unavailable');
             const parseRate = value => /^\d+(?:\.\d+)?\s*[x×倍]?$/i.test(String(value).trim()) ? Number.parseFloat(value) : NaN;
             // 现场 7.2.2 使用这个原生菜单结构。标签 + 当前实例配置即可确认档位，
             // 不要求平台定制的每个 MenuItem 都暴露 options().rate 等内部字段。
@@ -500,36 +520,99 @@
             return result('allowed',nativeNodes.length?'native-configuration-and-dom-menu':'native-configuration-and-menu',{rates, player, button, items});
         } catch { return result('unknown','player-unreadable'); }
     }
-    function courseApplyVideoSpeed(video, attempts, {enabled=true, disabledReason='switch-off'} = {}) {
+    function courseReleaseVideoSpeed(video, attempts, cancel=false) {
+        const record=attempts.get(video);
+        if(!record)return;
+        if(record.opened) {
+            try {
+                record.button.unpressButton();
+                const active=video.ownerDocument.activeElement;
+                if(record.button.el()?.contains(active)&&record.focus?.isConnected)record.focus.focus({preventScroll:true});
+            }catch{}
+            record.opened=false;
+        }
+        if(cancel&&!record.finished) {
+            record.finished=true;
+            record.state.actualRate=Number(video.playbackRate);
+            record.state.outcome=record.operated&&record.state.actualRate===record.state.selectedRate?'selected':'interrupted';
+        }
+    }
+    function courseApplyVideoSpeed(video, attempts, {enabled=true, disabledReason='switch-off',now=Date.now,readyMs=3000,confirmMs=2000,generation=0} = {}) {
         const capability = courseVideoSpeedCapability(video);
-        const state = {status:capability.status, rates:capability.rates, evidence:capability.evidence, selectedRate:null, outcome:'unchanged'};
-        if (!enabled) return {...state,outcome:disabledReason};
-        if (capability.status !== 'allowed') return state;
-        const target = capability.rates.filter(rate=>rate>1 && rate<=2).at(-1);
-        if (!target) return {...state,outcome:'no-faster-rate'};
-        state.selectedRate = target;
-        if (video.playbackRate >= target) return {...state,outcome:'already-selected'};
-        const item = capability.items.find(item=>item.rate===target), signature = capability.rates.join(',');
-        const tried = attempts.get(item.node) || new Set();
-        if (tried.has(signature)) return {...state,outcome:'not-retained'};
-        const button = capability.button, menu = button.menu, buttonNode = button.el();
-        let opened = false;
+        const at=now(),actualRate=Number(video.playbackRate),root=video.closest('.video-js');
+        const source=video.currentSrc||video.getAttribute('src')||'';
+        if(!enabled) {
+            courseReleaseVideoSpeed(video,attempts,true);
+            return {status:capability.status,rates:capability.rates,evidence:capability.evidence,selectedRate:null,actualRate,method:null,reason:disabledReason,outcome:disabledReason};
+        }
+        let record=attempts.get(video);
+        if(!record||record.root!==root||record.source!==source||record.generation!==generation
+            ||capability.player&&record.player&&record.player!==capability.player) {
+            courseReleaseVideoSpeed(video,attempts,true);
+            record={root,source,generation,player:capability.player,deadline:at+readyMs,operated:false,finished:false,opened:false,openedMenus:new WeakSet(),
+                state:{status:capability.status,rates:capability.rates,evidence:capability.evidence,selectedRate:null,actualRate,method:null,reason:null,outcome:'preparing'}};
+            attempts.set(video,record);
+        }
+        const state=record.state;state.actualRate=actualRate;
+        const finish=(outcome,reason=null,status=state.status)=>{
+            state.outcome=outcome;state.reason=reason;state.status=status;record.finished=true;
+            courseReleaseVideoSpeed(video,attempts);return {...state};
+        };
         try {
-            if (!courseElementVisible(item.node)) {
-                if (typeof menu?.show !== 'function' || typeof menu?.hide !== 'function'
-                    || typeof button.addClass !== 'function' || typeof button.removeClass !== 'function') return {...state,outcome:'menu-unavailable'};
-                // 使用播放器自己的菜单显示接口；不点会循环切换速率的菜单按钮，也不抢焦点。
-                menu.show(); button.addClass('vjs-hover'); opened = true;
+            if(record.finished) {
+                if(['selected','already-selected'].includes(state.outcome)&&actualRate!==state.selectedRate)return finish('not-retained','actual-rate-changed');
+                return {...state};
             }
+            if(capability.status==='disabled')return finish('native-disabled',capability.evidence,'disabled');
+            if(!video.isConnected||!root||record.player?.isDisposed?.())return finish('player-changed','player-unavailable','unknown');
+            if(record.operated) {
+                if(!record.player?.el?.()?.isSameNode(root)||root.querySelector('video')!==video)return finish('player-changed','video-player-mismatch','unknown');
+                if(actualRate===state.selectedRate)return finish('selected');
+                if(at>=record.confirmUntil)return finish('not-retained','actual-rate-unconfirmed');
+                state.outcome='confirming';return {...state};
+            }
+            state.status=capability.status;state.evidence=capability.evidence;
+            if(capability.status!=='allowed') {
+                if(at>=record.deadline)return finish('preparation-timeout',capability.evidence,'unknown');
+                state.reason=capability.evidence;return {...state};
+            }
+            record.player=capability.player;state.rates=capability.rates;
+            const target=capability.rates.filter(rate=>rate>1&&rate<=2).at(-1);
+            if(!target)return finish('no-faster-rate');
+            state.selectedRate=target;
+            if(actualRate===target)return finish('already-selected');
+            if(at>=record.deadline)return finish('preparation-timeout',state.reason||'menu-not-ready','unknown');
+            // 每次取得当前菜单节点；重建只更新绑定，不重置期限或操作次数。
+            if(record.opened&&(record.button!==capability.button||record.menu!==capability.button.menu))courseReleaseVideoSpeed(video,attempts);
             const fresh = courseVideoSpeedCapability(video);
-            if (fresh.status !== 'allowed' || fresh.player !== capability.player || fresh.button !== button
-                || !fresh.items.some(current=>current.node===item.node && current.rate===target) || !courseElementVisible(item.node)
-                || !courseElementVisible(buttonNode)) return {...state,status:'unknown',outcome:'menu-changed'};
-            tried.add(signature); attempts.set(item.node,tried);
+            if(fresh.status!=='allowed') {state.reason='capability-changed:'+fresh.evidence;return {...state};}
+            if(fresh.player!==record.player)return finish('player-changed','player-instance-changed','unknown');
+            if(fresh.button!==capability.button) {state.reason='button-rebuilt';return {...state};}
+            if(JSON.stringify(fresh.rates)!==JSON.stringify(capability.rates)||!fresh.rates.includes(target))return finish('configuration-changed','native-rates-changed','unknown');
+            const button=fresh.button,buttonNode=button.el(),item=fresh.items.find(current=>current.rate===target);
+            if(!item?.node?.isConnected||item.node.ownerDocument!==video.ownerDocument||!buttonNode.contains(item.node)) {state.reason='target-menu-item-changed';return {...state};}
+            if(!courseElementVisible(buttonNode)) {state.reason='button-not-visible';return {...state};}
+            // 原生菜单项本身也调用此正式 API；只使用已核验的原生档位。
+            if(typeof fresh.player.playbackRate==='function') {
+                record.operated=true;record.confirmUntil=at+confirmMs;state.method='native-api';state.outcome='confirming';state.reason=null;
+                fresh.player.playbackRate(target);
+                return {...state,actualRate:Number(video.playbackRate)};
+            }
+            if(!courseElementVisible(item.node)) {
+                if(typeof button.pressButton!=='function'||typeof button.unpressButton!=='function'||!button.menu)return finish('menu-unavailable','native-open-api-missing','unknown');
+                if(!record.openedMenus.has(button.menu)) {
+                    record.openedMenus.add(button.menu);record.button=button;record.menu=button.menu;
+                    const expanded=button.buttonPressed_===true||buttonNode.querySelector('button[aria-expanded="true"]');
+                    record.focus=video.ownerDocument.activeElement;record.opened=!expanded;
+                    button.pressButton();
+                }
+                state.reason='menu-item-not-visible';state.outcome='waiting-menu';return {...state};
+            }
+            record.operated=true;record.confirmUntil=at+confirmMs;state.method='native-menu';state.outcome='confirming';state.reason=null;
             item.node.click();
-            return {...state,outcome:video.playbackRate===target?'selected':'not-retained'};
-        } catch { return {...state,status:'unknown',outcome:'selection-failed'}; }
-        finally { if (opened) { try {button.removeClass('vjs-hover');menu.hide();} catch {} } }
+            courseReleaseVideoSpeed(video,attempts);
+            return {...state,actualRate:Number(video.playbackRate)};
+        } catch { return finish('selection-failed','native-operation-failed','unknown'); }
     }
     function courseVisibleMarker(container, selector) {
         return Boolean(container && (container.matches(selector)&&courseElementVisible(container)

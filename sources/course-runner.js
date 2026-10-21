@@ -1,7 +1,7 @@
     const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
-        slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3 });
+        slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
     let courseRunner;
     // 仅脚本闭包持有命令入口；页面事件只传递状态，不授予操作权限。
     const assistantConfirm = window.confirm.bind(window);
@@ -75,9 +75,9 @@
         protection.lastOutcomeIndex=index;
         return protection;
     }
-    function courseRunProtection(previous, chapters, chapterIndex, limit) {
+    function courseRunProtection(previous, chapters, chapterIndex, limit, enabled=false) {
         const saved=previous?.protection;
-        const value={consecutiveFailures:0,lastOutcomeIndex:-1,triggered:false,triggeredAt:null,
+        const value={enabled:previous?saved?.enabled===true:enabled===true,consecutiveFailures:0,lastOutcomeIndex:-1,triggered:false,triggeredAt:null,
             limit:Number.isInteger(limit)&&limit>0?limit:3};
         if(saved && Number.isInteger(saved.consecutiveFailures)&&saved.consecutiveFailures>=0
             && Number.isInteger(saved.lastOutcomeIndex)&&saved.lastOutcomeIndex>=-1&&saved.lastOutcomeIndex<chapters.length) {
@@ -196,12 +196,12 @@
             return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：旧鼠标拦截${state.installed===true?'已安装':'未安装'}，${stages[state.installedReadyState]||'安装时机未知'}；拦截 ${count(state.interceptedMouseouts)} 次，恢复入口尝试 ${count(state.recoveryAttempts)} 次；${categories[state.category]||'状态未知'}。`;
         }));
         const speedStates=report.chapters.flatMap(chapter=>chapter.tasks.filter(task=>task.type==='video'&&task.speedState).map(task=>{
-            const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；${state.evidence} / ${state.outcome}。`;
+            const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；实际 ${Number.isFinite(state.actualRate)?state.actualRate+'x':'未知'}；方式 ${state.method||'未操作'}；${state.evidence} / ${state.outcome}${state.reason?' / '+state.reason:''}。`;
         }));
         const locatorMetric=name=>Number.isFinite(report.locator?.[name])?Math.max(0,Math.round(report.locator[name])):0;
         return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (report.retryOf ? '\n本轮为未完成章节重试，完成计数仅统计本轮。' : '')
-            + (protection ? `\n连续超时 ${protection.consecutiveFailures}/${protection.limit}${protection.triggered?'，已保护性停止':''}。` : '')
+            + (protection ? `\n连续失败保护性停止：${protection.enabled===true?'开启':'关闭'}；连续超时 ${protection.consecutiveFailures}${protection.enabled===true?'/'+protection.limit:''}${protection.triggered?'，已保护性停止':''}。` : '')
             + (pending.unvisited.length ? `\n尚未处理 ${pending.unvisited.length} 个章节：\n`+pending.unvisited.map(chapter=>`${chapter.number} ${chapter.title}`).join('\n') : '')
             + (completedQuizzes ? `\n${completedQuizzes} 个章节测验已完成，已跳过作答。` : '')
             + (taskFree.length ? `\n${taskFree.length} 个章节无任务点，已直接继续下一节。` : '')
@@ -224,12 +224,12 @@
         const report=courseRunner?.report || (scope?get(`cx_course_run:${scope}`,null)?.report:null);
         if(report && state.message===courseReportText(report)) {
             if(report.protection?.triggered)return report.reason||'连续超时，已保护性停止';
-            if(report.status==='running')return `自动学习进行中${report.protection?.consecutiveFailures?`；连续超时 ${report.protection.consecutiveFailures}/${report.protection.limit}`:''}`;
+            if(report.status==='running')return `自动学习进行中${report.protection?.consecutiveFailures?`；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`:''}`;
             const pending=coursePendingChapters(report);
             return report.status==='done'?(pending.failed.length||pending.skipped.length||pending.manual.length||pending.unvisited.length?'遍历结束，仍有待处理章节':'自动学习已结束'):'自动学习已停止';
         }
         if(report?.status==='running'&&report.protection?.consecutiveFailures&&!/连续超时/.test(state.message||''))
-            return `${state.message||'自动学习进行中'}；连续超时 ${report.protection.consecutiveFailures}/${report.protection.limit}`;
+            return `${state.message||'自动学习进行中'}；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`;
         return state.message || '就绪';
     }
     function courseSkipResume(owner) {
@@ -291,7 +291,7 @@
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -345,7 +345,8 @@
                 }
                 let rangeStart=resume||retry?previous?.rangeStart||null:null;
                 if(!resume&&!retry&&fromCurrent) {
-                    const tabs=courseTabs(owner),active=tabs.filter(tab=>tab.active);
+                    const snapshot=courseTabSnapshot(owner),tabs=snapshot.tabs,active=tabs.filter(tab=>tab.active);
+                    if(!snapshot.ready){ctl.report('栏目尚未就绪，请等待加载后再开始','error');return;}
                     if(tabs.length&&active.length!==1){ctl.report('无法确定当前栏目，请刷新页面后重试','error');return;}
                     rangeStart={chapterId:entries[startIndex].id,tabId:active[0]?.id||'current',tabIndex:Math.max(0,tabs.findIndex(tab=>tab.active)),cardId:active[0]?.node.getAttribute('cardid')||''};
                 }
@@ -363,7 +364,7 @@
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
                 const learning=courseLearningSettings(resume?previous.learning||{}:{restEnabled,studyMinutes,restMinutes});
                 const savedPacing=resume?previous.pacing:null;
-                const protection=courseRunProtection(resume?previous:null,report.chapters,resume?previous.chapterIndex:0,limits.maxConsecutiveChapterFailures);
+                const protection=courseRunProtection(resume?previous:null,report.chapters,resume?previous.chapterIndex:0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
                 report.protection=protection;
                 const run = {id:crypto.randomUUID(),queue,report,settings,protection,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
@@ -377,7 +378,7 @@
                     speedEnabled:resume ? previous.speedEnabled===true : speedEnabled===true,
                     fromCurrent:resume ? previous.fromCurrent===true : fromCurrent===true,startChapterId:resume ? previous.startChapterId||queue[0].id : queue[0].id,
                     rangeStart,probeBlocked:(previous?.report?.chapters||[]).some(chapter=>chapter.tasks?.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed)&&task.status!=='done')),
-                    chapterIndex:resume ? previous.chapterIndex : 0,tabIndex:resume ? previous.tabIndex : 0,
+                    chapterIndex:resume ? previous.chapterIndex : 0,tabIndex:resume ? previous.tabIndex : 0,tabProgress:resume?previous.tabProgress||null:null,
                     cancelled:false,abort:new AbortController(),expected:null,navigating:false,lastSaved:0};
                 run.cancelWait = new Promise(resolve => { run.cancelWake = resolve; });
                 if(skipCurrent) {
@@ -402,7 +403,7 @@
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
                     set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
-                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,report});
+                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,tabProgress:run.tabProgress,report});
                     run.claimed=true;
                     run.lastSaved = now();
                 };
@@ -434,7 +435,7 @@
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
                         if (active?.id !== run.expected) throw new Error('用户切换了章节，已停止，避免操作新题目');
-                        if (run.expectedTab && courseTabs(owner).find(tab=>tab.active)?.id !== run.expectedTab) throw new Error('用户切换了页面标签，已停止');
+                        if (run.expectedTab && courseTabSnapshot(owner).activeId !== run.expectedTab) throw new Error('当前栏目已变化或无法唯一确认，已停止');
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
@@ -549,6 +550,11 @@
                         const pauseControl={manualIntentUntil:0,manualPaused:false,lastAttemptAt:-Infinity,recoveryBlocked:false};
                         let playRequestPending=false;
                         const speedAttempts=new WeakMap();
+                        let speedGeneration=0;
+                        const suspendSpeed=()=>{
+                            courseReleaseVideoSpeed(video,speedAttempts,true);
+                            const state=speedAttempts.get(video)?.state;if(state)task.speedState={...state};
+                        };
                         task.speedState={status:'unknown',rates:[],evidence:'not-checked',selectedRate:null,outcome:!run.speedEnabled?'switch-off':settings.videoInfoEnabled?'recognition-enabled':'unchanged'};
                         const syncVideoWaitBudget=()=>{
                             const waiting=foregroundWaitingStartedAt!==null||manualWaitingStartedAt!==null||quizWaitingStartedAt!==null;
@@ -691,6 +697,8 @@
                         };
                         const onMediaEvent=event=>{
                             if(context.skipped || run.cancelled || event.type==='pause' && video.ended)return;
+                            if(['pause','seeking','loadstart','emptied'].includes(event.type))suspendSpeed();
+                            if(['loadstart','emptied'].includes(event.type))speedGeneration++;
                             const state=snapshot(event.type);observe(state);
                             if(state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                             if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
@@ -726,6 +734,7 @@
                             font:ensureFontDecoded,solve:(snapshot,config,status)=>solveQuestionBatches(snapshot,config,status,{retryTransient:true}),
                             prefill:prefillChecked,submitting:value=>{context.submitting=value;task.videoQuizUnconfirmed=value;},
                             waiting:value=>{
+                                if(value)suspendSpeed();
                                 if(value&&quizWaitingStartedAt===null){quizWaitingStartedAt=now();syncVideoWaitBudget();pausePacing();}
                                 if(!value&&quizWaitingStartedAt!==null){quizWaitingStartedAt=null;syncVideoWaitBudget();if(foregroundWaitingStartedAt===null&&manualWaitingStartedAt===null)resumePacing();}
                             },
@@ -751,7 +760,7 @@
                             const state=courseOwnerForegroundState(owner);
                             if(!task.foregroundState.required || state.visible&&state.focused)return false;
                             if(foregroundWaitingStartedAt===null){
-                                foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
+                                suspendSpeed();foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
                                 syncVideoWaitBudget();pausePacing();
                             }
                             if(!video.paused&&!video.ended){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
@@ -777,6 +786,7 @@
                             } finally {finishForegroundWait();}
                         };
                         const waitForManualPlayback=async()=>{
+                            suspendSpeed();
                             if(manualWaitingStartedAt===null){
                                 manualWaitingStartedAt=now();task.pauseState.waitCount++;task.pauseState.waiting=true;
                                 task.pauseState.reason=pauseControl.recoveryBlocked?'连续恢复无效，请返回课程页手动播放':'已手动暂停，请手动播放后继续';
@@ -813,7 +823,7 @@
                                 guard();return courseFrameTree(owner).documents.includes(video.ownerDocument);
                             },onSuppressed:()=>{task.backgroundState.interceptedMouseouts++;}})||(()=>{});
                         run.releaseVideoProtection=releaseProtection;
-                        const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked','canplay','loadeddata','ratechange'];
+                        const eventTypes=['pause','playing','waiting','stalled','error','ended','timeupdate','seeking','seeked','canplay','loadeddata','ratechange','loadstart','emptied'];
                         for(const type of eventTypes)video.addEventListener(type,onMediaEvent);
                         owner.addEventListener('visibilitychange',onForegroundChange);
                         owner.defaultView.addEventListener('blur',onForegroundChange);
@@ -928,7 +938,7 @@
                                 foregroundPausePending=false;task.backgroundState.category='playing';task.backgroundState.reason=null;
                                 // 复用已通过弹题、前台、定位和媒体检查的播放入口；不在人工等待期间操作菜单。
                                 if(video.readyState>=2&&!courseVideoQuizCandidate(video))task.speedState=courseApplyVideoSpeed(video,speedAttempts,
-                                    {enabled:run.speedEnabled&&!settings.videoInfoEnabled,disabledReason:settings.videoInfoEnabled&&run.speedEnabled?'recognition-enabled':'switch-off'});
+                                    {enabled:run.speedEnabled&&!settings.videoInfoEnabled,disabledReason:settings.videoInfoEnabled&&run.speedEnabled?'recognition-enabled':'switch-off',now,readyMs:limits.speedReadyMs,confirmMs:limits.speedConfirmMs,generation:speedGeneration});
                                 // 定位位移不刷新停滞时间。先给一次普通媒体采样机会，随后必检原停滞计时；
                                 // 连续定位也不能反复续期，只有等待期间的真实普通播放进展能避免超时。
                                 if(wasPending&&!video.ended){
@@ -951,6 +961,7 @@
                             }
                             task.status='done';task.endedAt=now();report.videos++;
                         } finally {
+                            suspendSpeed();
                             releaseProtection();if(run.releaseVideoProtection===releaseProtection)run.releaseVideoProtection=null;
                             for(const doc of pauseDocuments)for(const type of ['pointerdown','click','keydown'])doc.removeEventListener(type,onPlayerInput,true);
                             quizHandler.close();videoInfo.close();
@@ -1116,6 +1127,10 @@
                             if(!invalid.length)chapter.issues.push(...summary.details.map(reason=>({number:Number(reason.match(/第\s*(\d+)\s*题/)?.[1])||null,reason})));
                             const error=new Error('支持的题目已处理，仍有题目需人工完成，未提交测验');error.code='COURSE_MANUAL_ANSWER_REQUIRED';throw error;
                         }
+                        if(summary.requiresManualSave) {
+                            chapter.issues.push({number:null,reason:'UEditor 答案已预填并同步到表单，请人工保存或提交'});
+                            throw Object.assign(new Error('富文本答案已预填并同步到表单，等待人工保存或提交'),{code:'COURSE_MANUAL_ANSWER_REQUIRED',requiresManualSave:true});
+                        }
                         if(!run.submit) throw new Error('预填完成，等待人工提交；自动流程已停止');
                         checkSnapshot(snapshot);guard();
                         const buttons=courseSubmitButton(doc);
@@ -1170,10 +1185,11 @@
                     run.navigating=Boolean(tabJump);run.locating=false;guard();
                     run.probeCheck=()=>{guard();if(JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id))!==catalogBefore)
                         throw Object.assign(new Error('定位期间课程目录发生变化，请重新开始'),{code:'COURSE_LOCATOR_CHANGED'});};
-                    let tabs=courseTabs(owner);
-                    if(!tabs.length) tabs=[{id:'current',title:'当前页面',active:true}];
-                    const tabIds=tabs.map(tab=>tab.id);
-                    const rangeTruncated=Boolean(boundary&&tabIds.indexOf(boundary.tabId)>0);
+                    let tabState;
+                    await until(()=>{tabState=courseTabSnapshot(owner);return tabState.ready;},limits.loadMs,'栏目列表或 active 状态未就绪');
+                    let tabs=tabState.tabs.length?tabState.tabs:[{id:'current',title:'当前页面',active:true}];
+                    let tabIds=tabs.map(tab=>tab.id);
+                    let rangeTruncated=Boolean(boundary&&tabIds.indexOf(boundary.tabId)>0);
                     if(boundary&&(!tabIds.includes(boundary.tabId)||boundary.cardId&&tabs.find(tab=>tab.id===boundary.tabId)?.node.getAttribute('cardid')!==boundary.cardId))throw new Error('本次起点栏目发生变化，请重新开始');
                     if(probe?.known&&JSON.stringify(probe.tabs.map(tab=>[tab.id,tab.cardId]))!==JSON.stringify(tabs.map(tab=>[tab.id,tab.node?.getAttribute('cardid')||'']))) {
                         // Native rendering can change the pre-read column descriptors. Discard this
@@ -1184,12 +1200,74 @@
                         report.locator.reasons['live-tabs-changed']=(report.locator.reasons['live-tabs-changed']||0)+1;
                         emit('栏目列表已更新，正在核对当前章节任务…','course-locating');
                     } else rememberExcluded(chapter,location.excluded);
-                    if(tabs.some((tab,index)=>index>=run.tabIndex&&tab.disabled)) throw new Error('章节页面标签未解锁，无法自动继续');
+                    const savedTabs=run.tabProgress?.chapterId===chapter.id?run.tabProgress:null;
+                    const startTabId=savedTabs?.currentId || (probe?.known?location.tab?.id:null) || boundary?.tabId;
+                    if(startTabId&&startTabId!=='current') {
+                        const start=tabIds.indexOf(startTabId);
+                        if(start<0)throw new Error('本轮记录的起始栏目已移除，无法继续原队列');
+                        run.tabIndex=start;
+                    }
+                    const visitedTabs=new Set(savedTabs?.completed||tabs.slice(0,run.tabIndex).map(tab=>tab.id));
+                    const identities=new Map(savedTabs?.identities||tabs.map(tab=>[tab.id,tab.node?.getAttribute('cardid')||'']));
+                    let currentTabId=null,tabSignature=JSON.stringify([...identities]),tabRebound=false;
+                    const refreshTabs=()=>{
+                        const live=courseTabSnapshot(owner);
+                        if(!live.ready)return false;
+                        const next=live.tabs.length?live.tabs:[{id:'current',title:'当前页面',active:true}];
+                        const pairs=next.map(tab=>[tab.id,tab.node?.getAttribute('cardid')||'']);
+                        for(const [id,card] of pairs)if(identities.get(id)&&identities.get(id)!==card) {
+                            if(!card)return false;
+                            throw new Error('栏目对应内容已变化，无法继续使用原任务队列');
+                        }
+                        if(boundary&&(!next.some(tab=>tab.id===boundary.tabId)||boundary.cardId&&next.find(tab=>tab.id===boundary.tabId)?.node?.getAttribute('cardid')!==boundary.cardId))
+                            throw new Error('本次起点栏目发生变化，请重新开始');
+                        if(currentTabId&&currentTabId!=='current'&&!next.some(tab=>tab.id===currentTabId))throw new Error('正在处理的栏目已移除，无法确认任务状态');
+                        if(next[0].id!=='current'&&(currentTabId==='current'||visitedTabs.has('current'))) {
+                            // current 只是栏目未出现时的临时页面，不能把它的完成记录转给后来出现的 active 栏目。
+                            // 原生加载可同时替换 iframe；结束旧页面处理，再从真实栏目重新读取任务和完成状态。
+                            visitedTabs.delete('current');identities.delete('current');currentTabId=null;tabSignature=null;
+                            run.expectedTab=live.activeId;tabRebound=true;
+                            emit('栏目已加载，正在重新核对实际栏目任务…','course-running');
+                        }
+                        const signature=JSON.stringify(pairs);
+                        if(signature!==tabSignature) {
+                            courseInvalidateTaskProbe(owner,entry.id);probe=null;initialProbeTab=null;tabSignature=signature;
+                            for(const [id,card] of pairs)identities.set(id,card);
+                        }
+                        tabs=next;tabIds=tabs.map(tab=>tab.id);
+                        rangeTruncated=Boolean(boundary&&tabIds.indexOf(boundary.tabId)>0);
+                        const index=tabIds.indexOf(currentTabId);
+                        if(index>=0)run.tabIndex=index;
+                        return true;
+                    };
+                    const nextTab=()=>tabs.find((tab,index)=>!visitedTabs.has(tab.id)&&(!boundary||index>=tabIds.indexOf(boundary.tabId)));
+                    const markTab=()=>{
+                        visitedTabs.add(currentTabId);
+                        run.tabProgress={chapterId:chapter.id,currentId:currentTabId,completed:[...visitedTabs],identities:[...identities]};
+                        save();
+                    };
                     let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
-                    for(;run.tabIndex<tabIds.length;run.tabIndex++) {
-                        const id=tabIds[run.tabIndex],tab=courseTabs(owner).find(item=>item.id===id);
+                    tabLoop:for(;;) {
+                        await until(refreshTabs,limits.loadMs,'栏目列表或 active 状态持续无法确认');
+                        let tab=nextTab();
+                        if(!tab) {
+                            await wait(limits.settleMs);
+                            await until(refreshTabs,limits.loadMs,'栏目结构更新后未就绪');
+                            tab=nextTab();
+                            if(!tab&&!rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) {
+                                const state=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
+                                if(state()?.pending>0&&!state()?.completed) {
+                                    emit('正在核对新增栏目或平台完成确认…','course-running');
+                                    await until(()=>refreshTabs()&&(nextTab()||state()?.completed||state()?.pending===0),limits.completionMs,'栏目已核对，本章仍有未完成任务或平台未确认');
+                                    tab=nextTab();
+                                }
+                            }
+                            if(!tab)break;
+                        }
+                        const id=tab.id;currentTabId=id;run.tabIndex=tabIds.indexOf(id);
+                        run.tabProgress={chapterId:chapter.id,currentId:id,completed:[...visitedTabs],identities:[...identities]};
                         let readyType=id===initialProbeTab?location.targetType:null;
-                        if(id!=='current' && !tab) throw new Error('章节页面标签发生变化');
+                        if(tab.disabled)throw new Error('章节页面标签未解锁，无法自动继续');
                         if(probe?.known&&id!==initialProbeTab) {
                             const descriptor=probe.tabs.find(item=>item.id===id);let summary;
                             const started=now();pausePacing();run.locating=true;
@@ -1200,17 +1278,20 @@
                             finally {run.locating=false;report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
                             if(summary?.known) {
                                 const decisions=summary.tasks.map(task=>courseTaskEligibility(task,run));
-                                if(decisions.every(item=>item.status==='excluded')){rememberExcluded(chapter,[{tab:descriptor,tasks:summary.tasks,decisions}]);taskFreeOnly=false;save();continue;}
+                                if(decisions.every(item=>item.status==='excluded')){rememberExcluded(chapter,[{tab:descriptor,tasks:summary.tasks,decisions}]);taskFreeOnly=false;markTab();continue;}
                                 readyType=summary.tasks[decisions.findIndex(item=>item.status!=='excluded')]?.type;
                             }
                         }
                         if(tab && !tab.active) {
+                            if(!courseElementVisible(tab.node))throw new Error('下一栏目入口尚不可见，无法安全切换');
                             const old=courseContentFingerprint(owner);run.navigating=true;save();report.locator.tabNavigations++;tab.node.click();
                             await until(()=>courseTabs(owner).some(item=>item.id===id&&item.active)
                                 && courseContentChanged(old,courseContentFingerprint(owner)),limits.loadMs,'页面标签未成功切换');
                             await waitForFrameReady(true,{chapterId:entry.id,tabId:id,type:readyType});run.navigating=false;
                         }
-                        run.expectedTab=id==='current'?null:id;await waitForFrameReady();run.navigating=false;guard();
+                        run.expectedTab=id==='current'?null:id;
+                        await waitForFrameReady(tabRebound,{chapterId:entry.id,tabId:id,type:readyType});tabRebound=false;
+                        run.navigating=false;guard();
                         let tree=courseFrameTree(owner);
                         let docs=tree.documents.slice(1);
                         if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
@@ -1226,7 +1307,7 @@
                         }
                         if(coursePageWithoutTasks(tree,allTasks)) {
                             chapter.tasks.push({tab:id,type:'non-task',status:'not-required'});
-                            emit('本节没有任务点，正在继续下一节…','course-running');save();continue;
+                            emit('当前栏目没有任务点，正在核对后续栏目…','course-running');markTab();continue;
                         }
                         taskFreeOnly=false;
                         let tasks=allTasks.filter(item=>courseTaskRequired(item.node)!==false);
@@ -1240,7 +1321,8 @@
                             if(item.type==='video')task.number=++videoNumber;
                             if(item.type==='document')task.number=++documentNumber;
                             chapter.tasks.push(task);
-                            if(item.type==='video')await playVideo(item.node,task);
+                            if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
+                            else if(item.type==='video')await playVideo(item.node,task);
                             else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);if(settings.videoInfoEnabled)captureCurrentCourseContext(owner,{reader:item.reader});}
                             else if(item.type==='knowledge-graph') {
                                 task.status=courseTaskComplete(item.node)===true?'already':'manual-pending';
@@ -1257,9 +1339,10 @@
                                     if(!run.skipUnanswerable || error.code!=='COURSE_MANUAL_ANSWER_REQUIRED' || context.submitting
                                         || chapter.tasks.some(t=>t.submissionStarted&&t.status!=='done'))throw error;
                                     task.status='manual-pending';task.reason=error.message;
+                                    if(error.requiresManualSave)task.requiresManualSave=true;
                                     task.manualQuestions=chapter.issues.slice(issueStart).map(issue=>({number:issue.number,reason:clean(issue.reason).slice(0,200)}));
                                     manualNodes.add(item.node);
-                                    emit('此测验含无法自动答题的题目，已保留支持题答案；不提交，继续后续任务…','course-running');
+                                    emit(task.requiresManualSave?'富文本答案已预填并同步到表单，未提交，继续后续任务…':'此测验含无法自动答题的题目，已保留支持题答案；不提交，继续后续任务…','course-running');
                                 }
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
@@ -1274,7 +1357,9 @@
                             };
                             tasks=collectNext();
                             const entryState=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
-                            const lastTab=run.tabIndex===tabIds.length-1;
+                            await until(refreshTabs,limits.loadMs,'处理任务后栏目列表未就绪');
+                            if(currentTabId!==id)continue tabLoop;
+                            const lastTab=!tabs.some(tab=>tab.id!==id&&!visitedTabs.has(tab.id)&&(!boundary||tabIds.indexOf(tab.id)>=tabIds.indexOf(boundary.tabId)));
                             const pendingHere=()=>courseFrameTree(owner).documents.slice(1).some(doc=>[...doc.querySelectorAll('.ans-attach-ct,[data-course-task]')]
                                 .some(node=>courseElementVisible(node)&&courseTaskRequired(node)!==false&&courseTaskComplete(node)===false
                                     && (courseTaskLabel(node)||courseVisibleMarker(node,'.ans-job-icon'))
@@ -1283,11 +1368,15 @@
                             if(!tasks.length && lastTab && (legacyCatalog ? pendingHere() : (pendingHere() || !rangeTruncated&&!chapter.tasks.some(task=>task.status==='manual-pending')) && entryState()?.pending>0 && !entryState()?.completed)) {
                                 emit('正在等待后续任务或平台完成确认…','course-running');
                                 const next=await until(()=>{
+                                    if(!refreshTabs())return false;
+                                    if(currentTabId!==id)return {tasks:[],rebound:true};
+                                    if(tabs.some(tab=>tab.id!==id&&!visitedTabs.has(tab.id)&&(!boundary||tabIds.indexOf(tab.id)>=tabIds.indexOf(boundary.tabId))))return {tasks:[]};
                                     const found=collectNext();
                                     if(found.length)return {tasks:found};
                                     if(!pendingHere() && (legacyCatalog||rangeTruncated||chapter.tasks.some(task=>task.status==='manual-pending')))return {tasks:[]};
                                     return entryState()?.completed||entryState()?.pending===0?{tasks:[]}:false;
-                                },limits.completionMs,'本章仍有未完成任务或后续控件未加载，已停止');
+                                },limits.completionMs,'本章仍有未完成任务或后续控件未加载');
+                                if(next.rebound)continue tabLoop;
                                 tasks=next.tasks;
                             }
                         }
@@ -1299,13 +1388,14 @@
                             if(!text && !loaded) throw new Error('页面内容未读取到');
                             chapter.tasks.push({tab:id,type:'text',status:'viewed'});
                         }
-                        save();
+                        markTab();
                     }
                     const pending=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
                     if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
-                            ?'包含已跳过的知识图谱，未计为完成，需人工处理':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
+                            ?'包含已跳过的知识图谱，未计为完成，需人工处理':chapter.tasks.some(task=>task.requiresManualSave)
+                            ?'富文本答案已预填并同步到表单，等待人工保存或提交':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
                     }
                     if(rangeTruncated&&!pending()?.completed&&pending()?.pending!==0) {
                         chapter.status='manual-pending';chapter.remainingUnconfirmed=true;
@@ -1339,7 +1429,7 @@
                     watchdog=owner.defaultView.setInterval(()=>{
                         try {guardRun();if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
                     },limits.pollMs);
-                    if(run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
+                    if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
                         run.locating=true;guardRun();let chapter=report.chapters[run.chapterIndex];
@@ -1387,12 +1477,12 @@
                             lease.setAttribute('data-can-skip','false');
                         }
                         courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);
-                        if(run.protection.consecutiveFailures>=run.protection.limit) {
+                        if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit) {
                             run.protection.triggered=true;run.protection.triggeredAt=now();save();
                             throw courseFailureLimitError(run.protection.limit);
                         }
                         save();
-                        if(chapter.status==='timed-out')emitRun(`本章节超时；连续超时 ${run.protection.consecutiveFailures}/${run.protection.limit}，继续下一节`,'course-running');
+                        if(chapter.status==='timed-out')emitRun(`本章节超时；连续超时 ${run.protection.consecutiveFailures}${run.protection.enabled?'/'+run.protection.limit:'，失败次数保护已关闭'}，继续下一节`,'course-running');
                         const hasNext=queue.slice(run.chapterIndex+1).some(item=>{
                             const next=readCourseCatalog(owner)?.entries.find(entry=>entry.id===item.id);
                             return next&&!(run.skipLearned&&next.completed);
@@ -1474,6 +1564,12 @@
         };
         const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video'),skipUnanswerable=s.getElementById('course-skip-unanswerable'),videoQuizAuto=s.getElementById('course-video-quiz-auto'),speedEnabled=s.getElementById('course-speed-enabled');
         const autoSubmit=s.getElementById('course-auto-submit');
+        const failureProtection=s.getElementById('course-failure-protection');
+        failureProtection.checked=get('cx_course_failure_protection_enabled',false)===true;
+        failureProtection.onchange=event=>{
+            if(!trustedAssistantActivation(event,failureProtection,'change')||courseRunActive(doc)||ctl.state.busy){render();return;}
+            set('cx_course_failure_protection_enabled',failureProtection.checked);render();
+        };
         const restEnabled=s.getElementById('course-rest-enabled'),studyMinutes=s.getElementById('course-study-minutes'),restMinutes=s.getElementById('course-rest-minutes');
         const renderLearningFields=()=>{
             const cfg=readCourseLearningSettings();restEnabled.checked=cfg.restEnabled;studyMinutes.value=cfg.studyMinutes;restMinutes.value=cfg.restMinutes;
@@ -1545,7 +1641,9 @@
                 const li=doc.createElement('li');li.textContent=`${label} · ${item.number} ${item.title}${item.reason?'：'+item.reason:''}`;list.append(li);
             }
             const protection=report?.protection;
-            s.getElementById('course-protection-status').textContent=protection?.triggered?`连续 ${protection.limit} 个章节超时，已保护性停止（CX-EXE-008）`:protection?.consecutiveFailures?`连续超时 ${protection.consecutiveFailures}/${protection.limit}`:'';
+            const enabled=courseRunActive(doc)?protection?.enabled===true:get('cx_course_failure_protection_enabled',false)===true;
+            s.getElementById('course-protection-status').textContent=protection?.triggered?`连续 ${protection.limit} 个章节超时，已保护性停止（CX-EXE-008）`:
+                `连续失败保护性停止：${enabled?'开启（连续三个章节超时后停止）':'关闭'}${protection?.consecutiveFailures?`；本轮连续超时 ${protection.consecutiveFailures} 次`:''}`;
             const candidate=retryCandidate();retryButton.disabled=!courseRunController(owner)||ctl.state.busy||!candidate.allowed;retryButton.hidden=!report;
             retryButton.title=candidate.allowed?'按原队列顺序重试待处理章节':candidate.reason;
             if(retryToken && (ctl.state.busy||!candidate.allowed||candidate.token!==retryToken))clearRetryConfirmation();
@@ -1573,6 +1671,8 @@
             skipLearned.disabled=running||ctl.state.busy;
             fromCurrent.disabled=running||ctl.state.busy;
             timeoutNext.disabled=running||ctl.state.busy;
+            failureProtection.checked=running?report?.protection?.enabled===true:get('cx_course_failure_protection_enabled',false)===true;
+            failureProtection.disabled=running||ctl.state.busy;
             muteVideo.disabled=running||ctl.state.busy;
             skipUnanswerable.disabled=running||ctl.state.busy;videoQuizAuto.disabled=running||ctl.state.busy;speedEnabled.disabled=running||ctl.state.busy;
             for(const control of [restEnabled,studyMinutes,restMinutes])control.disabled=running||ctl.state.busy;
@@ -1586,7 +1686,7 @@
         }
         s.getElementById('course-start').onclick=event=>{
             if(!trustedAssistantActivation(event,s.getElementById('course-start')) || !courseRunController(owner))return;
-            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,videoQuizAuto:videoQuizAuto.checked,speedEnabled:speedEnabled.checked,...readCourseLearningSettings()});
+            courseRunController(owner).start({submit:takeSubmitPermission(),skipLearned:skipLearned.checked,fromCurrent:fromCurrent.checked,continueOnTimeout:timeoutNext.checked,failureProtectionEnabled:failureProtection.checked,muteVideo:muteVideo.checked,skipUnanswerable:skipUnanswerable.checked,videoQuizAuto:videoQuizAuto.checked,speedEnabled:speedEnabled.checked,...readCourseLearningSettings()});
         };
         s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
         stopButton.onclick=event=>{
