@@ -1,4 +1,4 @@
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:30, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });

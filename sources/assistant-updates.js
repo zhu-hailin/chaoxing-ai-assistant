@@ -7,12 +7,12 @@
     let assistantUpdateListener = null, assistantUpdateGeneration = 0, assistantUpdateMessage = '';
 
     function assistantVersionParts(value) {
-        const match = /^v?(\d{1,4})\.(\d{2})$/.exec(String(value ?? ''));
-        return match ? [Number(match[1]), Number(match[2])] : null;
+        const match = /^v?(\d{1,4})\.(\d{2})(?:\.(0|[1-9]\d{0,3}))?$/.exec(String(value ?? ''));
+        return match ? [Number(match[1]), Number(match[2]), ...(match[3] === undefined ? [] : [Number(match[3])])] : null;
     }
     function assistantVersionIsNewer(value) {
         const a = assistantVersionParts(value), b = assistantVersionParts(ASSISTANT_VERSION);
-        return Boolean(a && b && (a[0] > b[0] || a[0] === b[0] && a[1] > b[1]));
+        return Boolean(a && b && (a[0] > b[0] || a[0] === b[0] && (a[1] > b[1] || a[1] === b[1] && (a[2] || 0) > (b[2] || 0))));
     }
     function assistantUpdateCache() {
         const value = get(ASSISTANT_UPDATE_KEY, {}), now = Date.now();
@@ -30,7 +30,7 @@
         try { release = JSON.parse(text); } catch { throw new Error('正式发行版信息无效，请稍后重试'); }
         const version = release && assistantVersionParts(release.tag_name);
         if (!version || release.draft !== false || release.prerelease !== false
-            || release.tag_name !== `v${version[0]}.${String(version[1]).padStart(2,'0')}`)
+            || release.tag_name !== `v${version[0]}.${String(version[1]).padStart(2,'0')}${version.length === 3 ? '.' + version[2] : ''}`)
             throw new Error('正式发行版信息无效，请稍后重试');
         return release.tag_name.slice(1);
     }
