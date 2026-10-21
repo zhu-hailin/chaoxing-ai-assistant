@@ -1147,7 +1147,7 @@
             const hasQuestions = hasQuestionNodes(document);
             for (const id of ['extract', 'solve']) s.getElementById(id).disabled = busy || !hasQuestions;
             s.getElementById('catalog-refresh').disabled = busy;
-            for (const button of s.querySelectorAll('[data-chapter-button]')) button.disabled = busy;
+            for (const button of s.querySelectorAll('[data-chapter-button]')) button.disabled = busy || button.dataset.navigationAvailable!=='true';
             panelView.renderCourseRunControls?.();
         }
     }
@@ -1331,7 +1331,7 @@
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.27',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.28',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
     }

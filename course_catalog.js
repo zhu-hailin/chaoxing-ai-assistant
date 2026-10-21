@@ -100,6 +100,39 @@
             return true;
         });
     }
+    function courseNativeChapterCall(node) {
+        return /^\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node?.getAttribute('onclick') || '')
+            || /^\s*javascript:\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node?.getAttribute('href') || '');
+    }
+    function courseChapterNavigation(row, label, nativeMode = false) {
+        if (!label) return {status:'group',target:null,evidence:'catalog-group'};
+        const path=[];
+        for(let node=label;node;node=node.parentElement) {path.push(node);if(node===row)break;}
+        if(path[path.length-1]!==row || !row.isConnected)return {status:'unknown',target:null,evidence:'entry-detached'};
+        if(path.some(node=>node.hasAttribute('disabled')||node.getAttribute('aria-disabled')==='true'))
+            return {status:nativeMode?'sequence-locked':'unknown',target:null,evidence:'native-disabled'};
+        const handler=path.find(courseNativeChapterCall);
+        if(handler)return {status:'available',target:label,evidence:'getTeacherAjax'};
+        // A property-bound native handler has no onclick attribute. Delegate the click;
+        // do not infer DOM2/delegated listeners from cursor styles or guess their functions.
+        if(path.some(node=>!node.hasAttribute('onclick') && typeof node.onclick==='function'))
+            return {status:'available',target:label,evidence:'onclick-property'};
+        return {status:nativeMode?'sequence-locked':'unknown',target:null,evidence:nativeMode?'native-entry-missing':'navigation-unconfirmed'};
+    }
+    function courseChapterAccess(owner, chapter, catalog = readCourseCatalog(owner)) {
+        const entry=catalog&&catalog.sourceDoc===owner?catalog.entries.find(item=>item.id===chapter?.id&&!item.isGroup):null;
+        if(!entry?.node?.isConnected)return {entry,allowed:false,status:'unknown',reason:'chapter-entry-missing'};
+        const current=entry.active===true && courseStudyContext(owner).chapterId===entry.chapterId;
+        return {entry,current,allowed:current||entry.navigation.status==='available'&&entry.target?.isConnected===true,
+            status:entry.navigation.status,reason:entry.navigation.evidence};
+    }
+    function courseRequireChapterAccess(owner, chapter, catalog) {
+        const access=courseChapterAccess(owner,chapter,catalog);
+        if(!access.allowed)throw Object.assign(new Error(access.status==='sequence-locked'?'章节尚未解锁':'章节原生入口尚未确认'),{
+            code:access.status==='sequence-locked'?'COURSE_SEQUENCE_LOCKED':'COURSE_NAVIGATION_UNKNOWN',
+            navigationBoundary:{id:chapter.id,status:access.status,reason:access.reason}});
+        return access.entry;
+    }
     function readCourseCatalog(doc = document) {
         const context = resolveCourseCatalog(doc);
         if (!context) return null;
@@ -107,7 +140,9 @@
         const entries = [];
         const seenIds = new Set();
         let structure = 'pos-catalog';
-        for (const row of root.querySelectorAll('.posCatalog_select')) {
+        const modernRows=[...root.querySelectorAll('.posCatalog_select')];
+        const nativeMode=modernRows.some(row=>courseNativeChapterCall(row)||courseNativeChapterCall(row.querySelector(':scope > .posCatalog_name')));
+        for (const row of modernRows) {
             const target = row.querySelector(':scope > .posCatalog_name');
             const label = target || row.querySelector(':scope > .posCatalog_title');
             if (!label || !row.id || seenIds.has(row.id)) continue;
@@ -120,16 +155,15 @@
             const pendingText = clean(courseCatalogMarker(row,'.orangeNew')?.textContent);
             const pending = /^\d+$/.test(pendingText) ? Number(pendingText) : null;
             const completed = Boolean(courseCatalogMarker(row,'.icon_Completed'));
-            entries.push({ id: row.id, chapterId: row.id.replace(/^cur/, ''), number, title, parentId,
-                isGroup: !target, target, active: row.classList.contains('posCatalog_active'),
+            const navigation=courseChapterNavigation(row,target,nativeMode);
+            entries.push({ id: row.id, chapterId: row.id.replace(/^cur/, ''), number, title, parentId, node:row, navigation,
+                isGroup: !target, target:navigation.target, active: row.classList.contains('posCatalog_active'),
                 completed, pending, scores: [] });
         }
         if (!entries.length) {
             // Confirmed legacy layout: no li ancestry or colour-to-status mapping is known.
             structure = 'legacy-h4';
             const currentChapterId = courseStudyContext(sourceDoc).chapterId;
-            const switchesChapter = node => /^\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('onclick') || '')
-                || /^\s*javascript:\s*(?:return\s+)?(?:window\.)?getTeacherAjax\s*\(/.test(node.getAttribute('href') || '');
             for (const row of root.querySelectorAll('h4[id^="cur"]')) {
                 if (row.id.length <= 3 || seenIds.has(row.id)) continue;
                 const links = [...row.querySelectorAll('a[title]')].filter(link => link.closest('h4[id^="cur"]') === row);
@@ -138,10 +172,11 @@
                 if (!title) continue;
                 const number = clean(row.querySelector('.hideChapterNumber')?.textContent);
                 // Delegate to the original link/row handler; never evaluate its arguments ourselves.
-                const target = switchesChapter(link) || switchesChapter(row) ? link : null;
+                const navigation=courseChapterNavigation(row,link);
+                const target=navigation.target;
                 seenIds.add(row.id);
                 entries.push({ id:row.id, chapterId:row.id.replace(/^cur/, ''), number, title,
-                    parentId:null, hierarchyKnown:false, isGroup:false, target,
+                    parentId:null, hierarchyKnown:false, isGroup:false, node:row, navigation, target,
                     active:currentChapterId ? row.id.replace(/^cur/, '') === currentChapterId : null, completed:null, pending:null, scores:[] });
             }
         }
@@ -167,6 +202,8 @@
     }
 
     function catalogStatus(entry) {
+        if(!entry.active&&entry.navigation?.status==='sequence-locked')return '待解锁';
+        if(!entry.active&&entry.navigation?.status==='unknown')return '入口未确认';
         if (entry.completed) return '已完成';
         if (entry.pending > 0) return `待完成 · ${entry.pending}项`;
         if (entry.pending === 0) return '无任务点';
@@ -224,7 +261,11 @@
                     row.append(fold);
                 } else row.append(make('span', 'catalog-fold-space'));
                 const button = make('button', 'catalog-link'); button.type = 'button';
-                if (!entry.isGroup) { button.dataset.chapterButton = entry.id; button.disabled = !entry.target || controller.state.busy || courseRunActive(); }
+                if (!entry.isGroup) {
+                    button.dataset.chapterButton = entry.id;
+                    button.dataset.navigationAvailable=String(Boolean(entry.target?.isConnected));
+                    button.disabled = button.dataset.navigationAvailable!=='true' || controller.state.busy || courseRunActive();
+                }
                 if (entry.active) button.setAttribute('aria-current', 'page');
                 button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
                 const meta = make('span', 'catalog-meta');
@@ -263,9 +304,10 @@
 
     function navigateCourseChapter(id) {
         if (controller.state.busy || courseRunActive()) return controller.report('请等待本次操作完成后切换章节');
-        const entry = readCourseCatalog()?.entries.find(item => item.id === id);
-        if (!entry?.target?.isConnected) return controller.report('章节入口已变化，请刷新课程目录');
+        const catalog=readCourseCatalog(),access=courseChapterAccess(catalog?.sourceDoc,{id},catalog),entry=access.entry;
+        if (!entry) return controller.report('章节入口已变化，请刷新课程目录');
         if (entry.active) return controller.report(`当前章节：${entry.title}`);
+        if(!access.allowed)return controller.report(access.status==='sequence-locked'?'该章节尚未解锁，请先完成前置任务':'该章节原生入口尚未确认，请刷新课程目录');
         controller.last = null; controller.clearOutput();
         controller.report(`正在切换至：${entry.title}`);
         entry.target.click();
@@ -283,7 +325,7 @@
                     if (catalog.timer) return;
                     catalog.timer = setTimeout(() => { catalog.timer = null; refreshCourseSidebar(); }, 100);
                 });
-                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title', 'id', 'onclick', 'href'], characterData: true });
+                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title', 'id', 'onclick', 'href', 'disabled', 'aria-disabled'], characterData: true });
             }
         }
         renderCourseCatalog();

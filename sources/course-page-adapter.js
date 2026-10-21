@@ -191,12 +191,9 @@
         return {known:true,tasks};
     }
     const courseProbeStores=new WeakMap();
-    const courseProbeEpoch=chapter=>JSON.stringify([chapter.chapterId,chapter.pending,chapter.completed]);
+    const courseProbeEpoch=chapter=>JSON.stringify([chapter.chapterId,chapter.pending,chapter.completed,chapter.navigation?.status,chapter.navigation?.evidence]);
     function courseProbeChapterState(owner,chapter) {
-        const row=owner.getElementById(chapter.id);
-        if(!row||chapter.target&&!chapter.target.isConnected)return null;
-        const text=clean(courseCatalogMarker(row,'.orangeNew')?.textContent);
-        return {...chapter,active:row.classList.contains('posCatalog_active'),pending:/^\d+$/.test(text)?Number(text):null,completed:Boolean(courseCatalogMarker(row,'.icon_Completed'))};
+        return readCourseCatalog(owner)?.entries.find(entry=>entry.id===chapter.id&&!entry.isGroup)||null;
     }
     function courseProbeStore(owner) {
         const scope=courseScoreKey(owner);let store=courseProbeStores.get(owner);
@@ -228,7 +225,8 @@
         });
     }
     function courseProbeCached(owner,chapter,key,options,load) {
-        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};check();
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();courseRequireChapterAccess(owner,chapter);};check();
+        chapter=courseRequireChapterAccess(owner,chapter);
         const store=courseProbeStore(owner),epoch=courseProbeEpoch(chapter),clock=options.now||Date.now;
         let bucket=store.chapters.get(chapter.id);
         if(bucket&&bucket.epoch!==epoch){courseInvalidateTaskProbe(owner,chapter.id);bucket=null;}
@@ -240,7 +238,8 @@
         if(pending?.abort.signal.aborted){bucket.pending.delete(key);pending=null;}
         if(!pending) {
             pending={abort:new owner.defaultView.AbortController(),users:new Set(),settled:false};bucket.pending.set(key,pending);
-            pending.promise=Promise.resolve().then(()=>load(pending.abort.signal)).then(result=>{
+            pending.promise=Promise.resolve().then(()=>{courseRequireChapterAccess(owner,chapter);return load(pending.abort.signal);}).then(result=>{
+                courseRequireChapterAccess(owner,chapter);
                 if(result?.known&&!pending.abort.signal.aborted&&store.chapters.get(chapter.id)===bucket&&courseScoreKey(owner)===store.scope)
                     bucket.values.set(key,{result,expires:clock()+60000});
                 return result;
@@ -281,7 +280,7 @@
         } finally {owner.defaultView.clearTimeout(timer);signal?.removeEventListener('abort',abort);}
     }
     async function courseTaskProbe(owner, chapter, options={}) {
-        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();};
+        const check=()=>{options.check?.();if(options.signal?.aborted)throw cancelledError();courseRequireChapterAccess(owner,chapter);};
         const unknown=reason=>({known:false,reason,tabs:[]});
         check();
         try {
@@ -303,7 +302,7 @@
                 }
                 return !tabs.length||new Set(tabs.map(tab=>tab.id)).size!==tabs.length?unknown('missing-tabs'):{known:true,tabs,url:cardTemplate.href};
             };
-            const network=(url,signal,priority=options.priority)=>courseProbeSchedule(owner,signal,()=>courseProbeReadText(owner,url,{signal,onRequest:options.onRequest,timeoutMs:options.timeoutMs}),priority);
+            const network=(url,signal,priority=options.priority,validate=check)=>courseProbeSchedule(owner,signal,()=>courseProbeReadText(owner,url,{signal,check:validate,onRequest:options.onRequest,timeoutMs:options.timeoutMs}),priority);
             const active=courseProbeChapterState(owner,chapter)?.active;
             let header;
             if(active) {
@@ -319,11 +318,11 @@
             });
             check();if(!header.known)return header;
             const {tabs}=header,cardTemplate=new URL(header.url);
-            const defaults={...options,signal:options.contextSignal||options.signal};
+            const defaults={...options,check:options.readCheck||options.check,signal:options.contextSignal||options.signal};
             // Cache only normalized summaries for 60s; visible state is checked again on entry.
             return {known:true,tabs,async read(tab,runtime={}) {
                 const readOptions={...defaults,...runtime};
-                const assert=()=>{readOptions.check?.();if(readOptions.signal?.aborted||courseScoreKey(owner)!==scope)throw cancelledError();};
+                const assert=()=>{readOptions.check?.();if(readOptions.signal?.aborted||courseScoreKey(owner)!==scope)throw cancelledError();courseRequireChapterAccess(owner,chapter);};
                 assert();if(!tab)return {known:false,reason:'missing-tab'};
                 const live=courseProbeChapterState(owner,chapter);
                 if(live?.active&&courseTabs(owner).find(item=>item.active)?.id===tab.id) {
@@ -342,14 +341,23 @@
                     }
                 }
                 const url=new URL(cardTemplate);url.searchParams.set('num',String(tab.index));
-                const summary=await courseProbeCached(owner,live||chapter,'tab:'+tab.id+':'+tab.cardId,readOptions,async signal=>courseProbeSummary(courseProbeMarkup(owner,await network(url,signal,readOptions.priority))));
+                const summary=await courseProbeCached(owner,live||chapter,'tab:'+tab.id+':'+tab.cardId,readOptions,async signal=>courseProbeSummary(courseProbeMarkup(owner,await network(url,signal,readOptions.priority,assert))));
                 assert();return summary;
             }};
-        } catch(error) {check();return unknown('probe-unavailable');}
+        } catch(error) {check();if(error.navigationBoundary)throw error;return unknown('probe-unavailable');}
     }
     async function findNextCourseTask(range, settings, signal) {
         const skipped=[],owner=settings.owner,scan=new owner.defaultView.AbortController(),lanes=new Map();
         const abort=()=>scan.abort(),check=()=>{settings.check?.();if(signal?.aborted)throw cancelledError();};
+        const unavailable=error=>({known:false,reason:error.navigationBoundary?'navigation-boundary':'probe-unavailable',boundary:error.navigationBoundary});
+        const accessAt=index=>{
+            check();const catalog=readCourseCatalog(owner);
+            for(let before=0;before<=index;before++) {
+                const entry=catalog?.entries.find(item=>item.id===range[before].id);
+                if((settings.skipLearned||settings.retrying)&&entry?.completed)continue;
+                courseRequireChapterAccess(owner,range[before],catalog);
+            }
+        };
         signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
         const open=index=>{
             if(index>=range.length||lanes.has(index))return;
@@ -357,13 +365,14 @@
             const fill=()=>{
                 while(!scan.signal.aborted&&lane.next<lane.tabs.length&&lane.columns.size<4) {
                     const tab=lane.tabs[lane.next++];
-                    lane.columns.set(tab.id,lane.probe.read(tab,{signal:scan.signal,priority:[index,tab.index]}).catch(()=>({known:false,reason:'probe-unavailable'})));
+                    lane.columns.set(tab.id,lane.probe.read(tab,{signal:scan.signal,priority:[index,tab.index],check:()=>accessAt(index)}).catch(unavailable));
                 }
             };
             lane.fill=fill;
             lane.header=(async()=>{
                 check();if((settings.skipLearned||settings.retrying)&&entry.completed)return {known:true,already:true};
-                const probe=await courseTaskProbe(owner,entry,{signal:scan.signal,contextSignal:signal,check:settings.check,
+                accessAt(index);
+                const probe=await courseTaskProbe(owner,entry,{signal:scan.signal,contextSignal:signal,check:()=>accessAt(index),readCheck:settings.check,
                     onRequest:settings.onRequest,onCacheHit:settings.onCacheHit,onDeduplicated:settings.onDeduplicated,now:settings.now,timeoutMs:settings.timeoutMs,priority:[index,-1]});
                 if(!probe.known)return probe;
                 let tabs=probe.tabs;
@@ -375,18 +384,24 @@
                 }
                 if(lane.bounded&&Number.isInteger(settings.startTabIndex))tabs=tabs.filter(tab=>tab.index>=settings.startTabIndex);
                 lane.probe=probe;lane.tabs=tabs;fill();return probe;
-            })().catch(()=>({known:false,reason:'probe-unavailable'}));
+            })().catch(unavailable);
         };
         try {
             for(let index=0;index<range.length;index++) {
-                check();for(let ahead=index;ahead<Math.min(range.length,index+4);ahead++)open(ahead);
+                check();
+                for(let ahead=index;ahead<Math.min(range.length,index+4);ahead++) {
+                    try{accessAt(ahead);}catch(error){if(!error.navigationBoundary)throw error;if(ahead===index)return {entry:range[index],skipped,boundary:error.navigationBoundary};break;}
+                    open(ahead);
+                }
                 const entry=range[index],lane=lanes.get(index),probe=await lane.header;check();
+                if(probe.boundary)return {entry,skipped,boundary:probe.boundary};
                 if(probe.already){skipped.push({entry,reason:'already',tabs:[]});lanes.delete(index);continue;}
                 if(!probe.known)return {entry,tab:null,skipped,probe};
                 const excluded=[];
                 const changed=()=>{const current=courseProbeChapterState(owner,entry);return !current||courseProbeEpoch(current)!==courseProbeEpoch(entry);};
                 for(const tab of lane.tabs) {
                     const summary=await lane.columns.get(tab.id);check();
+                    if(summary?.boundary)return {entry,skipped,boundary:summary.boundary};
                     if(changed()){courseInvalidateTaskProbe(owner,entry.id);return {entry,tab:null,skipped,probe:{known:false,reason:'directory-state-changed'}};}
                     if(!summary?.known||tab.disabled)return {entry,tab,skipped,excluded,probe,reason:tab.disabled?'tab-disabled':summary?.reason||'unknown-summary'};
                     const decisions=summary.tasks.map(task=>courseTaskEligibility(task,settings));

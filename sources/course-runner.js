@@ -1,4 +1,4 @@
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:5, loadMs:30000, videoLoadMs:60000, completionMs:30000,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
@@ -89,9 +89,9 @@
         return value;
     }
     function coursePendingChapters(report) {
-        const result={failed:[],skipped:[],manual:[],unvisited:[],taskFree:[]};
+        const result={failed:[],skipped:[],manual:[],waiting:[],navigation:[],unvisited:[],taskFree:[]};
         for(const chapter of report?.chapters||[]) {
-            const group=['timed-out','stopped'].includes(chapter.status)?'failed':chapter.status==='skipped'?'skipped':chapter.status==='manual-pending'?'manual':chapter.status==='unvisited'?'unvisited':chapter.status==='no-tasks'?'taskFree':null;
+            const group=['timed-out','stopped'].includes(chapter.status)?'failed':chapter.status==='skipped'?'skipped':chapter.status==='manual-pending'?'manual':chapter.status==='waiting-unlock'?'waiting':chapter.status==='navigation-unknown'?'navigation':chapter.status==='unvisited'?'unvisited':chapter.status==='no-tasks'?'taskFree':null;
             if(group)result[group].push({id:chapter.id,number:clean(chapter.number),title:clean(chapter.title).slice(0,160),
                 reason:clean(chapter.reason||chapter.issues?.[0]?.reason||(group==='unvisited'?'尚未处理':group==='skipped'?'用户跳过':'')).slice(0,200),status:chapter.status});
         }
@@ -107,8 +107,8 @@
         const blocker=courseBlocker(courseFrameTree(owner).documents);if(blocker)return reject(blocker);
         const entries=readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup)||[];
         const original=previous.originalQueue||previous.queue;
-        if(original.some(item=>!entries.some(entry=>entry.id===item.id&&entry.target?.isConnected)))return reject('原队列章节入口已缺失，请人工检查课程目录');
-        const candidates=previous.report.chapters.filter(chapter=>['timed-out','stopped','unvisited','manual-pending'].includes(chapter.status));
+        if(original.some(item=>!entries.some(entry=>entry.id===item.id&&entry.node?.isConnected)))return reject('原队列章节已缺失，请人工检查课程目录');
+        const candidates=previous.report.chapters.filter(chapter=>['timed-out','stopped','unvisited','manual-pending','waiting-unlock','navigation-unknown'].includes(chapter.status));
         if(candidates.some(chapter=>chapter.tasks?.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed)&&task.status!=='done')))return reject('存在提交结果未确认的测验，请先人工核对，不能自动重试');
         const ids=new Set(candidates.map(chapter=>chapter.id));
         const queue=previous.queue.filter(item=>ids.has(item.id)).map(({id,number,title})=>({id,number,title}));
@@ -199,10 +199,12 @@
             const state=task.speedState;return `${chapter.number} ${chapter.title} · 视频 ${task.number||1}：${state.status}；原生档位 ${state.rates.join('/')||'未知'}；目标 ${state.selectedRate||'无'}；实际 ${Number.isFinite(state.actualRate)?state.actualRate+'x':'未知'}；方式 ${state.method||'未操作'}；${state.evidence} / ${state.outcome}${state.reason?' / '+state.reason:''}。`;
         }));
         const locatorMetric=name=>Number.isFinite(report.locator?.[name])?Math.max(0,Math.round(report.locator[name])):0;
-        return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
+        return `${report.status === 'done' ? (pending.failed.length || skipped.length || pending.manual.length || pending.waiting.length || pending.navigation.length || pending.unvisited.length ? '遍历结束，仍有待处理章节' : taskFree.length ? '目录遍历结束' : '全部流程完成') : report.status === 'running' ? '自动学习进行中' : '自动学习已停止'}：${finished}/${report.chapters.length} 个章节；${report.videos} 个视频结束，${report.documents} 份资料完成，${report.quizzes} 个测验提交成功。`
             + (report.retryOf ? '\n本轮为未完成章节重试，完成计数仅统计本轮。' : '')
             + (protection ? `\n连续失败保护性停止：${protection.enabled===true?'开启':'关闭'}；连续超时 ${protection.consecutiveFailures}${protection.enabled===true?'/'+protection.limit:''}${protection.triggered?'，已保护性停止':''}。` : '')
-            + (pending.unvisited.length ? `\n尚未处理 ${pending.unvisited.length} 个章节：\n`+pending.unvisited.map(chapter=>`${chapter.number} ${chapter.title}`).join('\n') : '')
+            + (pending.waiting.length ? `\n待解锁 ${pending.waiting.length} 个章节：\n`+pending.waiting.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
+            + (pending.navigation.length ? `\n入口未确认 ${pending.navigation.length} 个章节：\n`+pending.navigation.map(chapter=>`${chapter.number} ${chapter.title}：${chapter.reason}`).join('\n') : '')
+            + (pending.unvisited.length ? `\n尚未处理 ${pending.unvisited.length} 个章节：\n`+pending.unvisited.map(chapter=>`${chapter.number} ${chapter.title}${chapter.reason?'：'+chapter.reason:''}`).join('\n') : '')
             + (completedQuizzes ? `\n${completedQuizzes} 个章节测验已完成，已跳过作答。` : '')
             + (taskFree.length ? `\n${taskFree.length} 个章节无任务点，已直接继续下一节。` : '')
             + (skipped.length ? `\n用户跳过 ${skipped.length} 个章节（不计为完成）：\n` + skipped.map(chapter => `${chapter.number} ${chapter.title}`).join('\n') : '')
@@ -223,10 +225,11 @@
         const owner=studyOwnerDocument(doc),scope=owner&&courseScoreKey(owner);
         const report=courseRunner?.report || (scope?get(`cx_course_run:${scope}`,null)?.report:null);
         if(report && state.message===courseReportText(report)) {
+            if(report.navigationBoundary)return report.reason;
             if(report.protection?.triggered)return report.reason||'连续超时，已保护性停止';
             if(report.status==='running')return `自动学习进行中${report.protection?.consecutiveFailures?`；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`:''}`;
             const pending=coursePendingChapters(report);
-            return report.status==='done'?(pending.failed.length||pending.skipped.length||pending.manual.length||pending.unvisited.length?'遍历结束，仍有待处理章节':'自动学习已结束'):'自动学习已停止';
+            return report.status==='done'?(pending.failed.length||pending.skipped.length||pending.manual.length||pending.waiting.length||pending.navigation.length||pending.unvisited.length?'遍历结束，仍有待处理章节':'自动学习已结束'):'自动学习已停止';
         }
         if(report?.status==='running'&&report.protection?.consecutiveFailures&&!/连续超时/.test(state.message||''))
             return `${state.message||'自动学习进行中'}；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`;
@@ -262,7 +265,7 @@
         };
         const api = { owner, get key() { refreshScope();return key; }, get busy() { return Boolean(current && !current.cancelled); },
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
-            get canSkip() { return current ? Boolean(!current.cancelled && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
+            get canSkip() { return current ? Boolean(!current.cancelled && !current.waitingUnlock && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
             get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
@@ -359,6 +362,7 @@
                 const report = resume ? previous.report : { status:'running', startedAt:now(), endedAt:null, reason:'', videos:0,documents:0,quizzes:0,
                     chapters:queue.map(item => ({...item,status:'unvisited',issues:[],tasks:[]})) };
                 report.status = 'running'; report.reason = '';
+                delete report.navigationBoundary;
                 report.locator=report.locator||{requests:0,elapsedMs:0,excludedTabs:0,fallbacks:0,chapterNavigations:0,tabNavigations:0};
                 report.locator.cacheHits??=0;report.locator.deduplicated??=0;report.locator.readyHits??=0;
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
@@ -439,6 +443,62 @@
                     }
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
+                const navigationContext=(id,catalog=readCourseCatalog(owner))=>{
+                    const entries=catalog?.entries.filter(item=>!item.isGroup)||[],index=entries.findIndex(item=>item.id===id);
+                    const entry=entries[index],previous=entries[index-1];
+                    const previousRecord=report.chapters.find(item=>item.id===previous?.id)||run.previousReport?.chapters?.find(item=>item.id===previous?.id);
+                    return {entry,previous,previousRecord};
+                };
+                const recordNavigationBoundary=boundary=>{
+                    const {entry,previous}=navigationContext(boundary.id),locked=boundary.status==='sequence-locked';
+                    const label=item=>item?`${item.number} ${item.title}`.trim():'';
+                    const reason=locked?`后续章节尚未解锁。请先完成${previous?' '+label(previous):'前置章节'}的剩余任务，完成后可重试。`
+                        :`章节 ${label(entry)||boundary.id} 的原生入口尚未确认，已停止，请检查课程目录后重试。`;
+                    report.navigationBoundary={...boundary,number:entry?.number||'',title:entry?.title||'',previousId:previous?.id||null,
+                        previousNumber:previous?.number||'',previousTitle:previous?.title||''};
+                    report.reason=reason;
+                    const index=queue.findIndex(item=>item.id===boundary.id),record=report.chapters[index];
+                    if(record&&['unvisited','running','waiting-unlock','navigation-unknown'].includes(record.status)) {
+                        record.status=locked?'waiting-unlock':'navigation-unknown';record.reason=reason;
+                    }
+                    if(index>=0)for(const later of report.chapters.slice(index+1).filter(item=>item.status==='unvisited'))
+                        later.reason=`前方章节 ${label(entry)||boundary.id} ${locked?'尚未解锁':'入口未确认'}，本轮未访问`;
+                };
+                const unlockStarted=new Map();
+                const awaitChapterAccess=async chapter=>{
+                    let catalog=readCourseCatalog(owner),access=courseChapterAccess(owner,chapter,catalog);
+                    if(access.allowed)return access.entry;
+                    const {previous,previousRecord}=navigationContext(chapter.id,catalog);
+                    const active=catalog?.entries.filter(item=>!item.isGroup&&item.active)||[];
+                    const confirmed=previous&&(previous.completed||previous.pending===0)&&!(previous.pending>0)
+                        && !['timed-out','skipped','stopped','manual-pending'].includes(previousRecord?.status);
+                    if(access.status!=='sequence-locked'||!confirmed||active.length!==1||!courseChapterAccess(owner,active[0],catalog).current)
+                        return courseRequireChapterAccess(owner,chapter,catalog);
+                    if(!unlockStarted.has(chapter.id))unlockStarted.set(chapter.id,now());
+                    const started=unlockStarted.get(chapter.id),expected=run.expected,expectedTab=run.expectedTab,context=run.chapter;
+                    const record=report.chapters.find(item=>item.id===chapter.id),oldStatus=record?.status,oldReason=record?.reason;
+                    if(record&&['unvisited','waiting-unlock','navigation-unknown'].includes(record.status)) {
+                        record.status='waiting-unlock';record.reason='前置章节已完成，正在等待原生入口解锁';
+                    }
+                    run.expected=active[0].id;run.expectedTab=courseTabSnapshot(owner).activeId||null;
+                    run.waitingUnlock=true;pausePacing();
+                    try {
+                        emitRun(`前置章节已完成，正在检测 ${chapter.number||''} 是否解锁…`,'course-waiting-unlock');
+                        while(true) {
+                            guardRun();if(context&&(context!==run.chapter||context.skipped))throw skippedError();
+                            catalog=readCourseCatalog(owner);access=courseChapterAccess(owner,chapter,catalog);
+                            if(access.allowed) {
+                                if(record?.status==='waiting-unlock'){record.status=oldStatus==='waiting-unlock'||oldStatus==='navigation-unknown'?'unvisited':oldStatus;record.reason=oldReason||'';}
+                                return access.entry;
+                            }
+                            if(access.status!=='sequence-locked'||now()-started>=limits.unlockWaitMs)return courseRequireChapterAccess(owner,chapter,catalog);
+                            await Promise.race([sleep(Math.min(limits.pollMs,limits.unlockWaitMs-(now()-started))),run.cancelWait,...(context?[context.wait]:[])]);
+                        }
+                    } finally {
+                        run.waitingUnlock=false;run.expected=expected;run.expectedTab=expectedTab;resumePacing();
+                        lease.setAttribute('data-can-skip',String(api.canSkip));
+                    }
+                };
                 const waitForFrameReady = async (settle = false, target = null) => {
                     // 仅在明确等待的读取窗口暂缓不可读 iframe；窗口内不执行任务操作。
                     const context=run.chapter;
@@ -503,7 +563,7 @@
                     try {
                         emitRun('正在定位任务…','course-locating');check();
                         const catalog=readCourseCatalog(owner),range=queue.slice(run.chapterIndex).filter(item=>!resume||!['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(report.chapters.find(ch=>ch.id===item.id)?.status))
-                            .map(item=>{const found=catalog.entries.find(ch=>ch.id===item.id);if(!found?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');return found;});
+                            .map(item=>{const found=catalog.entries.find(ch=>ch.id===item.id&&!ch.isGroup);if(!found?.node?.isConnected)throw new Error('课程目录发生变化或章节不存在');return found;});
                         const location=run.probeBlocked?{entry,probe:{known:false,reason:'submission-unconfirmed'}}:await findNextCourseTask(range,{owner,submit:run.submit,skipLearned:run.skipLearned,retrying:run.retrying,
                             startChapterId:entry.id,startTabId:boundary?.tabId==='current'?null:boundary?.tabId,startCardId:boundary?.cardId,
                             startTabIndex:Math.max(run.tabIndex,boundary?.tabIndex||0),check:()=>run.probeCheck(),now,timeoutMs:limits.loadMs,
@@ -1172,10 +1232,13 @@
                     let probe=location.probe,initialProbeTab=location.tab?.id;
                     if(!probe?.known||location.reason){report.locator.fallbacks++;const reason=location.reason||probe?.reason||'probe-unavailable';report.locator.reasons??={};report.locator.reasons[reason]=(report.locator.reasons[reason]||0)+1;}
                     run.tabIndex=location.tab?.index??firstIndex;
+                    entry=courseRequireChapterAccess(owner,entry);
                     run.expected=entry.id;run.expectedTab=null;run.navigating=true;chapter.status='running';
                     emit(`正在打开章节：${entry.number} ${entry.title}${location.tab?' · '+location.tab.title:''}`,'course-navigating');
                     const before=courseContentFingerprint(owner);
-                    if(!entry.active) {
+                    const access=courseChapterAccess(owner,entry);
+                    entry=courseRequireChapterAccess(owner,entry);
+                    if(!access.current) {
                         save();report.locator.chapterNavigations++;entry.target.click();
                         await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
                             && courseContentChanged(before,courseContentFingerprint(owner)),limits.loadMs,'章节内容未成功切换');
@@ -1435,25 +1498,38 @@
                         run.locating=true;guardRun();let chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
                         let entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
-                        if(!entry?.target?.isConnected) throw new Error('课程目录发生变化或章节入口不存在');
+                        if(!entry?.node?.isConnected) throw new Error('课程目录发生变化或章节不存在');
                         if((run.skipLearned||run.retrying) && entry.completed){chapter.status='already';courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);save();continue;}
+                        entry=await awaitChapterAccess(entry);
                         const context={abort:new AbortController(),skipped:false,submitting:false};
                         context.wait=new Promise(resolve=>{context.wake=resolve;});run.chapter=context;
                         try {
-                            const location=await locateAhead(entry,context);
-                            for(const skipped of location.skipped||[]) {
-                                const index=queue.findIndex(item=>item.id===skipped.entry.id),record=report.chapters[index];
-                                rememberExcluded(record,skipped.tabs);
-                                record.status=skipped.reason==='already'?'already':record.tasks.some(task=>task.status==='manual-pending')?'manual-pending':'no-tasks';
-                                record.reason=record.status==='manual-pending'?'本次设置已排除剩余任务，保留未完成状态':record.status==='already'?'平台目录已完成':'任务摘要中没有本次需要执行的任务，未计为整章完成';
-                                courseRecordChapterOutcome(run.protection,record,index);
+                            let location,boundarySince=null;
+                            while(true) {
+                                location=await locateAhead(entry,context);
+                                for(const skipped of location.skipped||[]) {
+                                    const index=queue.findIndex(item=>item.id===skipped.entry.id),record=report.chapters[index];
+                                    rememberExcluded(record,skipped.tabs);
+                                    record.status=skipped.reason==='already'?'already':record.tasks.some(task=>task.status==='manual-pending')?'manual-pending':'no-tasks';
+                                    record.reason=record.status==='manual-pending'?'本次设置已排除剩余任务，保留未完成状态':record.status==='already'?'平台目录已完成':'任务摘要中没有本次需要执行的任务，未计为整章完成';
+                                    courseRecordChapterOutcome(run.protection,record,index);
+                                }
+                                if(!location.boundary)break;
+                                boundarySince??=now();
+                                if(now()-boundarySince>=limits.unlockWaitMs)throw Object.assign(new Error('章节原生入口持续变化，请重新开始'),{
+                                    code:'COURSE_NAVIGATION_UNKNOWN',navigationBoundary:{...location.boundary,status:'unknown',reason:'navigation-unstable'}});
+                                const boundaryIndex=queue.findIndex(item=>item.id===location.boundary.id);
+                                if(boundaryIndex<run.chapterIndex)throw new Error('已定位章节的入口发生变化，请重新开始');
+                                run.chapterIndex=boundaryIndex;run.tabIndex=0;chapter=report.chapters[boundaryIndex];
+                                entry=await awaitChapterAccess(chapter);
                             }
                             if(!location.entry){run.chapterIndex=queue.length;save();break;}
                             const targetIndex=queue.findIndex(item=>item.id===location.entry.id);
                             if(targetIndex<run.chapterIndex)throw new Error('定位结果超出本次范围');
                             if(targetIndex!==run.chapterIndex)run.tabIndex=0;
                             run.chapterIndex=targetIndex;chapter=report.chapters[targetIndex];entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
-                            if(!entry?.target?.isConnected)throw new Error('课程目录发生变化或章节入口不存在');
+                            if(!entry?.node?.isConnected)throw new Error('课程目录发生变化或章节不存在');
+                            entry=await awaitChapterAccess(entry);
                             save();await processChapter(chapter,entry,location);
                         }
                         catch(error) {
@@ -1482,11 +1558,14 @@
                             throw courseFailureLimitError(run.protection.limit);
                         }
                         save();
-                        if(chapter.status==='timed-out')emitRun(`本章节超时；连续超时 ${run.protection.consecutiveFailures}${run.protection.enabled?'/'+run.protection.limit:'，失败次数保护已关闭'}，继续下一节`,'course-running');
-                        const hasNext=queue.slice(run.chapterIndex+1).some(item=>{
-                            const next=readCourseCatalog(owner)?.entries.find(entry=>entry.id===item.id);
+                        const nextCatalog=readCourseCatalog(owner);
+                        const nextChapter=queue.slice(run.chapterIndex+1).find(item=>{
+                            const next=nextCatalog?.entries.find(entry=>entry.id===item.id);
                             return next&&!(run.skipLearned&&next.completed);
                         });
+                        if(nextChapter)await awaitChapterAccess(nextChapter);
+                        if(chapter.status==='timed-out')emitRun(`本章节超时；连续超时 ${run.protection.consecutiveFailures}${run.protection.enabled?'/'+run.protection.limit:'，失败次数保护已关闭'}，继续下一节`,'course-running');
+                        const hasNext=Boolean(nextChapter);
                         if(run.learning.restEnabled&&['done','no-tasks'].includes(chapter.status)&&hasNext){
                             const activeMs=run.pacing.activeMs+(run.pacing.activeStartedAt===null?0:Math.max(0,now()-run.pacing.activeStartedAt));
                             if(activeMs>=run.learning.studyMinutes*60000)await waitForRest();
@@ -1494,12 +1573,15 @@
                     }
                     report.status='done';
                 } catch(error) {
-                    const diagnostic=recordCxDiagnostic(error,{module:'course',operation:'run',taskId:diagnosticTaskId});
-                    runDiagnosticCode=diagnostic.code;
-                    ctl.state.lastErrorCode=runDiagnosticCode;
+                    if(!error.navigationBoundary) {
+                        const diagnostic=recordCxDiagnostic(error,{module:'course',operation:'run',taskId:diagnosticTaskId});
+                        runDiagnosticCode=diagnostic.code;
+                        ctl.state.lastErrorCode=runDiagnosticCode;
+                    }
                     if(!run.leaving) {report.status='stopped';report.reason=error.message;}
+                    if(error.navigationBoundary)recordNavigationBoundary(error.navigationBoundary);
                     const chapter=report.chapters[run.chapterIndex];
-                    if(error.code!=='COURSE_FAILURE_LIMIT' && report.status==='stopped' && chapter && chapter.status!=='already' && chapter.status!=='done') {
+                    if(!error.navigationBoundary && error.code!=='COURSE_FAILURE_LIMIT' && report.status==='stopped' && chapter && !['already','done','waiting-unlock','navigation-unknown','timed-out','skipped','manual-pending','no-tasks'].includes(chapter.status)) {
                         chapter.status='stopped';
                         for(const task of chapter.tasks.filter(task=>task.status==='running')) {task.status='stopped';task.reason=error.message;}
                         if(!chapter.issues.length) chapter.issues.push({number:null,reason:error.message});
@@ -1633,11 +1715,11 @@
         const renderPending=report=>{
             const pending=coursePendingChapters(report),summary=s.getElementById('course-pending-summary'),list=s.getElementById('course-pending-list');
             const hasManualTasks=report?.chapters?.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
-            const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.unvisited.length;
+            const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.waiting.length+pending.navigation.length+pending.unvisited.length;
             s.getElementById('course-pending').hidden=!report||count===0&&pending.taskFree.length===0;
-            summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;
+            summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}${pending.waiting.length?`，待解锁 ${pending.waiting.length}`:''}${pending.navigation.length?`，入口未确认 ${pending.navigation.length}`:''}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;
             list.replaceChildren();
-            for(const [key,label] of [['failed','失败'],['skipped','用户跳过'],['manual',hasManualTasks?'需人工处理（已跳过）':'无法自动答题（未提交）'],['unvisited','尚未处理'],['taskFree','无任务']])for(const item of pending[key]){
+            for(const [key,label] of [['failed','失败'],['skipped','用户跳过'],['manual',hasManualTasks?'需人工处理（已跳过）':'无法自动答题（未提交）'],['waiting','待解锁'],['navigation','入口未确认'],['unvisited','尚未处理'],['taskFree','无任务']])for(const item of pending[key]){
                 const li=doc.createElement('li');li.textContent=`${label} · ${item.number} ${item.title}${item.reason?'：'+item.reason:''}`;list.append(li);
             }
             const protection=report?.protection;
