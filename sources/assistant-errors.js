@@ -1,5 +1,6 @@
     // Public diagnostics contain catalog text and bounded facts only. Raw causes stay private.
     const CX_ERROR_CATALOG = Object.freeze({
+        'CX-OBS-001':'题目识别摘要',
         'CX-NET-001':'网络请求失败，具体原因未知',
         'CX-NET-002':'网络请求超时',
         'CX-NET-003':'已确认网络处于离线状态',
@@ -99,6 +100,11 @@
         if (['GET','POST'].includes(context.method)) result.method=context.method;
         if (['auto','manual','uncertain','needs-classification'].includes(context.policyStatus)) result.policyStatus=context.policyStatus;
         if (['confirmed','probable','ambiguous','unsupported','inside','outside','unknown'].includes(context.relationStatus)) result.relationStatus=context.relationStatus;
+        const recognitionEnums={adapterId:['chaoxing-chapter','chaoxing-homework','chaoxing-mooc2-work','video-quiz'],
+            questionType:['single','multiple','judge','blank','essay','unknown'],writer:['native-choice','chapter-choice','mooc2-choice','ueditor','none'],
+            recognitionType:['declared','text-alias','native-inferred','unknown'],materialState:['complete','unreadable'],
+            materialKind:['text','image','math','table','code','mixed'],sharing:['none','explicit'],slotState:['single','native-label','adapter-declared','ambiguous']};
+        for(const [name,allowed] of Object.entries(recognitionEnums))if(allowed.includes(context[name]))result[name]=context[name];
         if (Array.isArray(context.evidence)) result.evidence=[...new Set(context.evidence.filter(item=>CX_EVIDENCE.has(item)))].slice(0,20);
         // Only a parsed host is retained, never credentials, paths, query strings or fragments.
         if (typeof context.endpoint==='string') {

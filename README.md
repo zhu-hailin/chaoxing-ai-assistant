@@ -8,7 +8,7 @@
 
 免费的学习通网页辅助脚本，配合篡改猴（Tampermonkey）使用。
 
-- **AI 答题**：章节测验与作业题目识别、图文分析、答案预填。
+- **AI 答题**：章节测验与作业识别、逐题图文分析、答案与解析、原生预填。
 - **自动刷课**：视频、PPT 与章节测验处理，提供章节目录和视频进度。
 - **自定义设置**：配置模型、API Key 和学习开关。
 
@@ -26,21 +26,13 @@
 
 首次安装可查看 **[图文安装教程](docs/学习通脚本安装教程.md)**，包含篡改猴安装、允许用户脚本及助手安装步骤。
 
-<table width="100%">
-  <tr>
-    <td align="center">
-      <br />
-      <a href="https://github.com/zhu-hailin/chaoxing-ai-assistant/raw/HEAD/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js">
-        <img src="assets/install-button.svg" alt="点击一键安装或更新学习通AI助手" width="420" />
-      </a>
-      <p>请先安装篡改猴，点击按钮后在安装页确认。</p>
-    </td>
-  </tr>
-</table>
+<a href="https://github.com/zhu-hailin/chaoxing-ai-assistant/raw/HEAD/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js"><img src="assets/install-button.svg" alt="点击一键安装或更新学习通AI助手" width="180" /></a>
 
 1. 安装并启用 [篡改猴（Tampermonkey）](https://www.tampermonkey.net/)，点击上方链接确认安装或更新，然后刷新学习通页面。
 2. 打开「学习通AI助手」，在「设置 → 模型设置」配置模型和自己的 API Key；图片题请选择支持图片的模型。
 3. 测验或作业使用「一键生成答案」，核对结果后保存或提交；课程学习页面进入「自动刷课」，按需调整开关后开始。
+
+题目列表支持题号定位、未完成筛选、单题复制和原图查看。
 
 未弹出安装页时，可打开 [完整脚本](学习通AI助手.user.js)，复制到篡改猴编辑器并保存。
 

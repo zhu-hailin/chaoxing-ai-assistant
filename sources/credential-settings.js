@@ -25,10 +25,9 @@
         credentialView.input.placeholder = cfg.key ? '输入新 Key 替换，留空保留已保存值' : '输入当前平台 API Key';
         credentialView.input.setAttribute('aria-label', `${getModelProvider(cfg.provider).name} API Key`);
     }
-    function refreshCredentialStatus(provider, cleared = false) {
+    function refreshCredentialStatus(provider) {
         if (!controller || readModelConfiguration().provider !== provider) return;
         clearCredentialInput();
-        if (cleared) controller.last = null;
         if (!controller.state.busy && !courseRunActive()) renderModelSettings(controller);
         renderRunState(controller.state);
     }
@@ -63,15 +62,15 @@
             const cfg = current(); if (!cfg || !credentialConfirm(`清除 ${getModelProvider(cfg.provider).name} 已保存的 API Key？`)) return;
             const after = current(); if (!after || after.provider !== cfg.provider || after.baseURL !== cfg.baseURL) return;
             saveProviderKey('', cfg.provider); clearCredentialInput();
-            refreshCredentialStatus(cfg.provider, true); reportCredentialSettings(`${getModelProvider(cfg.provider).name} Key 已清除`);
+            refreshCredentialStatus(cfg.provider); reportCredentialSettings(`${getModelProvider(cfg.provider).name} Key 已清除`);
         });
         refreshCredentialEditor();
     }
     function initCredentialSettings() {
         if (credentialValueListeners.length || typeof GM_addValueChangeListener !== 'function') return;
         for (const provider of MODEL_PROVIDERS) {
-            credentialValueListeners.push(GM_addValueChangeListener(providerSettingKey(provider.id, 'key'), (_name, _old, value) => {
-                refreshCredentialStatus(provider.id, !value);
+            credentialValueListeners.push(GM_addValueChangeListener(providerSettingKey(provider.id, 'key'), () => {
+                refreshCredentialStatus(provider.id);
             }));
         }
     }

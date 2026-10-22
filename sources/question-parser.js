@@ -11,10 +11,27 @@
         if (questionTypeParsers.some(item => item.id === parser.id)) throw new Error('题型解析器 ID 重复');
         questionTypeParsers.push(parser);
     }
+    function questionNodeActive(node) {
+        if (!node?.isConnected || node.closest('template,[hidden],[inert],.cx-ai-ignore')) return false;
+        const view = node.ownerDocument?.defaultView;
+        if (!view) return false;
+        for (let element = node; element; element = element.parentElement) {
+            const style = view.getComputedStyle(element);
+            if (style.display === 'none' || ['hidden','collapse'].includes(style.visibility)) return false;
+        }
+        // Off-screen questions remain eligible; visibility never uses viewport coordinates.
+        return true;
+    }
+    function questionCandidateAllowed(node, context = {}) {
+        if (!questionNodeActive(node)) return false;
+        if (context.scope === 'video-quiz') return Boolean(context.root?.contains(node));
+        return !node.closest('.ans-videoquiz,[data-video-quiz-root]')
+            && !node.closest('[role="dialog"],form')?.querySelector('#videoquiz-submit');
+    }
     function collectRawQuestions(doc = document, parseContext = {}) {
         const records = [], seen = new Set(), claimedAncestors = new Set();
         for (const adapter of questionPageAdapters) {
-            const nodes = [...adapter.collect(doc, parseContext)].filter(node => parseContext.scope === 'video-quiz' ? parseContext.root?.contains(node) : !node.closest('.ans-videoquiz,[data-video-quiz-root]') && !node.closest('[role="dialog"],form')?.querySelector('#videoquiz-submit')), candidates = new Set(nodes), containers = new Set();
+            const nodes = [...adapter.collect(doc, parseContext)].filter(node => questionCandidateAllowed(node, parseContext)), candidates = new Set(nodes), containers = new Set();
             for (const node of nodes) {
                 for (let parent = node.parentElement; parent; parent = parent.parentElement) {
                     if (candidates.has(parent)) containers.add(parent);
@@ -32,17 +49,28 @@
         records.sort((a, b) => a.node.compareDocumentPosition(b.node) & 2 ? 1 : -1);
         return records.map((record, index) => record.adapter.read(record.node, index, parseContext));
     }
-    function hasQuestionNodes(doc = document) { return collectRawQuestions(doc).length > 0; }
+    function hasQuestionNodes(doc = document, parseContext = {}) {
+        return questionPageAdapters.some(adapter => [...adapter.collect(doc, parseContext)].some(node => questionCandidateAllowed(node, parseContext)));
+    }
     function textInputs(node) {
         return [...node.querySelectorAll('textarea,input[type="text"],input:not([type])')]
             .filter(input => !input.closest('.cx-ai-ignore') && input.type !== 'password');
     }
     const STEM_SELECTOR = '.Zy_TItle .fontLabel,.Zy_TItle,.question-stem,.question-title,.mark_name,.stem,[data-question-text]';
     const MEDIA_EXCLUDED = 'dl,.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.attachment,.cx-ai-ignore';
+    const TEXT_ANSWER_TYPE_LABEL = /^(?:计算(?:与(?:推导|证明))?|证明|解答|分析|应用|综合|推导|编程|程序(?:设计)?|代码)题?$/;
+    function questionNativeMathExpression(node) {
+        if (!node?.getAttribute) return '';
+        const annotation = node.localName === 'math' ? node.querySelector('annotation[encoding="application/x-tex"]') : null;
+        return clean(annotation?.textContent || node.getAttribute('data-latex') || node.getAttribute('data-tex')
+            || (node.getAttribute('role') === 'math' ? node.getAttribute('aria-label') : '') || '');
+    }
     function questionContentText(root) {
         if (!root) return '';
         if (root.nodeType === 3) return root.textContent || '';
         if (root.nodeType !== 1 || root.matches('input,textarea,select,button,script,style,[contenteditable="true"],.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.cx-ai-ignore')) return '';
+        const expression = questionNativeMathExpression(root);
+        if (expression) return expression;
         return [...root.childNodes].map(questionContentText).join('');
     }
     function readQuestionTypeLabel(node, stem, group) {
@@ -53,8 +81,8 @@
         const label = clean(match?.slice(1).find(Boolean));
         // 括号内的公式不算题型；保留教师明确声明但尚未适配的类型。
         if (label && /题$/.test(label)) return label;
-        if (label && /^(简答|问答|论述|单选|多选|判断|填空)$/.test(label)) return label;
-        return clean(group?.querySelector(':scope > .type_tit')?.textContent.match(/(多项选择|单项选择|多选|单选|判断|是非|填空|简答|问答|论述)题?/)?.[0]);
+        if (label && (/^(简答|问答|论述|单选|多选|判断|填空)$/.test(label) || TEXT_ANSWER_TYPE_LABEL.test(label))) return label;
+        return clean(group?.querySelector(':scope > .type_tit')?.textContent.match(/(多项选择|单项选择|多选|单选|判断|是非|填空|简答|问答|论述|计算与推导|计算与证明|计算|证明|解答|分析|应用|综合|推导|编程|程序设计|程序|代码)题?/)?.[0]);
     }
     function stripQuestionPrefix(text, typeLabel) {
         let result = clean(text).replace(/^\d+\s*[.．、](?!\d)\s*/, '');
@@ -77,18 +105,61 @@
         const control = labels[0].querySelector('input[type="radio"],input[type="checkbox"]');
         return !control || control === target ? labels[0] : null;
     }
-    function collectQuestionMedia(node, stem, id, groupId, optionTargets = new Map()) {
-        const media = [], imageNodes = new Map(), seen = new Set();
-        const collect = (root, location, optionKey = null) => {
+    function readQuestionSharedMaterials(node, group, groupId, hints = {}) {
+        const materials = [], doc = node.ownerDocument;
+        let unreadable = false;
+        const add = (target, id, evidence) => {
+            if (target?.nodeType !== 1 || typeof target.closest !== 'function') { unreadable = true; return; }
+            const owner = target?.closest('.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]');
+            if (!target?.isConnected || target.ownerDocument !== doc || target.contains(node)
+                || target.querySelector('.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')
+                || target.closest('template,.mark_answer,.answer-content,.correct-answer,.teacher-comment,.cx-ai-ignore')
+                || owner && owner !== node && !(evidence === 'group-instructions' && owner === group)) {
+                unreadable = true; return;
+            }
+            if (!materials.some(material => material.node === target)) materials.push({id, node:target, evidence});
+        };
+        // A type/display group is not a material-sharing declaration.
+        const instruction = group?.querySelector(':scope > .question-instructions');
+        if (instruction) add(instruction, `${groupId}:material`, 'group-instructions');
+        for (const reference of new Set((node.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean))) {
+            const matches = [...doc.querySelectorAll('[id]')].filter(target => target.id === reference);
+            if (matches.length !== 1) { unreadable = true; continue; }
+            add(matches[0], `shared-${reference}`, 'native-describedby');
+        }
+        for (const material of Array.isArray(hints.sharedMaterials) ? hints.sharedMaterials : []) {
+            if (!material?.id || !material.node) { unreadable = true; continue; }
+            add(material.node, `shared-${String(material.id)}`, 'adapter-material-reference');
+        }
+        return {materials, unreadable};
+    }
+    function collectQuestionMedia(node, stem, id, groupId, optionTargets = new Map(), sharedMaterials = []) {
+        const media = [], sharedMedia = [], imageNodes = new Map(), seen = new Set(), sequences = new Map();
+        const collect = (root, location, optionKey = null, material = null) => {
             if (!root) return;
-            let index = 0;
-            for (const img of root.matches('img') ? [root] : root.querySelectorAll('img')) {
-                if (seen.has(img) || img.closest(MEDIA_EXCLUDED)) continue;
-                if (location === 'stem' && img.closest('.Zy_ulTop,.option,.answer-option,.option-item')) continue;
-                seen.add(img);
-                const imageId = `img-${id}-${location}-${optionKey || 'q'}-${++index}`;
-                media.push({ id:imageId, groupId, sourceQuestionId:id, location, optionKey, src:imageSource(img), alt:clean(img.alt) });
-                imageNodes.set(imageId, img);
+            for (const visual of root.matches('img,svg,canvas') ? [root] : root.querySelectorAll('img,svg,canvas')) {
+                if (seen.has(visual) || visual.closest(MEDIA_EXCLUDED)) continue;
+                if (visual.matches('svg,canvas') && !questionNodeActive(visual)) continue;
+                const formula = visual.closest('math,[data-latex],[data-tex],[role="math"]');
+                if (visual.parentElement?.closest('svg,canvas') || questionNativeMathExpression(visual)
+                    || formula && root.contains(formula) && questionNativeMathExpression(formula)) continue;
+                if (location === 'stem' && visual.closest('.Zy_ulTop,.option,.answer-option,.option-item')) continue;
+                seen.add(visual);
+                const sequenceKey = JSON.stringify([material?.id || id,location,optionKey]);
+                const index = (sequences.get(sequenceKey) || 0) + 1;
+                sequences.set(sequenceKey, index);
+                const imageId = `img-${material?.id || id}-${location}-${optionKey || 'q'}-${index}`;
+                const kind = visual.localName.toLowerCase();
+                const descriptor = {id:imageId, groupId:material?.id || groupId, sourceQuestionId:material ? null : id,
+                    location, optionKey, src:kind === 'img' ? imageSource(visual) : '', alt:clean(visual.getAttribute('alt') || visual.getAttribute('aria-label')),
+                    ...(material ? {sourceMaterialId:material.id,sourceQuestionNumber:null} : {})};
+                if (kind !== 'img') {
+                    descriptor.kind = kind;
+                    try { descriptor.contentSignature = captureVisualMediaSignature(visual, kind); }
+                    catch { descriptor.unreadable = true; }
+                }
+                (material ? sharedMedia : media).push(descriptor);
+                imageNodes.set(imageId, visual);
             }
         };
         // 先绑定选项图片；即使选项被包在 .Zy_TItle 中，也不能变成组内共用题干。
@@ -97,7 +168,9 @@
         }
         // .fontLabel 有时只是题干的一部分，图片位于同一个 .Zy_TItle 内。
         collect(stem?.closest('.Zy_TItle') || stem, 'stem');
-        return { media, imageNodes };
+        for (const child of node.children) if (child.matches('.question-instructions,[data-answer-instructions]')) collect(child, 'stem');
+        for (const material of sharedMaterials) collect(material.node, 'shared', null, material);
+        return { media, sharedMedia, imageNodes };
     }
     function isMooc2HomeworkDocument(doc) {
         try { return /^\/mooc-ans\/mooc2\/work\/dowork\/?$/.test(new URL(doc.URL).pathname); }
@@ -265,7 +338,7 @@
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
         const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
         const question = stripQuestionPrefix(questionContentText(stem), typeLabel);
-        const instructions = clean([node.getAttribute('data-answer-instructions'),
+        const instructions = clean([TEXT_ANSWER_TYPE_LABEL.test(clean(typeLabel)) ? `题型：${typeLabel}` : '', node.getAttribute('data-answer-instructions'),
             ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(questionContentText),
             questionContentText(group?.querySelector(':scope > .type_tit')),
             questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
@@ -279,12 +352,20 @@
         } else if (legacy.length) {
             const type = detectType(typeLabel || question);
             if(adapter!=='video-quiz')chapterRows=readChapterRowChoiceBindings(node,id,type,legacy);
-            options = legacy.map((li, i) => { const key = chapterRows?chapterRows.records[i].key:optionKey(li, i, type); return { key, text: optionText(li, key) }; });
+            options = legacy.map((li, i) => {
+                const key = chapterRows ? chapterRows.records[i].key : optionKey(li, i, type), root = optionContentRoot(node, li);
+                let text = optionText(li, key);
+                if (root && (questionNativeMathExpression(root) || [...root.querySelectorAll('math,[data-latex],[data-tex],[role="math"]')].some(questionNativeMathExpression))) {
+                    text = clean(questionContentText(root));
+                    if (/^[A-Z]$/.test(key)) text = text.replace(new RegExp('^' + key + '\\s*[、.．:：)）]\\s*'), '');
+                }
+                return {key, text};
+            });
             optionTargets = new Map(options.map((option, i) => [option.key, legacy[i]])); writer = 'chapter-choice';
         } else {
             options = native.map((input, i) => {
                 const label = optionContentRoot(node, input);
-                const text = clean(label?.textContent || input.getAttribute('aria-label') || '');
+                const text = clean(questionContentText(label) || input.getAttribute('aria-label') || '');
                 const prefix = text.match(/^([A-Z])\s*[、.．:：)）]/)?.[1];
                 const key = clean(input.getAttribute('data-option-key') || prefix || (input.value !== 'on' ? input.value : '') || String.fromCharCode(65 + i));
                 return { key, text: /^[A-Z]$/.test(key) ? text.replace(new RegExp('^' + key + '\\s*[、.．:：)）]\\s*'), '') : text };
@@ -296,7 +377,8 @@
         const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
         const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id);
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
-        const { media, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets);
+        const shared = readQuestionSharedMaterials(node, group, groupId, local.graphHints || {});
+        const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials);
         for (const option of options) {
             const imageIds = media.filter(item => item.location === 'option' && item.optionKey === option.key).map(item => item.id);
             if (imageIds.length) option.imageIds = imageIds;
@@ -304,12 +386,15 @@
         const optionImageNodes = new Set(media.filter(item => item.location === 'option').map(item => imageNodes.get(item.id)));
         const unboundOptionImages = native.some(input => {
             const container = input.closest('.option,.answer-option,.option-item') || input.closest('label');
-            return container && [...container.querySelectorAll('img')].some(img => !img.closest(MEDIA_EXCLUDED) && !optionImageNodes.has(img));
+            return container && [...container.querySelectorAll('img,svg,canvas')].some(visual => !visual.closest(MEDIA_EXCLUDED)
+                && !(visual.matches('svg,canvas') && !questionNodeActive(visual)) && !visual.parentElement?.closest('svg,canvas')
+                && !questionNativeMathExpression(visual) && !optionImageNodes.has(visual)
+                && !questionNativeMathExpression(visual.closest('math,[data-latex],[data-tex],[role="math"]')));
         });
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
         const chapterEvidence=writer==='chapter-choice'&&adapter!=='video-quiz'?JSON.stringify([...optionTargets].map(([key,row])=>
             [key,row.getAttribute('onclick'),[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')].map(input=>[input.type,input.name,input.value,input.id])])):null;
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, chapterRows, chapterEvidence,ueditor,
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, sharedMedia, sharedMaterialUnreadable:shared.unreadable, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, chapterRows, chapterEvidence,ueditor,sharedMaterials:shared.materials,
             choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:local.graphHints || {} } };
     }
     registerPageAdapter({
@@ -334,6 +419,7 @@
         if (/判断|是非/.test(label)) return 'judge';
         if (/填空/.test(label)) return 'blank';
         if (/简答|问答|论述/.test(label)) return 'essay';
+        if (TEXT_ANSWER_TYPE_LABEL.test(clean(label))) return 'essay';
         return 'unknown';
     }
     function isSubmittedHomeworkView(node) {
@@ -361,7 +447,7 @@
     function questionLocalAnswerPolicy(question) {
         if(question.type==='unknown' || question.capabilities?.analyze===false)
             return {status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''};
-        if(question.blocks?.some(block=>block.unreadable))
+        if(question.recognition?.materials === 'unreadable' || question.blocks?.some(block=>block.unreadable))
             return {status:'uncertain',category:'materials',reason:'题目包含尚未可靠读取的材料，请人工核对',evidence:''};
         return {status:'auto',category:['single','multiple','judge'].includes(question.type)?'objective':'knowledge',reason:'直接生成答案与解析',evidence:''};
     }
@@ -394,8 +480,8 @@
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
         if(raw.binding.chapterRows&&!raw.binding.chapterRows.valid){diagnostics.push(...raw.binding.chapterRows.diagnostics);prefill=false;}
-        const ownMedia = raw.media || [];
-        if (!raw.question && !ownMedia.length) { diagnostics.push('缺少可读取题干'); prefill = false; }
+        const ownMedia = raw.media || [], sharedMedia = raw.sharedMedia || [];
+        if (!raw.question && !ownMedia.length && !sharedMedia.length) { diagnostics.push('缺少可读取题干'); prefill = false; }
         if (!uniqueOptions) { diagnostics.push('选项键重复，无法可靠对应控件'); prefill = false; }
         if (raw.options.some(option => !option.text && !ownMedia.some(item => item.location === 'option' && item.optionKey === option.key))) { diagnostics.push('选项文本不完整'); prefill = false; }
         if (choice && native && !nativeCompatible) diagnostics.push('题型与选择控件不一致');
@@ -414,10 +500,14 @@
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
         const question = {
             id: raw.id, number: raw.number, type, question: raw.question, instructions:raw.instructions || '', options: raw.options,
-            groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:[],
+            groupId:raw.groupId || `question-group-${raw.id}`, imageIds:ownMedia.map(item => item.id), contextImageIds:sharedMedia.map(item => item.id),
+            sharedMaterialIds:(raw.binding.sharedMaterials || []).map(material => material.id),
+            recognition:{type:type === 'unknown' ? 'unknown' : inferred ? 'native-inferred' : TEXT_ANSWER_TYPE_LABEL.test(clean(raw.typeLabel)) ? 'text-alias' : 'declared',
+                materials:raw.sharedMaterialUnreadable || [...ownMedia,...sharedMedia].some(item => item.unreadable) ? 'unreadable' : 'complete',
+                sharing:raw.binding.sharedMaterials?.length ? 'explicit' : 'none',slots:'single'},
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
-            capabilities: { analyze: Boolean(raw.question || ownMedia.length) && type !== 'unknown' && uniqueOptions
+            capabilities: { analyze: Boolean(raw.question || ownMedia.length || sharedMedia.length) && type !== 'unknown' && uniqueOptions
                 &&(!raw.binding.chapterRows||raw.binding.chapterRows.contentValid)
                 && !raw.options.some(option=>!option.text&&!ownMedia.some(item=>item.location==='option'&&item.optionKey===option.key))
                 && !raw.unboundOptionImages && (!raw.binding.mooc2||raw.binding.mooc2.contentValid), prefill }, diagnostics
@@ -435,23 +525,27 @@
     function parseQuestionDocument(doc = document, parseContext = {}) {
         const raw = collectRawQuestions(doc, parseContext);
         if (!raw.length) throw questionParseError('CX-PAR-001', '没有检测到题目，请先进入章节测验或作业');
-        const questions = [], media = [], bindings = new Map();
+        const questions = [], media = [], materials = [], bindings = new Map(), mediaNodes = new Map();
         for (const record of raw) {
             const parser = questionTypeParsers.find(item => item.id !== 'unknown' && item.match(record)) || questionTypeParsers.find(item => item.id === 'unknown');
             const parsed = parser.parse(record);
             if (bindings.has(parsed.question.id)) throw questionParseError('CX-PAR-007', '题目 ID 重复，已停止');
             questions.push(parsed.question); bindings.set(parsed.question.id, parsed.binding);
-            media.push(...(record.media || []));
-        }
-        for (const question of questions) {
-            question.contextImageIds = media.filter(item => item.groupId === question.groupId && item.location === 'stem' && item.sourceQuestionId !== question.id).map(item => item.id);
-            if (question.type !== 'unknown' && question.contextImageIds.length && !question.question && !question.diagnostics.includes('选项图片无法可靠对应选项，暂不分析或预填')) {
-                question.capabilities.analyze = true;
-                question.diagnostics = question.diagnostics.filter(text => text !== '缺少可读取题干');
+            for (const descriptor of [...(record.media || []),...(record.sharedMedia || [])]) {
+                const existing = media.find(item => item.id === descriptor.id), imageNode = record.binding.imageNodes.get(descriptor.id);
+                if (existing && (mediaNodes.get(descriptor.id) !== imageNode || JSON.stringify(existing) !== JSON.stringify(descriptor)))
+                    throw questionParseError('CX-PAR-008','题目图片或共用材料标识无法唯一对应');
+                if (!existing) { media.push(descriptor); mediaNodes.set(descriptor.id,imageNode); }
+            }
+            for (const material of record.binding.sharedMaterials || []) {
+                const text = questionContentText(material.node);
+                const existing = materials.find(item => item.id === material.id);
+                if (existing && existing.node !== material.node) throw questionParseError('CX-PAR-008','共用材料引用无法唯一对应');
+                if (!existing) materials.push({id:material.id,type:'shared-context',text,node:material.node});
             }
         }
         for(const question of questions)question.answerPolicy=questionLocalAnswerPolicy(question);
-        return { schemaVersion: 2, questions, media, bindings };
+        return { schemaVersion: 2, questions, media, materials:materials.map(({node,...material}) => material), bindings };
     }
 
     // Schema 3 shares the proven adapters and bindings with Schema 2. General layers do
@@ -463,7 +557,9 @@
     function parseQuestionContent(node, context = {}, adapterHints = {}) {
         const question = context.question || {}, binding = context.binding || {};
         const blocks = [], slots = [], subquestions = [], imageNodes = binding.imageNodes || new Map();
+        let slotAmbiguous = false;
         const mediaByNode = new Map([...imageNodes].map(([id, image]) => [image, id]));
+        const descriptors = new Map((context.media || []).map(item => [item.id,item]));
         const text = value => typeof clean === 'function' ? clean(value) : String(value || '').replace(/\s+/g, ' ').trim();
         const addText = value => { const valueText = text(value); if (valueText) blocks.push({type:'text', text:valueText}); };
         const walk = current => {
@@ -471,9 +567,12 @@
             if (current.nodeType !== 1 || current.matches(MEDIA_EXCLUDED + ',script,style,button,input,textarea,select,[contenteditable="true"]')) return;
             if (context.parseContext?.scope === 'video-quiz' && typeof courseElementVisible === 'function' && !courseElementVisible(current)) return;
             if (current.matches('.Zy_ulTop,.option,.answer-option,.option-item')) return;
-            if (current.tagName === 'IMG') {
+            if (current.matches('svg,canvas') && !questionNodeActive(current)) return;
+            const expression = questionNativeMathExpression(current);
+            if (expression) { blocks.push({type:'math',expression}); return; }
+            if (current.matches('img,svg,canvas')) {
                 const mediaId = mediaByNode.get(current);
-                if (mediaId) blocks.push({type:'image', mediaId});
+                if (mediaId) blocks.push({type:'image', mediaId, ...(descriptors.get(mediaId)?.unreadable ? {unreadable:true} : {})});
                 else blocks.push({type:'image', unreadable:true});
                 return;
             }
@@ -489,25 +588,47 @@
         };
         const stem = adapterHints.stem || binding.stem;
         if (stem) walk(stem); else addText(question.question);
+        for (const material of binding.sharedMaterials || []) {
+            const materialText = questionContentText(material.node);
+            if (materialText) blocks.push({type:'shared-context',text:materialText});
+        }
+        for (const mediaId of question.contextImageIds || []) if (!blocks.some(block => block.mediaId === mediaId))
+            blocks.push({type:'image',mediaId,...(descriptors.get(mediaId)?.unreadable ? {unreadable:true} : {})});
+        if (question.recognition?.materials === 'unreadable') blocks.push({type:'shared-context',unreadable:true});
         // Only explicit slot/semantic references supplied by an adapter, or valid
         // native label references, can create independently addressable text units.
         if (Array.isArray(adapterHints.slots)) {
             for (const slot of adapterHints.slots) {
-                if (!slot?.id || !slot.control || !node.contains(slot.control)) continue;
+                if (!slot?.id || slot.control?.nodeType !== 1 || slot.control.ownerDocument !== node.ownerDocument
+                    || !node.contains(slot.control) || !(binding.inputs || []).includes(slot.control)
+                    || adapterHints.slots.filter(other => String(other?.id) === String(slot.id) || other?.control === slot.control).length !== 1) { slotAmbiguous = true; continue; }
                 slots.push({id:String(slot.id), text:text(slot.text), control:slot.control,
                     evidence:['adapter-slot-reference'], type:slot.type || question.type});
             }
         } else if (['blank','essay'].includes(question.type)) {
-            const labels = [...node.querySelectorAll('label[for]')];
+            const labels = [...node.querySelectorAll('label')];
+            const allLabels = [...node.ownerDocument.querySelectorAll('label')];
             const idCounts = new Map();
             for (const element of node.ownerDocument.querySelectorAll('[id]')) idCounts.set(element.id, (idCounts.get(element.id) || 0) + 1);
             for (const label of labels) {
-                const targets = (binding.inputs || []).filter(input => input.id && input.id === label.htmlFor);
-                if (targets.length !== 1 || !text(label.textContent)) continue;
+                const targets = (binding.inputs || []).filter(input => label.control === input && node.contains(input));
+                if (targets.length !== 1 || !text(questionContentText(label))) continue;
                 const control = targets[0];
-                if (label.control !== control || idCounts.get(control.id) !== 1 || typeof courseElementVisible === 'function' && !courseElementVisible(label)) continue;
-                if (labels.filter(other => other.htmlFor === control.id).length !== 1 || slots.some(slot => slot.control === control)) continue;
-                slots.push({id:`label-${slots.length + 1}`, text:text(label.textContent), control, evidence:['native-label-reference'], type:question.type});
+                if (control.id && idCounts.get(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form') || !questionNodeActive(label)) continue;
+                if (allLabels.filter(other => other.control === control).length !== 1 || slots.some(slot => slot.control === control)) continue;
+                slots.push({id:`label-${slots.length + 1}`, text:text(questionContentText(label)), control, evidence:['native-label-reference'], type:question.type});
+            }
+            for (const control of binding.inputs || []) {
+                if (slots.some(slot => slot.control === control) || control.id && idCounts.get(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form')) continue;
+                const references = (control.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+                if (!references.length || new Set(references).size !== references.length) continue;
+                const signature = [...references].sort().join(' ');
+                if ((binding.inputs || []).filter(other => (other.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).sort().join(' ') === signature).length !== 1) continue;
+                const targets = references.map(id => [...node.ownerDocument.querySelectorAll('[id]')].filter(target => target.id === id));
+                if (targets.some(matches => matches.length !== 1 || !node.contains(matches[0]) || matches[0].contains(control)
+                    || matches[0].closest(MEDIA_EXCLUDED) || !questionNodeActive(matches[0]))) continue;
+                const label = targets.map(matches => text(questionContentText(matches[0]))).filter(Boolean).join('；');
+                if (label) slots.push({id:`aria-${slots.length + 1}`,text:label,control,evidence:['native-aria-reference'],type:question.type});
             }
         }
         for (const slot of slots) blocks.push({type:'slot', id:slot.id, text:slot.text});
@@ -521,7 +642,7 @@
             }
         }
         if (question.instructions) blocks.unshift({type:'instruction', text:question.instructions});
-        return {blocks, slots, subquestions, diagnostics:blocks.some(block => block.unreadable) ? ['unreadable-content'] : []};
+        return {blocks, slots, subquestions, slotAmbiguous, diagnostics:[...(blocks.some(block => block.unreadable) ? ['unreadable-content'] : []),...(slotAmbiguous ? ['ambiguous-slot-reference'] : [])]};
     }
     function parseQuestionControls(node, context = {}, adapterHints = {}) {
         const question = context.question || {}, binding = context.binding || {}, controls = [], runtime = new Map();
@@ -541,6 +662,7 @@
             ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&binding.ueditor?.valid&&binding.ueditor.input===input));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
             if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
+            if (target.tagName === 'CANVAS' && [...(binding.imageNodes || new Map()).values()].includes(target)) continue;
             add(target, target.tagName === 'SELECT' ? 'select' : target.tagName === 'CANVAS' ? 'canvas' : target.type === 'file' ? 'upload' : 'richtext', false);
         }
         return {controls, runtime, diagnostics:controls.filter(control => !control.writable).map(control => ({targetId:control.id, code:'no-safe-writer'}))};
@@ -558,6 +680,8 @@
             const confirmed = binding.canPrefill && targets.length === question.options.length && targets.every(control => control.writable);
             unit(question.id, question.type, targets.map(control => control.id), confirmed ? 'confirmed' : 'unsupported',
                 confirmed ? ['adapter-option-key','isolated-option-group'] : ['unverified-option-group']);
+        } else if (['blank','essay'].includes(question.type) && content.slotAmbiguous) {
+            unit(question.id, question.type, textControls.map(control => control.id), 'ambiguous', ['invalid-slot-reference']);
         } else if (['blank','essay'].includes(question.type) && content.slots.length > 1) {
             for (const slot of content.slots) {
                 const descriptor = textControls.find(control => controls.runtime.get(control.id) === slot.control);
@@ -579,22 +703,19 @@
         return {responseUnits, relations};
     }
     function parseQuestionGraph(doc = document, parseContext = {}) {
-        const legacy = parseQuestionDocument(doc, parseContext), controls = [], relations = [], materials = [], bindings = new Map(legacy.bindings);
+        const legacy = parseQuestionDocument(doc, parseContext), controls = [], relations = [], materials = legacy.materials || [], bindings = new Map(legacy.bindings);
         const questions = legacy.questions.map(original => {
-            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext};
+            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext,media:legacy.media};
             const content = parseQuestionContent(binding.node, context, binding.adapterHints || {});
             const parsedControls = parseQuestionControls(binding.node, context, binding.adapterHints || {});
             const matched = matchQuestionRelations(content, parsedControls, context);
             controls.push(...parsedControls.controls); relations.push(...matched.relations);
             const composite = matched.responseUnits.length > 1;
             const question = {...original, structure:composite ? 'composite' : 'simple', blocks:content.blocks,
-                responseUnits:matched.responseUnits, sharedMaterialIds:[], diagnostics:[...original.diagnostics, ...content.diagnostics]};
-            const instruction = binding.group?.querySelector(':scope > .question-instructions');
-            if (instruction && questionContentText(instruction)) {
-                const id = `${original.groupId}:material`;
-                if (!materials.some(material => material.id === id)) materials.push({id, type:'shared-context', text:questionContentText(instruction)});
-                question.sharedMaterialIds.push(id);
-            }
+                responseUnits:matched.responseUnits, diagnostics:[...original.diagnostics, ...content.diagnostics],
+                recognition:{...original.recognition,materials:content.blocks.some(block => block.unreadable) ? 'unreadable' : original.recognition.materials,
+                    slots:matched.responseUnits.some(unit => unit.relationStatus === 'ambiguous') ? 'ambiguous'
+                        : content.slots.length > 1 ? content.slots.some(slot => slot.evidence.includes('adapter-slot-reference')) ? 'adapter-declared' : 'native-label' : 'single'}};
             for (const unit of matched.responseUnits) {
                 if (!composite || unit.id === original.id) continue;
                 const nodes = unit.controlIds.map(id => parsedControls.runtime.get(id)).filter(Boolean);
@@ -603,7 +724,7 @@
             }
             const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
             question.answerPolicy=questionLocalAnswerPolicy(question);
-            question.supportLevel = question.answerPolicy.status === 'manual' ? 'Manual Required'
+            question.supportLevel = question.recognition.materials === 'unreadable' ? 'Unreadable' : question.answerPolicy.status === 'manual' ? 'Manual Required'
                 : !original.capabilities.analyze ? (original.type === 'unknown' ? 'Unsupported' : 'Unreadable')
                 : confirmed === matched.responseUnits.length ? 'Fully Supported' : confirmed ? 'Partial Support' : 'Analyze Only';
             return question;

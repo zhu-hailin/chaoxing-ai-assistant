@@ -8,6 +8,8 @@
     }
     function courseVideoQuizVisibleText(node) {
         if(!node||!courseElementVisible(node)||node.matches(MEDIA_EXCLUDED+',script,style'))return '';
+        const expression=questionNativeMathExpression(node);
+        if(expression)return expression;
         return clean([...node.childNodes].map(child=>child.nodeType===3?child.textContent:child.nodeType===1?courseVideoQuizVisibleText(child):'').join(' '));
     }
     function courseVideoQuizCandidate(video) {

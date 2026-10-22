@@ -328,8 +328,8 @@
         const skipped=data.skippedQuestions?.find(item=>item.id===question.id);
         const unitIds=question.responseUnits?.length?question.responseUnits.map(unit=>unit.id):[question.id];
         const states=unitIds.map(id=>data.analysisStates?.[id]).filter(Boolean);
-        const state=['running','retry-wait','pending','failed','cancelled','skipped','success'].map(status=>states.find(item=>item.status===status)).find(Boolean);
-        const stateLabel=state && ({pending:'等待中',running:'分析中','retry-wait':'重试等待中',success:'分析成功',failed:'分析失败',skipped:'已跳过',cancelled:'已取消'}[state.status]
+        const state=['running','preparing','retry-wait','pending','ready','failed','cancelled','skipped','success'].map(status=>states.find(item=>item.status===status)).find(Boolean);
+        const stateLabel=state && ({pending:'等待中',preparing:'准备材料',ready:'等待分析',running:'分析中','retry-wait':'重试等待中',success:'分析成功',failed:'分析失败',skipped:'已跳过',cancelled:'已取消'}[state.status]
             +(['failed','cancelled'].includes(state.status)&&state.error?`：${state.error}${state.code?`（${state.code}）`:''}`:''));
         const analysis=stateLabel || (entry?.answer?.length ? '已生成答案与解析'
             : skipped ? skipped.reason : ['manual','uncertain'].includes(policy.status) ? policy.reason
@@ -347,15 +347,102 @@
             : question.supportLevel==='Partial Support' ? '仅支持已确认的作答区域' : entry?.answer?.length ? '可预填，等待操作' : '等待分析结果';
         return {analysis,prefill};
     }
+    function resultImageCaption(image, question) {
+        if (image.location === 'shared' || question?.contextImageIds?.includes(image.id) || image.sourceMaterialId && image.sourceQuestionNumber == null) return '共用材料';
+        const number = image.sourceQuestionNumber ?? question?.number;
+        return `${number == null ? '题目' : `来自第 ${number} 题`}${image.optionKey ? ' · 选项 ' + image.optionKey : ' · 题干图片'}`;
+    }
+    function resultImageSource(data, descriptor) {
+        const preview = data.mediaPreviews?.[descriptor.id];
+        if (['svg','canvas'].includes(descriptor.kind) && typeof preview === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(preview)) return preview;
+        return mediaAddressAllowed(descriptor.src, panelView.sourceDoc) ? descriptor.src : null;
+    }
+    function resultQuestionIncomplete(data, question, entry) {
+        const ids = question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id];
+        return !entry?.answer?.length || ids.some(id => data.analysisStates?.[id] && data.analysisStates[id].status !== 'success');
+    }
+    function closeResultImage() {
+        const dialog = panelView?.shadow.getElementById('result-image-dialog');
+        if (dialog?.open) dialog.close();
+    }
+    function initResultControls(ctl) {
+        if (!panelView || panelView.resultControlsInitialized) return;
+        panelView.resultControlsInitialized = true;
+        const { shadow } = panelView, output = shadow.getElementById('output');
+        const rerender = () => { if (panelView.resultView?.data) renderResultList(panelView.resultView.data); };
+        shadow.getElementById('result-filter').onchange = event => {
+            if (!panelView.resultView) return;
+            panelView.resultView.filter = event.target.value === 'incomplete' ? 'incomplete' : 'all';
+            panelView.resultView.seekTop = true; rerender();
+        };
+        const jump = () => {
+            const view = panelView.resultView, value = shadow.getElementById('result-jump-number').value.trim();
+            if (!view?.data || !/^\d+$/.test(value)) return;
+            const question = view.data.questions.find(item => String(item.number) === String(Number(value)));
+            if (!question) { ctl.report('没有找到该题号'); return; }
+            view.filter = 'all'; rerender();
+            const card = view.cards.get(question.id)?.card;
+            if (card) {
+                output.scrollTop += card.getBoundingClientRect().top - output.getBoundingClientRect().top - 10;
+                card.focus({ preventScroll: true });
+            }
+        };
+        shadow.getElementById('result-jump').onclick = jump;
+        shadow.getElementById('result-jump-number').onkeydown = event => {
+            if (event.key === 'Enter') { event.preventDefault(); jump(); }
+        };
+        panelView.resultControlClick = async event => {
+            const button = event.currentTarget;
+            if (!button || button.disabled || !trustedAssistantActivation(event, button)) return;
+            const data = panelView.resultView?.data;
+            const question = data?.questions.find(item => String(item.id) === button.dataset.questionId);
+            if (!question) return;
+            if (button.dataset.resultAction === 'copy') {
+                const text = formatResultText({ ...data, questions: [question], analysisProgress: null, prefill: null });
+                try { await navigator.clipboard.writeText(text); ctl.report(`第 ${question.number} 题已复制`); }
+                catch {
+                    const card = button.closest('.question-card'), doc = output.ownerDocument, range = doc.createRange();
+                    range.selectNodeContents(card);
+                    const selection = typeof shadow.getSelection === 'function' ? shadow.getSelection() : doc.getSelection();
+                    selection?.removeAllRanges(); selection?.addRange(range); ctl.report('请按 Ctrl+C 复制本题');
+                }
+            } else if (button.dataset.resultAction === 'image') {
+                const descriptor = data.media?.find(item => item.id === button.dataset.imageId);
+                if (!descriptor || !questionImageIds(question).includes(descriptor.id)) return;
+                const src = resultImageSource(data, descriptor); if (!src) return;
+                const dialog = shadow.getElementById('result-image-dialog'), image = shadow.getElementById('result-image-original');
+                shadow.getElementById('result-image-caption').textContent = resultImageCaption(descriptor, question);
+                image.src = src; image.alt = descriptor.alt || resultImageCaption(descriptor, question);
+                panelView.resultImageReturn = button;
+                if (!dialog.open) dialog.showModal();
+                shadow.getElementById('result-image-close').focus();
+            } else if (['retry', 'retry-current'].includes(button.dataset.resultAction)) {
+                if (ctl.state.busy || courseRunActive() || !ctl.task?.snapshot?.questions.includes(question)) return;
+                const ids = (question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id])
+                    .filter(id => ['failed', 'cancelled'].includes(data.analysisStates?.[id]?.status));
+                if (ids.length) resumeAnalysisTask(new Set(ids), { useCurrentSettings: button.dataset.resultAction === 'retry-current' });
+            }
+        };
+        for (const button of output.querySelectorAll('button[data-result-action]')) button.onclick = panelView.resultControlClick;
+        const dialog = shadow.getElementById('result-image-dialog');
+        shadow.getElementById('result-image-close').onclick = closeResultImage;
+        dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
+        dialog.addEventListener('click', event => { if (event.target === dialog) closeResultImage(); });
+        dialog.addEventListener('close', () => {
+            shadow.getElementById('result-image-original').removeAttribute('src');
+            const target = panelView.resultImageReturn; panelView.resultImageReturn = null;
+            if (panelView.windowMode === 'open') (target?.isConnected && target.getClientRects().length ? target : output).focus({ preventScroll: true });
+        });
+    }
     function formatResultText(data) {
         if (!data?.questions?.length) return '';
         const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
         const lines = [`题目列表（共 ${data.questions.length} 题）`];
-        const appendImages = ids => {
+        const appendImages = (ids, question) => {
             for (const id of ids) {
                 const image = data.media?.find(item => item.id === id);
                 if (!image) continue;
-                lines.push(`图片：来自第 ${image.sourceQuestionNumber} 题${image.optionKey ? '，选项 ' + image.optionKey : ''}`);
+                lines.push(`图片：${resultImageCaption(image, question)}`);
                 const analysis = data.mediaAnalysis?.find(item => item.imageIds.includes(id));
                 if (analysis) {
                     if (analysis.summary) lines.push(analysis.summary);
@@ -374,9 +461,9 @@
             for (const option of question.options) {
                 lines.push(`${option.key}. ${option.text}`);
                 const ids = questionImageIds(question).filter(id => data.media?.some(image => image.id === id && image.location === 'option' && image.optionKey === option.key && image.sourceQuestionId === question.id));
-                ids.forEach(id => optionImages.add(id));appendImages(ids);
+                ids.forEach(id => optionImages.add(id));appendImages(ids, question);
             }
-            appendImages(questionImageIds(question).filter(id => !optionImages.has(id)));
+            appendImages(questionImageIds(question).filter(id => !optionImages.has(id)), question);
             const states=questionResultStatuses(data,question,entry);
             if(states.analysis)lines.push(`AI 分析：${states.analysis}`);
             if(states.prefill)lines.push(`自动预填：${states.prefill}`);
@@ -390,10 +477,10 @@
     }
 
     function renderResultList(data) {
-        const output = panelView.shadow.getElementById('output');
+        const { shadow } = panelView, output = shadow.getElementById('output');
         const doc = output.ownerDocument;
-        const fragment = doc.createDocumentFragment();
         const hasAnswers = Array.isArray(data?.answers) && (data.analyzedCount ?? data.answers.length) > 0;
+        const hasAnalysis = hasAnswers || Boolean(data?.analysisProgress && ['complete','failed','stopped'].includes(data.analysisProgress.status));
         output.setAttribute('aria-label', hasAnswers ? '题目与答案列表' : '题目列表');
         const node = (tag, className, text) => {
             const element = doc.createElement(tag);
@@ -401,102 +488,159 @@
             if (text !== undefined) element.textContent = text;
             return element;
         };
-        const renderImages = (question, ids) => {
+        const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
+        shadow.getElementById('solve').textContent = hasAnalysis ? '重新分析全部' : 'AI 分析';
+        shadow.getElementById('solve').classList.toggle('secondary', hasAnalysis);
+        shadow.getElementById('result-tools').hidden = !data?.questions?.length;
+        if (!data?.questions?.length) {
+            closeResultImage(); panelView.resultView = null;
+            shadow.getElementById('result-filter').value = 'all';
+            shadow.getElementById('result-jump-number').value = '';
+            output.replaceChildren(node('p', 'result-empty', '提取后将在这里显示题目列表')); output.scrollTop = 0;
+            return;
+        }
+        let view = panelView.resultView;
+        if (!view) {
+            view = { cards: new Map(), filter: 'all', summary: node('p', 'result-summary'), progress: node('p', 'note'), list: node('ol', 'question-list') };
+            panelView.resultView = view; output.replaceChildren(view.summary, view.progress, view.list);
+        }
+        const previousTop = output.scrollTop, viewport = output.getBoundingClientRect();
+        const anchor = output.clientHeight > 0 && [...view.cards.values()].find(item => !item.card.hidden && item.card.getBoundingClientRect().bottom > viewport.top);
+        const anchorOffset = anchor ? anchor.card.getBoundingClientRect().top - viewport.top : null;
+        view.data = data;
+        const renderImages = (question, ids, mediaNodes) => {
             const images = node('ul', 'media-list');
             for (const id of ids) {
                 const descriptor = data.media?.find(item => item.id === id);
                 if (!descriptor) continue;
                 const item = node('li', 'media-item');
                 item.dataset.imageId = id;
-                item.append(node('p', 'media-caption', `${question.contextImageIds?.includes(id) ? '共用材料 · ' : ''}来自第 ${descriptor.sourceQuestionNumber} 题${descriptor.optionKey ? ' · 选项 ' + descriptor.optionKey : ' · 题干图片'}`));
-                if (mediaAddressAllowed(descriptor.src, panelView.sourceDoc)) {
+                item.append(node('p', 'media-caption', resultImageCaption(descriptor, question)));
+                const src = resultImageSource(data, descriptor);
+                if (src) {
                     const image = node('img', 'question-image');
-                    image.alt = descriptor.alt || `第 ${descriptor.sourceQuestionNumber} 题${descriptor.optionKey ? '选项 ' + descriptor.optionKey : ''}图片`;
-                    image.loading = 'lazy'; image.src = descriptor.src;
-                    image.addEventListener('error', () => image.replaceWith(node('p','note','图片预览加载失败，分析时将重新读取并校验')), { once:true });
-                    item.append(image);
+                    image.alt = descriptor.alt || resultImageCaption(descriptor, question);
+                    image.loading = 'lazy'; image.src = src;
+                    const open = node('button', 'question-image-open'); open.type = 'button';
+                    Object.assign(open.dataset, { resultAction: 'image', questionId: question.id, imageId: id });
+                    open.onclick = panelView.resultControlClick;
+                    open.title = '查看原图'; open.setAttribute('aria-label', `${image.alt}，查看原图`); open.append(image);
+                    image.addEventListener('error', () => open.replaceWith(node('p','note','图片预览加载失败，分析时将重新读取并校验')), { once:true });
+                    item.append(open);
                 } else item.append(node('p','note','图片地址缺失或暂不支持'));
-                const analysis = data.mediaAnalysis?.find(entry => entry.imageIds.includes(id));
+                const details = node('div', 'image-analysis'); item.append(details); mediaNodes.push({ id, details, key: null });
+                images.append(item);
+            }
+            return images.childElementCount ? images : null;
+        };
+        const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
+        setText(view.summary, `共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}`);
+        setText(view.progress, data.analysisProgress ? analysisProgressText(data.analysisProgress) : ''); view.progress.hidden = !data.analysisProgress;
+        const currentIds = new Set(data.questions.map(question => question.id));
+        for (const [id, item] of view.cards) if (!currentIds.has(id)) { item.card.remove(); view.cards.delete(id); }
+        let visible = 0;
+        data.questions.forEach((question, index) => {
+            const entry = answers.get(question.id);
+            let item = view.cards.get(question.id);
+            if (!item) {
+                const card = node('li', 'question-card'); card.dataset.questionId = question.id; card.tabIndex = -1;
+                item = { card, body: node('div','question-body'), statuses: node('div','question-statuses'), actions: node('div','question-card-actions'), materials: node('div','question-materials'), answer: node('div','question-result'), usage: node('details','request-usage'), mediaNodes: [] };
+                item.usage.append(node('summary','', '请求详情'), node('p','request-usage-text'));
+                card.append(item.body, item.statuses, item.actions, item.materials, item.answer, item.usage); view.cards.set(question.id, item);
+            }
+            const images = questionImageIds(question).map(id => {
+                const image = data.media?.find(media => media.id === id);
+                return image ? [image.id,image.src,image.alt,image.location,image.optionKey,image.sourceQuestionNumber,image.sourceMaterialId,data.mediaPreviews?.[id]] : [id];
+            });
+            const bodyKey = JSON.stringify([question.number,question.type,question.source?.typeLabel,question.question,question.options,question.contextImageIds,images]);
+            if (item.bodyKey !== bodyKey) {
+                item.bodyKey = bodyKey; item.mediaNodes = [];
+                const heading = node('div', 'question-heading');
+                heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
+                item.body.replaceChildren(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
+                item.materials.replaceChildren();
+                const optionImages = new Set();
+                if (question.options.length) {
+                    const options = node('ul', 'option-list');
+                    for (const option of question.options) {
+                        const optionNode = node('li','option-item'); optionNode.dataset.optionKey = option.key;
+                        const content = node('div','option-content'); content.append(node('span','option-text',option.text));
+                        const ids = questionImageIds(question).filter(id => data.media?.some(image => image.id === id && image.location === 'option' && image.optionKey === option.key && image.sourceQuestionId === question.id));
+                        ids.forEach(id => optionImages.add(id));
+                        const rendered = renderImages(question, ids, item.mediaNodes); if (rendered) content.append(rendered);
+                        optionNode.append(node('span','option-key',question.type === 'judge' ? '·' : option.key),content); options.append(optionNode);
+                    }
+                    item.materials.append(options);
+                }
+                const rendered = renderImages(question, questionImageIds(question).filter(id => !optionImages.has(id)), item.mediaNodes);
+                if (rendered) item.materials.append(rendered);
+            }
+            for (const media of item.mediaNodes) {
+                const analysis = data.mediaAnalysis?.find(record => record.imageIds.includes(media.id));
+                const key = JSON.stringify(analysis || null); if (media.key === key) continue;
+                media.key = key; const fragment = doc.createDocumentFragment();
                 if (analysis) {
-                    if (analysis.summary) item.append(node('p','image-summary',analysis.summary));
+                    if (analysis.summary) fragment.append(node('p','image-summary',analysis.summary));
                     if (analysis.columns.length && analysis.rows.length) {
                         const wrap = node('div','image-table-wrap'), table = node('table','image-table'), heading = node('tr','');
                         for (const text of analysis.columns) heading.append(node('th','',text));
                         const thead = node('thead',''); thead.append(heading); table.append(thead);
                         const tbody = node('tbody','');
                         for (const values of analysis.rows) { const tr = node('tr',''); for (const text of values) tr.append(node('td','',text)); tbody.append(tr); }
-                        table.append(tbody); wrap.append(table); item.append(wrap);
+                        table.append(tbody); wrap.append(table); fragment.append(wrap);
                     }
-                    if (analysis.items.length) { const list = node('ul','image-details'); for (const text of analysis.items) list.append(node('li','',text)); item.append(list); }
+                    if (analysis.items.length) { const list = node('ul','image-details'); for (const text of analysis.items) list.append(node('li','',text)); fragment.append(list); }
                 }
-                images.append(item);
+                media.details.replaceChildren(fragment);
             }
-            return images.childElementCount ? images : null;
-        };
-        if (!data?.questions?.length) {
-            fragment.append(node('p', 'result-empty', '提取后将在这里显示题目列表'));
-        } else {
-            const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
-            fragment.append(node('p', 'result-summary', `共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}`));
-            if(data.analysisProgress)fragment.append(node('p','note',analysisProgressText(data.analysisProgress)));
-            const list = node('ol', 'question-list');
-            for (const question of data.questions) {
-                const entry = answers.get(question.id);
-                const card = node('li', 'question-card');
-                card.dataset.questionId = question.id;
-                const heading = node('div', 'question-heading');
-                heading.append(node('span', 'question-number', `第 ${question.number} 题`), node('span', 'question-type', (question.type === 'unknown' ? question.source?.typeLabel || '未识别题型' : QUESTION_TYPE_LABELS[question.type]) || '题目'));
-                card.append(heading, node('p', 'question-text', question.question.replace(/^【[^】]+】\s*/, '')));
-                const states=questionResultStatuses(data,question,entry);
-                if(states.analysis)card.append(node('p','note answer-policy',`AI 分析：${states.analysis}`));
-                if(states.prefill)card.append(node('p','note prefill-policy',`自动预填：${states.prefill}`));
-                const retryIds=(question.responseUnits?.length?question.responseUnits.map(unit=>unit.id):[question.id])
-                    .filter(id=>['failed','cancelled'].includes(data.analysisStates?.[id]?.status));
-                const displayedTask=controller?.task;
-                if(retryIds.length && displayedTask?.snapshot?.questions.includes(question)) {
-                    const retryButton=node('button','secondary','重试本题');retryButton.type='button';retryButton.dataset.analysisRetry='true';
-                    retryButton.disabled=controller.state.busy || courseRunActive();
-                    retryButton.onclick=event=>{if(controller.task===displayedTask && trustedAssistantActivation(event,retryButton))resumeAnalysisTask(new Set(retryIds));};
-                    card.append(retryButton);
-                }
-                if (question.capabilities?.analyze===false && question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
-                const skipped = data.skippedQuestions?.find(item => item.id === question.id);
-                if (skipped) card.append(node('p', 'note', skipped.reason));
-                const optionImages = new Set();
-                if (question.options.length) {
-                    const options = node('ul', 'option-list');
-                    for (const option of question.options) {
-                        const item = node('li', `option-item${entry?.answer.includes(option.key) ? ' is-answer' : ''}`);
-                        item.dataset.optionKey = option.key;
-                        const content = node('div', 'option-content');content.append(node('span', 'option-text', option.text));
-                        const ids = questionImageIds(question).filter(id => data.media?.some(image => image.id === id && image.location === 'option' && image.optionKey === option.key && image.sourceQuestionId === question.id));
-                        ids.forEach(id => optionImages.add(id));
-                        const images = renderImages(question, ids);if(images) content.append(images);
-                        item.append(node('span', 'option-key', question.type === 'judge' ? '·' : option.key), content);
-                        options.append(item);
-                    }
-                    card.append(options);
-                }
-                const images = renderImages(question, questionImageIds(question).filter(id => !optionImages.has(id)));
-                if (images) card.append(images);
-                if (entry?.answer?.length) {
-                    card.append(node('p', `ai-answer${entry.answer.length ? '' : ' needs-review'}`, readableAnswer(question, entry)));
-                    if (entry.reason) card.append(node('p', 'answer-reason', `解析：${entry.reason}`));
-                }
+            const states = questionResultStatuses(data,question,entry), skipped = data.skippedQuestions?.find(record => record.id === question.id);
+            const statusText = [states.analysis && `AI 分析：${states.analysis}`,states.prefill && `自动预填：${states.prefill}`,
+                question.capabilities?.analyze===false && question.diagnostics?.length ? question.diagnostics.join('；') : '',skipped?.reason].filter(Boolean);
+            const statusKey = JSON.stringify(statusText);
+            if (item.statusKey !== statusKey) { item.statusKey = statusKey; item.statuses.replaceChildren(...statusText.map(text => node('p','note',text))); }
+            const canRetry = Boolean((question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id])
+                .some(id => ['failed','cancelled'].includes(data.analysisStates?.[id]?.status)) && controller?.task?.snapshot?.questions.includes(question));
+            const retryCurrent=Boolean(controller?.task?.configurationChanged);
+            if (item.canRetry !== canRetry || item.retryCurrent!==retryCurrent) {
+                item.canRetry = canRetry;item.retryCurrent=retryCurrent;
+                const actions = [['copy','复制本题'],...(canRetry ? [controller?.task?.configurationChanged?['retry-current','用当前设置重试']:['retry','重试本题']] : [])];
+                item.actions.replaceChildren(...actions.map(([action,label]) => {
+                    const button = node('button','secondary',label); button.type = 'button';
+                    Object.assign(button.dataset,{resultAction:action,questionId:question.id});
+                    button.onclick = panelView.resultControlClick;
+                    if (action.startsWith('retry')) button.dataset.analysisRetry = 'true'; return button;
+                }));
+            }
+            for (const button of item.actions.querySelectorAll('[data-analysis-retry]')) button.disabled = controller?.state.busy || courseRunActive();
+            for (const option of item.materials.querySelectorAll('.option-item')) option.classList.toggle('is-answer', Boolean(entry?.answer?.includes(option.dataset.optionKey)));
+            const answerKey = JSON.stringify([entry || null,validResultSources(data,question)]);
+            if (item.answerKey !== answerKey) {
+                item.answerKey = answerKey; const fragment = doc.createDocumentFragment();
+                if (entry?.answer?.length) { fragment.append(node('p','ai-answer',readableAnswer(question,entry))); if (entry.reason) fragment.append(node('p','answer-reason',`解析：${entry.reason}`)); }
                 const sources = node('div', 'answer-sources');
                 for (const source of validResultSources(data, question)) {
                     const link = node('a', '', source.title || '参考来源');
                     link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
                     sources.append(link);
                 }
-                if (sources.childElementCount) card.append(sources);
-                list.append(card);
+                if (sources.childElementCount) fragment.append(sources); item.answer.replaceChildren(fragment);
             }
-            fragment.append(list);
-        }
-        // 题干、选项、AI 解析均作为文本插入，避免把模型或页面内容解释成 HTML。
-        output.replaceChildren(fragment);
-        output.scrollTop = 0;
+            const ids = question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id];
+            const usage = ids.map(id => data.requestUsageByQuestion?.[id]).filter(Boolean);
+            const usageText = usage.map((record,unit) => [usage.length > 1 ? `作答区域 ${unit+1}` : '',record.model && `模型 ${record.model}`,
+                record.attempts > 0 ? `请求 ${record.attempts} 次` : '',
+                ...[['promptTokens','返回输入'],['completionTokens','返回输出'],['reasoningTokens','返回推理'],['totalTokens','返回合计']].map(([key,label]) => Number.isFinite(record[key]) ? `${label} ${record[key]} tokens` : '')].filter(Boolean).join(' · ')).filter(Boolean).join('\n');
+            item.usage.hidden = !usageText; setText(item.usage.lastElementChild, usageText);
+            item.card.hidden = view.filter === 'incomplete' && !resultQuestionIncomplete(data,question,entry);
+            if (!item.card.hidden) visible++;
+            if (view.list.children[index] !== item.card) view.list.insertBefore(item.card,view.list.children[index] || null);
+        });
+        shadow.getElementById('result-filter').value = view.filter;
+        setText(shadow.getElementById('result-visible-count'), `显示 ${visible}/${data.questions.length} 题`);
+        shadow.getElementById('result-jump-number').max = Math.max(...data.questions.map(question => Number(question.number) || 0));
+        if (view.seekTop) { output.scrollTop = 0; view.seekTop = false; }
+        else if (anchor && !anchor.card.hidden && anchor.card.isConnected) output.scrollTop += anchor.card.getBoundingClientRect().top - output.getBoundingClientRect().top - anchorOffset;
+        else output.scrollTop = previousTop;
     }
 
     function mountQuizToolbar(doc, ctl) {
@@ -778,7 +922,16 @@
         initPanelNavigation();
         initOtherFeatureControls(shadow,doc);
         initCourseRunControls(doc, ctl);
+        initResultControls(ctl);
         const el = id => shadow.getElementById(id);
+        el('analysis-cache-enabled').checked=get(KEY_ANALYSIS_CACHE_ENABLED,false)===true;
+        el('analysis-cache-enabled').onchange=()=>{
+            set(KEY_ANALYSIS_CACHE_ENABLED,el('analysis-cache-enabled').checked);
+            if(!el('analysis-cache-enabled').checked)clearAnalysisCache();
+            else if(ctl.task)saveAnalysisCache(ctl.task).catch(()=>{});
+        };
+        el('analysis-cache-restore').onclick=event=>{if(trustedAssistantActivation(event,el('analysis-cache-restore')))restoreAnalysisCache();};
+        el('analysis-cache-clear').onclick=event=>{if(trustedAssistantActivation(event,el('analysis-cache-clear')))clearAnalysisCache();};
         el('copy-error-report').onclick = async () => {
             try {await navigator.clipboard.writeText(exportCxDiagnostics());ctl.report('错误安全报告已复制');}
             catch {ctl.report('无法访问剪贴板，请检查浏览器复制权限');}
@@ -830,8 +983,8 @@
             panelView.windowListeners.clear();
         }, {once:true});
         const changedModelSettings = () => {
-            invalidateAnalysisTask('分析配置已变化，请重新分析');
-            ctl.last = null; renderRunState(ctl.state);
+            analysisSettingsChanged('分析配置已变化，请重新分析');
+            renderRunState(ctl.state);
         };
         el('provider').onchange = () => {
             if (ctl.state.busy || courseRunActive()) return;
@@ -887,7 +1040,7 @@
                     if(abort.signal.aborted || !host.isConnected || current.provider!==cfg.provider || current.model!==cfg.model || current.baseURL!==cfg.baseURL || current.key!==cfg.key)throw new Error('图片能力检测已取消');
                 }});
                 if(abort.signal.aborted)return;
-                if(result.images===true){renderModelSettings(ctl);invalidateAnalysisTask('模型图片能力已更新，请重新分析');ctl.last=null;ctl.report('当前模型已通过图片识别测试','capability-check',true);}
+                if(result.images===true){renderModelSettings(ctl);analysisSettingsChanged('模型图片能力已更新，请重新分析');ctl.report('当前模型已通过图片识别测试','capability-check',true);}
                 else ctl.report(result.reason || '图片能力尚未确认，请稍后重试','capability-check',true);
             } catch {if(!abort.signal.aborted)ctl.report('图片能力尚未确认，请检查接口与模型','error',true);}
             finally {
@@ -958,6 +1111,7 @@
     function setAssistantWindowMode(mode) {
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
+        if(mode!=='open')closeResultImage();
         if(mode!=='open')panelView.clearRetryConfirmation?.();
         if(mode==='closed')clearCredentialInput();
         panelView.cancelFloatingDrag?.();
@@ -1192,6 +1346,15 @@
             refreshQuestionNavigation();
             const s = panelView.shadow;
             const configuration = readModelConfiguration();
+            s.getElementById('analysis-cache-enabled').checked=get(KEY_ANALYSIS_CACHE_ENABLED,false)===true;
+            const storedTask=controller?.task;
+            if(storedTask?.snapshot && !storedTask.active && storedTask.resultsByQuestion.size) {
+                const changed=JSON.stringify(storedTask.configuration)!==JSON.stringify(analysisConfiguration(configuration));
+                if(changed!==storedTask.configurationChanged) {
+                    storedTask.configurationChanged=changed;
+                    if(controller.result)renderResultList(controller.result);
+                }
+            }
             refreshCredentialEditor(configuration, busy);
             s.getElementById('model-setup-notice').hidden = configuration.configured;
             s.getElementById('model-setup-message').textContent = !configuration.key
@@ -1216,12 +1379,16 @@
             s.getElementById('model-test-status').textContent=currentConnection?.message||'尚未检测';
             s.getElementById('model-test-status').dataset.state=currentConnection?.state||'idle';
             refreshModelCapabilities(s, busy);
-            s.getElementById('prefill').disabled = busy || controller?.result?.analysisComplete===false || !questionPrefillCandidates(controller?.last,controller?.last?.answers).length;
+            const restoredTask=controller?.task,restoredAnswers=restoredTask?.restoredReadOnly && restoredTask.batches.every(record=>record.status==='success')?[...restoredTask.resultsByQuestion.values()]:[];
+            const prefillSource=restoredAnswers.length?{...restoredTask.snapshot,rootSnapshot:restoredTask.snapshot,answers:restoredAnswers}:controller?.last;
+            s.getElementById('prefill').disabled = busy || controller?.result?.analysisComplete===false || !questionPrefillCandidates(prefillSource,prefillSource?.answers).length;
+            s.getElementById('analysis-cache-restore').disabled=busy;
+            s.getElementById('analysis-cache-clear').disabled=busy;
             const task=controller?.task;
             s.getElementById('analysis-stop').hidden = !state.busy || !task?.active;
             s.getElementById('analysis-stop').disabled = !state.busy || !task?.active || task.abortController.signal.aborted;
             s.getElementById('analysis-stop').textContent = task?.abortController.signal.aborted ? '正在停止…' : '停止分析';
-            s.getElementById('analysis-resume').hidden = !task?.snapshot || !['failed','stopped'].includes(task.status);
+            s.getElementById('analysis-resume').hidden = !task?.snapshot || !['failed','stopped','restored'].includes(task.status) || !task.batches.some(record=>['failed','cancelled'].includes(record.status));
             s.getElementById('analysis-resume').disabled = busy;
             for(const button of s.querySelectorAll('[data-analysis-retry]'))button.disabled=busy;
             const hasQuestions = hasQuestionNodes(document);
@@ -1236,6 +1403,17 @@
         const graph = parseQuestionGraph(doc,parseContext);
         if (graph.questions.some(q=>GARBLED.test(q.question) || q.options.some(o=>GARBLED.test(o.text))))
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+        const observations=new Map();
+        for(const question of graph.questions) {
+            const recognition=question.recognition || {},kinds=[...new Set((question.blocks || []).map(block=>block.type).filter(type=>['image','math','table','code'].includes(type)))];
+            const facts={adapterId:question.source?.adapter,questionType:question.type,writer:graph.bindings.get(question.id)?.writer,
+                recognitionType:recognition.type,materialState:recognition.materials,sharing:recognition.sharing,slotState:recognition.slots,
+                materialKind:kinds.length>1?'mixed':kinds[0] || 'text',recognized:question.type!=='unknown',writable:question.capabilities.prefill===true};
+            const key=JSON.stringify(facts),entry=observations.get(key);
+            if(entry)entry.questionCount++;else observations.set(key,{...facts,questionCount:1});
+        }
+        for(const facts of [...observations.values()].slice(0,20))recordCxDiagnostic(createCxError('CX-OBS-001',
+            {module:'parser',operation:'extract',...facts},{severity:'info'}));
         return createQuestionSnapshot(graph,{...runtime,doc,parseContext});
     }
     function checkSnapshot(snapshot) {
@@ -1306,20 +1484,26 @@
     }
     let assistantTaskSequence=0;
     function newAssistantDiagnosticTaskId() {return `cx-task-${++assistantTaskSequence}`;}
+    function analysisTaskCourseIdentity(doc=document) {
+        try{return courseScoreKey(studyOwnerDocument(doc) || doc);}catch{return null;}
+    }
     function createAnalysisTask(snapshot, settings, autoPrefill) {
         return {id:Symbol('analysis'),diagnosticTaskId:newAssistantDiagnosticTaskId(),snapshot,configuration:analysisConfiguration(settings),settings:Object.freeze({...settings}),
+            originCourseIdentity:analysisTaskCourseIdentity(snapshot?.doc || document),
             concurrency:analysisConcurrency(settings.analysisConcurrency),execution:0,resultsByQuestion:new Map(),retryGate:{notBefore:0,failures:0,paused:false},
-            autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
+            autoPrefill,status:'preparing',operation:null,configurationChanged:false,abortController:new AbortController(),preparedMedia:new Map(),contentCache:new Map(),imageDigests:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
     }
     function checkAnalysisTask(task) {
         throwIfAborted(task.abortController.signal);
         if(controller?.task!==task)throw cancelledError();
-        if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(currentAnalysisSettings()))) {
+        if(task.originCourseIdentity && task.originCourseIdentity!==analysisTaskCourseIdentity(task.snapshot?.doc || document))
+            throw createCxError('CX-PAR-008',{module:'analysis',operation:'snapshot'});
+        if(task.active && task.operation==='analysis' && JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(currentAnalysisSettings()))) {
             const error=new Error('分析配置已变化，请重新分析');error.code='ANALYSIS_CONFIG_CHANGED';throw error;
         }
     }
     function analysisProgressText(progress) {
-        const state={preparing:'正在准备',running:'正在分析',failed:'分析结束',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成'}[progress.status] || progress.status;
+        const state={preparing:'正在准备',running:'正在分析',failed:'分析结束',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成',restored:'已恢复，只读查看'}[progress.status] || progress.status;
         return `${state}：已完成 ${progress.completed}/${progress.total}，运行中 ${progress.running || 0}，等待 ${progress.waiting || 0}，重试等待 ${progress.retryWaiting || 0}，失败 ${progress.failed || 0}`
             +(progress.skipped?`，跳过 ${progress.skipped}`:'')+(progress.cancelled?`，取消 ${progress.cancelled}`:'');
     }
@@ -1340,23 +1524,20 @@
                 policies.set(q.id,{status:'uncertain',category:'images',reason:'所选模型不支持图片，此题需人工确认',evidence:''});
             else policies.set(q.id,local);
         }
-        // 按题准备材料：单题图片失败只降级该题，成功材料仍复用；取消及快照变化必须退出。
-        for(const q of snapshot.questions.filter(q=>!policies.has(q.id) || policies.get(q.id).status==='auto')) {
-            check();throwIfAborted(signal);
-            const ids=new Set(questionImageIds(q));
-            try {
-                if([...ids].some(id=>(snapshot.media || []).filter(item=>item.id===id).length!==1))throw new Error('图片引用缺失或重复，题目材料不完整');
-                await retry(()=>prepareQuestionMedia((snapshot.media || []).filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,{signal,prepared:preparedMedia}),'preparing-images');
-                if([...ids].some(id=>!preparedMedia.get(id)?.dataUrl))throw new Error('图片尚未完整读取');
-            }
-            catch(error){check();throwIfAborted(signal);policies.set(q.id,{status:'uncertain',category:'images',reason:`图片材料无法读取，需人工确认：${error.message}`,evidence:''});}
-        }
         return policies;
     }
+    function analysisRequestUsage(record) {
+        const usage=record.result?.usage || {},result={model:record.model || '',attempts:record.requestAttempts || 0};
+        const fields={promptTokens:usage.prompt_tokens ?? usage.input_tokens,completionTokens:usage.completion_tokens ?? usage.output_tokens,
+            totalTokens:usage.total_tokens,reasoningTokens:usage.completion_tokens_details?.reasoning_tokens ?? usage.output_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens};
+        for(const [key,value] of Object.entries(fields))if(Number.isSafeInteger(value)&&value>=0)result[key]=value;
+        return result;
+    }
     function collectBatchResults(snapshot, records, skippedQuestions, complete=false, policies=new Map(),resultsByQuestion) {
-        const answers=[],evidence={},modelsByQuestion={},mediaAnalysis=new Map(),analysisStates=Object.create(null);
+        const answers=[],evidence={},modelsByQuestion={},requestUsageByQuestion={},mediaAnalysis=new Map(),analysisStates=Object.create(null);
         for(const record of records)for(const q of record.questions)analysisStates[q.id]={status:record.status,attempts:record.attempts || 0,
-            ...(record.error?{error:record.error,code:record.errorCode}:{}),...(record.status==='retry-wait'?{retryAt:record.retryAt}:{})};
+            phase:record.phase || 'solve',...(record.error?{error:record.error,code:record.errorCode}:{}),...(record.status==='retry-wait'?{retryAt:record.retryAt}:{})};
+        for(const record of records)for(const q of record.questions)requestUsageByQuestion[q.id]=record.restoredUsage || analysisRequestUsage(record);
         for(const record of records.filter(item=>item.status==='success')) {
             const entries=resultsByQuestion?record.questions.map(q=>resultsByQuestion.get(q.id)).filter(Boolean):record.result.answers;
             for(const entry of entries) {
@@ -1373,10 +1554,10 @@
         for(const entry of answers)if(entry.answerPolicy)answerPolicies[entry.id]=entry.answerPolicy;
         const count=status=>records.filter(record=>record.status===status).length;
         const analysisComplete=records.every(record=>['success','skipped'].includes(record.status));
-        return {answers:ordered,answerPolicies,evidence,modelsByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,analysisStates,
+        return {answers:ordered,answerPolicies,evidence,modelsByQuestion,requestUsageByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,analysisStates,
             analysisComplete,
-            analysisProgress:{status:analysisComplete?'complete':count('pending')+count('running')+count('retry-wait')?'running':'failed',
-                completed:answers.length,total:snapshot.questions.length,running:count('running'),waiting:count('pending'),retryWaiting:count('retry-wait'),
+            analysisProgress:{status:analysisComplete?'complete':count('pending')+count('ready')+count('preparing')+count('running')+count('retry-wait')?'running':'failed',
+                completed:answers.length,total:snapshot.questions.length,running:count('running'),waiting:count('pending')+count('ready')+count('preparing'),retryWaiting:count('retry-wait'),
                 failed:count('failed'),cancelled:count('cancelled'),skipped:count('skipped')},
             analysisFailures:records.filter(record=>['failed','cancelled'].includes(record.status)).map(record=>({id:record.questions[0].id,code:record.errorCode,reason:record.error})),
             manualCount:Object.values(answerPolicies).filter(p=>p.status==='manual').length,
@@ -1391,10 +1572,12 @@
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
-        controller.output({version: '1.28.3',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
+        controller.output({version: '1.29',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+            restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
-                running:count('running'),waiting:task.batches.length?count('pending'):total-skipped.size,retryWaiting:count('retry-wait'),
+                running:count('running'),waiting:task.batches.length?count('pending')+count('ready')+count('preparing'):total-skipped.size,retryWaiting:count('retry-wait'),
                 failed:count('failed'),skipped:skipped.size,cancelled:count('cancelled')}});
     }
     function retryWait(signal) {
@@ -1440,6 +1623,8 @@
         for(const view of views)view.addEventListener('pagehide',leaving,{once:true});
         const retry=(action,phase)=>withAnalysisRetry(action,{signal:abort.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
+        const contentCache=progress?.contentCache || new Map();
+        const imageNodes=new Map([...(snapshot.bindings?.values() || [])].flatMap(binding=>[...(binding.imageNodes || [])]));
         const records=progress?.batches.length?progress.batches:splitQuestionBatches(snapshot.questions)
             .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
         const resultsByQuestion=progress?.resultsByQuestion || new Map();
@@ -1456,8 +1641,17 @@
                 record.status='skipped';record.error=skipped.get(record.questions[0].id).reason;
             }
             if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
+            for(const record of selected)record.materialReady=questionImageIds(record.questions[0]).every(id=>prepared.has(id));
             await runAnalysisQueue(selected.filter(record=>!skipped.has(record.questions[0].id)),{
                 concurrency:progress?.concurrency ?? settings.analysisConcurrency,signal:abort.signal,check,gate,retryTransient,
+                preparationConcurrency:2,prepare:async record=>{
+                    const question=record.questions[0],ids=new Set(questionImageIds(question));
+                    if([...ids].some(id=>snapshot.media.filter(item=>item.id===id).length!==1))throw createCxError('CX-PAR-004',{module:'media',operation:'prepare-media'});
+                    await retry(()=>prepareQuestionMedia(snapshot.media.filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,
+                        {signal:abort.signal,prepared,contentCache,imageNodes,concurrency:1}),'preparing-images');
+                    check();
+                    if([...ids].some(id=>!prepared.get(id)?.dataUrl))throw createCxError('CX-PAR-004',{module:'media',operation:'prepare-media'});
+                },
                 onFatal:cancel,onRetry:()=>settings.onModelRetry?.(),onError:error=>recordCxDiagnostic(error,{module:'analysis',operation:'solve',taskId:settings.diagnosticTaskId}),onChange:()=>{
                     check();onBatchComplete();
                     if(!progress)onProgress(questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,false,policies,resultsByQuestion)));
@@ -1466,10 +1660,19 @@
                     check();
                     const answer=record.result.answers[0];
                     resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
+                    if(progress)for(const id of questionImageIds(record.questions[0])) {
+                        const digest=prepared.get(id)?.digest;
+                        if(/^[a-f0-9]{64}$/.test(digest || '')) {
+                            progress.imageDigests.set(id,digest);
+                            if(progress.restoredReadOnly)progress.restoredMediaDigests[id] ??= digest;
+                        }
+                    }
+                    if(progress)scheduleAnalysisCacheWrite(progress);
                 },
                 execute:async record=>{
                     const question=record.questions[0],model=resolveQuestionModel(settings.model,question);record.model=model;
                     const config={...settings,model,signal:abort.signal};
+                    record.phase='solve';record.restoredUsage=null;
                     assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,[question],record.evidence,prepared));
                     if(settings.search && !record.evidence[question.id]) {
                         const previous=searchTail;let release;
@@ -1483,6 +1686,7 @@
                     }
                     await waitAnalysisGate(gate,abort.signal,check);
                     report(`正在分析第 ${question.number} 题…`,'generating');
+                    record.requestAttempts=(record.requestAttempts || 0)+1;
                     const result=await askConfiguredModel(config,[question],record.evidence,prepared,abort.signal);
                     check();
                     if(result.answers.length!==1 || result.answers[0].id!==question.id)throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
@@ -1499,36 +1703,55 @@
         finally {
             clearInterval(guardTimer);parentSignal?.removeEventListener('abort',parentAbort);
             for(const view of views)view.removeEventListener('pagehide',leaving);
-            if(!progress)prepared.clear();
+            if(!progress){prepared.clear();contentCache.clear();}
         }
     }
     function invalidateAnalysisTask(reason) {
         const task=controller?.task;if(!task)return;
-        task.abortController.abort();task.status='stale';task.error=reason;task.preparedMedia.clear();task.resultsByQuestion.clear();task.batches=[];controller.last=null;
+        clearTimeout(task.cacheTimer);
+        task.abortController.abort();task.status='stale';task.error=reason;task.preparedMedia.clear();task.contentCache?.clear();task.resultsByQuestion.clear();task.batches=[];controller.last=null;
         renderAnalysisProgress(task);
+    }
+    function analysisSettingsChanged(reason='分析配置已变化') {
+        const task=controller?.task;
+        if(task?.snapshot && !task.active && task.resultsByQuestion.size) {
+            try {checkSnapshot(task.snapshot);task.configurationChanged=JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(currentAnalysisSettings()));}
+            catch {invalidateAnalysisTask('题目已变化，请重新分析');return;}
+            if(controller.result)renderResultList(controller.result);renderRunState(controller.state);return;
+        }
+        invalidateAnalysisTask(reason);
     }
     function stopAnalysisTask() {
         const task=controller?.task;
         if(!task?.active || !controller.state.busy || task.abortController.signal.aborted)return;
         task.abortController.abort();controller.report('正在停止分析…','stopping');
     }
-    async function resumeAnalysisTask(questionIds) {
+    async function resumeAnalysisTask(questionIds, {useCurrentSettings=false}={}) {
         const ctl=controller,task=ctl?.task;
-        if(!task?.snapshot || ctl.state.busy || courseRunActive() || !['failed','stopped'].includes(task.status))return;
+        if(!task?.snapshot || ctl.state.busy || courseRunActive() || !['failed','stopped','restored'].includes(task.status))return;
         const settings=currentAnalysisSettings();
         if(!settings.key){ctl.openPanel('model');ctl.report('请先保存 API Key，再重试未完成题目','error');return;}
         // Explicit retry replaces the cancelled signal before validating the same frozen content.
         task.abortController=new AbortController();
         try {
-            if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(settings)))throw new Error('分析配置已变化，请重新分析');
+            if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(settings)) && !useCurrentSettings) {
+                ctl.report('配置已变化，请使用“用当前设置重试本题”','done');return;
+            }
             checkSnapshot(task.snapshot);
         } catch(error) {invalidateAnalysisTask(error.message);ctl.report(error.message,'error');return;}
+        if(useCurrentSettings) {
+            if(!settings.configured){ctl.report('请先保存当前模型配置','error');return;}
+            task.settings=Object.freeze({...settings});task.configuration=analysisConfiguration(settings);task.configurationChanged=false;
+            task.autoPrefill=false;
+            task.snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(task.snapshot.doc || document):[];
+            for(const record of task.batches)if(record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)))record.evidence={};
+        }
         task.abortController=new AbortController();
         await executeAnalysisTask(task,{questionIds});
     }
     async function executeAnalysisTask(task,{questionIds}={}) {
         const ctl=controller;
-        task.active=true;
+        task.active=true;task.operation='analysis';
         ctl.last=null;ctl.report('正在还原题目字体…','decoding',true);switchPanelView('questions');
         try {
             checkAnalysisTask(task);await ensureFontDecoded(task.snapshot?.doc || document);checkAnalysisTask(task);
@@ -1550,11 +1773,13 @@
                 ctl.report(`已完成 ${result.analyzedCount}/${task.requestSnapshot.questions.length} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
             }
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('模型未返回有效答案，请核对题目与模型结果');ctl.report(`本次未生成有效答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
+            if(task.restoredReadOnly){ctl.report('已保留恢复结果','done');return;}
             ctl.last={...task.snapshot,rootSnapshot:task.snapshot,answers:result.answers};
             const prefillable=questionPrefillCandidates(ctl.last,result.answers);
             if(!prefillable.length) {
                 ctl.report(`已生成 ${result.analyzedCount} 道题的答案与解析`,'done');
             } else if(task.autoPrefill) {
+                task.operation='prefill';
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
                 ctl.output({...ctl.result,prefill:summary});
@@ -1565,7 +1790,7 @@
             ctl.last=null;task.error=error.message;
             const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{checkSnapshot(task.snapshot);return false;}catch(e){return e.code!=='ABORTED';}})();
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
-            for(const record of task.batches)if(['pending','running','retry-wait'].includes(record.status))
+            for(const record of task.batches)if(['pending','ready','preparing','running','retry-wait'].includes(record.status))
                 Object.assign(record,{status:'cancelled',error:error.message,errorCode:normalizeCxError(error).code});
             if(changed){task.preparedMedia.clear();task.resultsByQuestion.clear();task.batches=[];}
             renderAnalysisProgress(task);
@@ -1575,8 +1800,9 @@
             ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
                 task.status==='stopped'?'stopped':'error');
         } finally {
-            task.active=false;
-            if(task.status==='complete' || task.status==='stale')task.preparedMedia.clear();
+            task.active=false;task.operation=null;
+            if(task.status==='complete')await saveAnalysisCache(task).catch(()=>{});
+            if(task.status==='complete' || task.status==='stale'){task.preparedMedia.clear();task.contentCache?.clear();}
             if(ctl.task===task){ctl.state.busy=false;renderRunState(ctl.state);}
         }
     }
@@ -1584,7 +1810,7 @@
         const ctl=controller;if(ctl.state.busy || courseRunActive())return;
         const configuration=readModelConfiguration();
         if(!configuration.configured){ctl.openPanel('model');ctl.report('请先配置模型：保存 API Key 并选择模型','error');return;}
-        if(ctl.task){ctl.task.abortController.abort();ctl.task.preparedMedia.clear();}
+        if(ctl.task){clearTimeout(ctl.task.cacheTimer);ctl.task.abortController.abort();ctl.task.preparedMedia.clear();ctl.task.contentCache?.clear();}
         ctl.last=null;ctl.clearOutput();
         const task=createAnalysisTask(null,currentAnalysisSettings(),autoPrefill);ctl.task=task;
         await executeAnalysisTask(task);
@@ -1601,6 +1827,7 @@
                 if (!panelView) return;
                 movePanelToStudyPage();
                 const questionsAvailable = refreshQuestionNavigation();
+                panelView.shadow.getElementById('analysis-cache-enabled').checked=get(KEY_ANALYSIS_CACHE_ENABLED,false)===true;
                 if (placement && [placement.left, placement.top, placement.width, placement.height].every(Number.isFinite) && placement.width > 0 && placement.height > 0) {
                     panelView.userPosition = { left: placement.left, top: placement.top };
                     panelView.userSize = { width: placement.width, height: placement.height };
@@ -1633,9 +1860,14 @@
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async prefillLast() {
-                if (ctl.state.busy || courseRunActive() || ctl.result?.analysisComplete===false || !questionPrefillCandidates(ctl.last,ctl.last?.answers).length) return;
+                if (ctl.state.busy || courseRunActive())return;
+                if(ctl.task?.restoredReadOnly) {
+                    const restoredTask=ctl.task;
+                    if(!await verifyRestoredAnalysis({quiet:true}) || ctl.task!==restoredTask)return;
+                }
+                if (ctl.result?.analysisComplete===false || !questionPrefillCandidates(ctl.last,ctl.last?.answers).length) return;
                 const task=ctl.task;
-                if(task){task.active=true;task.abortController=new AbortController();}
+                if(task){task.active=true;task.operation='prefill';task.abortController=new AbortController();}
                 ctl.report('正在校验并预填…', 'prefilling', true);
                 try {
                     const summary = await prefillChecked(ctl.last, ctl.last.answers);
@@ -1648,7 +1880,7 @@
                     if(e.prefillSummary)ctl.output({...ctl.result,prefill:e.prefillSummary});
                     ctl.report(`预填中止：${assistantErrorMessage(e,{module:'actions',operation:'prefill'})}${e.prefillSummary ? `；已确认填写 ${e.prefillSummary.filled} 道，已写入内容保留，请核对停止时的题目` : ''}`,task?.abortController.signal.aborted?'stopped':'error');
                 }
-                finally { if(task)task.active=false;ctl.state.busy = false; renderRunState(ctl.state); }
+                finally { if(task){task.active=false;task.operation=null;}ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async testModelConnection() {
                 if(ctl.state.busy || courseRunActive())return;
@@ -1692,7 +1924,7 @@
                     if(current.provider!==configuration.provider || current.baseURL!==configuration.baseURL || current.key!==configuration.key)
                         throw requestFailure('','CONFIG_CHANGED');
                     renderModelSettings(ctl, models);
-                    invalidateAnalysisTask('分析配置已变化，请重新分析'); ctl.last = null;
+                    analysisSettingsChanged('分析配置已变化，请重新分析');
                     ctl.report(`获取成功：${models.length} 个模型`, 'done');
                 } catch (e) { ctl.report(`获取模型失败：${e.code==='CONFIG_CHANGED'?'配置已变化，请重新获取模型列表；':''}${assistantErrorMessage(e,{module:'model',operation:'list'})}`, 'error'); }
                 finally {
@@ -1705,7 +1937,7 @@
         };
         document.defaultView.addEventListener('pagehide', () => {
             ctl.modelListTest?.abort();
-            if(ctl.task){ctl.task.abortController.abort();ctl.task.preparedMedia.clear();ctl.task=null;ctl.last=null;}
+            if(ctl.task){clearTimeout(ctl.task.cacheTimer);ctl.task.abortController.abort();ctl.task.preparedMedia.clear();ctl.task.contentCache?.clear();ctl.task=null;ctl.last=null;}
         });
         return ctl;
     }
@@ -1781,6 +2013,11 @@
         initOtherFeatures(document);
         startAssistantUpdateCheck();
         let scheduled = false;
+        const refreshNavigation = () => {
+            refreshQuestionNavigation();
+            const owner=studyOwnerDocument(document);
+            if(owner && owner!==document)owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh'));
+        };
         const refresh = () => {
             if (scheduled) return;
             scheduled = true;
@@ -1788,20 +2025,22 @@
                 scheduled = false;
                 initQuizAssistant();
                 initStudyAssistant();
-                refreshQuestionNavigation();
-                const owner = studyOwnerDocument(document);
-                if (owner && owner !== document) owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh'));
+                refreshNavigation();
                 ensureFontDecoded().catch(error => {
                     if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
             }, 40);
         };
         const observer = new MutationObserver(records => {
-            // Shadow DOM 不在观察范围内；只处理页面增加/删除的节点。
+            // Shadow DOM 不在观察范围内；显隐变化只刷新轻量导航，不重新解密整页。
             if (records.some(r => [...r.addedNodes, ...r.removedNodes].some(n =>
                 n.nodeType === 1 && !n.id?.startsWith('cx-ai-') && n.className !== 'cx-ai-title-row'))) refresh();
+            else if(records.some(record=>record.type==='attributes' &&
+                (record.target.matches(QUESTION_SELECTOR+',iframe') || record.target.querySelector(QUESTION_SELECTOR)))) {
+                if(!controller && hasQuestionNodes(document))refresh();else refreshNavigation();
+            }
         });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        observer.observe(document.documentElement, { childList: true, subtree: true,attributes:true,attributeFilter:['hidden','inert','style','class','src'] });
         const frameLoaded = event => { if (event.target?.tagName === 'IFRAME') refresh(); };
         document.addEventListener('load', frameLoaded, true);
         refresh();
