@@ -3,6 +3,7 @@
 </p>
 
 > 衷心感谢各位的真实使用与测评，推动工具不断优化！如果遇到题目未适配或其他 Bug，请及时[联系作者](https://github.com/zhu-hailin)或提交 [Issue](https://github.com/zhu-hailin/chaoxing-ai-assistant/issues)。
+> ⚠️目前抖音视频已被制裁。本工具将继续长期维护。
 
 # 学习通AI助手
 
