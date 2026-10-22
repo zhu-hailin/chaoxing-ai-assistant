@@ -163,7 +163,8 @@
         });
     }
     function toAIQuestion(question) {
-        return { id:question.id, number:question.number, type:question.type, question:question.question, instructions:question.instructions || '',
+        return { id:question.id, number:question.number, groupId:question.groupId,
+            ...(question.parentQuestionId?{parentQuestionId:question.parentQuestionId}:{}),type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
             imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [],
@@ -178,7 +179,7 @@
                 // 以完整内容去重，不依赖短摘要或 URL 判断两张图片是否相同。
                 let record = byContent.get(asset.dataUrl);
                 if (!record) { record = { asset, imageIds:[], sources:[], questionIds:[] }; byContent.set(asset.dataUrl, record); }
-                if (!record.imageIds.includes(id)) { record.imageIds.push(id); record.sources.push({ imageId:id, sourceQuestionNumber:asset.sourceQuestionNumber, location:asset.location, optionKey:asset.optionKey }); }
+                if (!record.imageIds.includes(id)) { record.imageIds.push(id); record.sources.push({ imageId:id, sourceQuestionId:asset.sourceQuestionId, sourceQuestionNumber:asset.sourceQuestionNumber, groupId:asset.groupId, location:asset.location, optionKey:asset.optionKey }); }
                 if (!record.questionIds.includes(question.id)) record.questionIds.push(question.id);
             }
         }

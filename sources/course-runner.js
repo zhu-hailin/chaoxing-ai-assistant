@@ -791,7 +791,8 @@
                             wake:()=>wakeMedia?.(),wait:waitForMedia,playingCount:()=>playingEventCount,
                             status:message=>emit(message,'course-video-quiz'),
                             save:()=>{set(popupKey,task.videoQuizzes);save();},
-                            font:ensureFontDecoded,solve:(snapshot,config,status)=>solveQuestionBatches(snapshot,config,status,{retryTransient:true}),
+                            font:ensureFontDecoded,solve:(snapshot,config,status)=>solveQuestionBatches(snapshot,config,status,{retryTransient:true,
+                                onProgress:result=>{guard();ctl.output({version:ASSISTANT_VERSION,schemaVersion:snapshot.schemaVersion,questions:snapshot.questions,media:snapshot.media,total:snapshot.questions.length,...result,model:config.model});}}),
                             prefill:prefillChecked,submitting:value=>{context.submitting=value;task.videoQuizUnconfirmed=value;},
                             waiting:value=>{
                                 if(value)suspendSpeed();
@@ -1172,10 +1173,15 @@
                             throw Object.assign(new Error('测验题型尚未适配，无法自动填写'),{code:'COURSE_MANUAL_ANSWER_REQUIRED'});
                         }
                         let answers;
-                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'))); }
+                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'),
+                            {retryTransient:true,onProgress:result=>{guard();ctl.output({...data,...result,model:settings.model});}})); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
                         guard();checkSnapshot(snapshot);
                         const payload={...data,...answers,model:settings.model};ctl.output(payload);
+                        if(!answers.analysisComplete) {
+                            chapter.issues.push(...answers.analysisFailures.map(item=>({number:questionAnswerSnapshot(snapshot).questions.find(q=>q.id===item.id)?.number || null,reason:`${item.reason}（${item.code}）`})));
+                            throw Object.assign(new Error('部分题目未完成分析，已保留成功答案'),{code:'COURSE_MANUAL_ANSWER_REQUIRED'});
+                        }
                         const byId=new Map(answers.answers.map(a=>[a.id,a])),units=questionAnswerSnapshot(snapshot).questions;
                         const summary=answers.answers.some(a=>a.answer.length)
                             ? await race(prefillChecked(snapshot,answers.answers))

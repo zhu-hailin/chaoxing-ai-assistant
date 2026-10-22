@@ -262,6 +262,7 @@
                         try {result=await hooks.solve(snapshot,{...hooks.settings,signal:child.signal,answerFeedback:feedback,onModelRequest:()=>{guard();record.modelRequests=(record.modelRequests||0)+1;save();},onModelRetry:()=>{guard();record.modelRetries=(record.modelRetries||0)+1;save();}},message=>{signatureGuard();hooks.status(`视频弹题 ${record.attempts?`重试 ${record.attempts}/5`:'首次解答'}：${message}`);});}
                         finally {hooks.signal.removeEventListener('abort',cancel);child=null;}
                         signatureGuard();
+                        if(result.analysisComplete===false){manual('部分题目未完成分析，已保留成功答案');continue;}
                         const unresolved=result.answers.filter(answer=>!answer.answer?.length||!questionCanAutoAnswer(snapshot.questions.find(q=>q.id===answer.id),answer.answerPolicy));
                         // 整份判错不能证明每个子题都错；只拒绝重复的整组答案。
                         const repeated=record.history.some(h=>h.wrong&&h.answers.length===result.answers.length&&result.answers.every(a=>h.answers.some(old=>old.id===a.id&&courseVideoQuizSameAnswer(old.answer,a.answer))));

@@ -237,7 +237,7 @@
         applyAssistantVisibility();
         if (!assistantUiHidden) {
             const owner = studyOwnerDocument(document);
-            const quiz = owner && findQuizPanel(owner.querySelector('#mainid #iframe')?.contentDocument);
+            const quiz = owner && findStudyQuizPanel(owner, panelView?.returnQuizDoc);
             if (quiz && quiz !== document) quiz.dispatchEvent(new quiz.defaultView.Event('cx-ai-show-quiz-panel'));
             else controller?.openPanel();
         }
@@ -265,17 +265,35 @@
     }
     const settingsButton = () => studyOwnerDocument()?.getElementById('cx-ai-study-toolbar')?.shadowRoot?.getElementById('settings') || (toolbarView || studyToolbarView)?.shadow.getElementById('settings');
 
-    function findQuizPanel(doc, depth = 0) {
+    function findQuizPanel(doc, depth = 0, preferredDoc = null) {
         if (!doc || depth > 12) return null;
-        if (hasQuestionNodes(doc) && doc.getElementById(ROOT_ID)) return doc;
+        let found = hasQuestionNodes(doc) && doc.getElementById(ROOT_ID) ? doc : null;
+        if (found && (!preferredDoc || found === preferredDoc)) return found;
         for (const frame of doc.querySelectorAll('iframe')) {
             if (frame.hidden || frame.closest('[hidden]') || doc.defaultView.getComputedStyle(frame).display === 'none') continue;
             try {
-                const found = findQuizPanel(frame.contentDocument, depth + 1);
-                if (found) return found;
+                const candidate = findQuizPanel(frame.contentDocument, depth + 1, preferredDoc);
+                if (candidate && (!preferredDoc || candidate === preferredDoc)) return candidate;
+                found ||= candidate;
             } catch { /* 不访问跨域子文档。 */ }
         }
-        return null;
+        return found;
+    }
+    function findStudyQuizPanel(owner, preferredDoc = null) {
+        try {
+            const frame = owner?.querySelector('#mainid #iframe');
+            if (!frame || frame.hidden || frame.closest('[hidden]') || owner.defaultView.getComputedStyle(frame).display === 'none') return null;
+            // 只在当前课程的实际 iframe 树中查找，旧文档引用不授予返回资格。
+            return findQuizPanel(frame.contentDocument, 0, preferredDoc);
+        } catch { return null; /* 跨域或尚未就绪时保留当前窗口。 */ }
+    }
+    function assistantWindowHandoff({ focus = false } = {}) {
+        const rect = panelView.shadow.getElementById('panel').getBoundingClientRect();
+        return {
+            sourceDoc: panelView.sourceDoc,
+            placement: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+            focus: focus === true
+        };
     }
     const PROJECT_GITHUB_URL = 'https://github.com/zhu-hailin/chaoxing-ai-assistant';
     const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', unknown: '未识别题型' };
@@ -308,15 +326,23 @@
     function questionResultStatuses(data,question,entry) {
         const policy=entry?.answerPolicy || data.answerPolicies?.[question.id] || question.answerPolicy || questionLocalAnswerPolicy(question);
         const skipped=data.skippedQuestions?.find(item=>item.id===question.id);
-        const analysis=entry?.answer?.length ? (['manual','uncertain'].includes(policy.status)?'已生成部分答案，请核对其余作答区域':'已生成答案与解析')
+        const unitIds=question.responseUnits?.length?question.responseUnits.map(unit=>unit.id):[question.id];
+        const states=unitIds.map(id=>data.analysisStates?.[id]).filter(Boolean);
+        const state=['running','retry-wait','pending','failed','cancelled','skipped','success'].map(status=>states.find(item=>item.status===status)).find(Boolean);
+        const stateLabel=state && ({pending:'等待中',running:'分析中','retry-wait':'重试等待中',success:'分析成功',failed:'分析失败',skipped:'已跳过',cancelled:'已取消'}[state.status]
+            +(['failed','cancelled'].includes(state.status)&&state.error?`：${state.error}${state.code?`（${state.code}）`:''}`:''));
+        const analysis=stateLabel || (entry?.answer?.length ? '已生成答案与解析'
             : skipped ? skipped.reason : ['manual','uncertain'].includes(policy.status) ? policy.reason
             : data.analysisProgress && !['complete','stopped','failed','stale'].includes(data.analysisProgress.status) ? '等待或正在分析'
-            : '';
+            : '');
         const written=data.prefill?.perQuestion?.find(item=>item.questionId===question.id);
         const prefillPolicy=questionPrefillPolicy(question,entry || {answerPolicy:policy});
+        const ueditorIssue=question.diagnostics?.find(reason=>reason.startsWith('UEditor：'));
+        const restriction=questionManualPrefillPolicy(question)||(['manual','uncertain'].includes(policy.status)?policy:null);
+        const ueditorReason=ueditorIssue?[...new Set([restriction?.reason,ueditorIssue].filter(Boolean))].join('；'):'';
         const prefill=written ? ({filled:'已填写',already:'已有相同答案',unverified:'写入状态待核对',skipped:written.reason || prefillPolicy.reason || '已跳过，请手动填写'}[written.status] || '请核对写入状态')
             : !entry?.answer?.length&&!['manual','uncertain'].includes(policy.status) ? ''
-            : question.capabilities?.prefill===false ? `暂不支持，请手动填写${question.controls?.richText?'（富文本或嵌入控件）':''}`
+            : question.capabilities?.prefill===false ? ueditorReason
             : ['manual','uncertain'].includes(prefillPolicy.status) ? prefillPolicy.reason
             : question.supportLevel==='Partial Support' ? '仅支持已确认的作答区域' : entry?.answer?.length ? '可预填，等待操作' : '等待分析结果';
         return {analysis,prefill};
@@ -412,6 +438,7 @@
         } else {
             const answers = new Map((data.questionAnswers || data.answers || []).map(entry => [entry.id, entry]));
             fragment.append(node('p', 'result-summary', `共 ${data.questions.length} 题${data.responseUnitCount && data.responseUnitCount!==data.questions.length ? ` · ${data.responseUnitCount} 个作答区域` : ''}`));
+            if(data.analysisProgress)fragment.append(node('p','note',analysisProgressText(data.analysisProgress)));
             const list = node('ol', 'question-list');
             for (const question of data.questions) {
                 const entry = answers.get(question.id);
@@ -423,7 +450,16 @@
                 const states=questionResultStatuses(data,question,entry);
                 if(states.analysis)card.append(node('p','note answer-policy',`AI 分析：${states.analysis}`));
                 if(states.prefill)card.append(node('p','note prefill-policy',`自动预填：${states.prefill}`));
-                if (question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
+                const retryIds=(question.responseUnits?.length?question.responseUnits.map(unit=>unit.id):[question.id])
+                    .filter(id=>['failed','cancelled'].includes(data.analysisStates?.[id]?.status));
+                const displayedTask=controller?.task;
+                if(retryIds.length && displayedTask?.snapshot?.questions.includes(question)) {
+                    const retryButton=node('button','secondary','重试本题');retryButton.type='button';retryButton.dataset.analysisRetry='true';
+                    retryButton.disabled=controller.state.busy || courseRunActive();
+                    retryButton.onclick=event=>{if(controller.task===displayedTask && trustedAssistantActivation(event,retryButton))resumeAnalysisTask(new Set(retryIds));};
+                    card.append(retryButton);
+                }
+                if (question.capabilities?.analyze===false && question.diagnostics?.length) card.append(node('p', 'note', question.diagnostics.join('；')));
                 const skipped = data.skippedQuestions?.find(item => item.id === question.id);
                 if (skipped) card.append(node('p', 'note', skipped.reason));
                 const optionImages = new Set();
@@ -539,7 +575,13 @@
         const activate=(view,options={})=>{
             const owner=studyOwnerDocument(panelView.sourceDoc);
             if(view==='chapters' && owner && owner!==panelView.sourceDoc && owner.getElementById('cx-ai-study-toolbar')) {
-                owner.dispatchEvent(new owner.defaultView.Event('cx-ai-show-study-panel'));
+                owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-show-study-panel', {detail:assistantWindowHandoff(options)}));
+                return;
+            }
+            if(view==='questions' && owner===panelView.sourceDoc) {
+                const quizDoc = findStudyQuizPanel(owner, panelView.returnQuizDoc);
+                panelView.returnQuizDoc = quizDoc;
+                if (quizDoc) quizDoc.dispatchEvent(new quizDoc.defaultView.CustomEvent('cx-ai-show-quiz-panel', {detail:assistantWindowHandoff(options)}));
                 return;
             }
             switchPanelView(view,options);
@@ -625,7 +667,7 @@
     }
     function readModelConfiguration() {
         const cfg=readProviderConfiguration();
-        return {...cfg,videoInfoEnabled:get(KEY_AUTO_CONTEXT,true)!==false};
+        return {...cfg,videoInfoEnabled:get(KEY_AUTO_CONTEXT,true)!==false,analysisConcurrency:analysisConcurrency(get(KEY_ANALYSIS_CONCURRENCY,3))};
     }
     function refreshModelCapabilities(shadow, busy = false) {
         const cfg = readModelConfiguration();
@@ -675,6 +717,7 @@
         el('info-model').value=cfg.infoModel;
         el('info-interval').value=cfg.videoInfoIntervalSeconds;
         el('effort').value = cfg.effort;
+        el('analysis-concurrency').value = cfg.analysisConcurrency;
         refreshModelCapabilities(shadow, ctl.state.busy || courseRunActive());
     }
     function createAssistantPanel(doc, ctl) {
@@ -694,7 +737,14 @@
         initPanelResizing();
         initFloatingLauncher(ctl);
         const toggleFromStudy = () => ctl.togglePanel();
-        const showFromStudy = () => ctl.openPanel();
+        const showFromStudy = event => {
+            const handoff = event.detail;
+            if (!handoff) { ctl.openPanel(); return; }
+            const owner = studyOwnerDocument(doc);
+            if (!owner || handoff.sourceDoc !== owner || findStudyQuizPanel(owner, doc) !== doc) return;
+            // 接收方只切换本地视图，避免再次触发跨控制器导航。
+            ctl.openPanel('questions', handoff);
+        };
         doc.addEventListener('cx-ai-toggle-quiz-panel', toggleFromStudy);
         doc.addEventListener('cx-ai-show-quiz-panel', showFromStudy);
         window.addEventListener('pagehide', () => {
@@ -783,6 +833,11 @@
                 refreshModelCapabilities(shadow); changedModelSettings();
             };
         }
+        el('analysis-concurrency').onchange = () => {
+            const value = el('analysis-concurrency').value;
+            if (!/^[1-7]$/.test(value)) { el('analysis-concurrency').value = readModelConfiguration().analysisConcurrency; return; }
+            set(KEY_ANALYSIS_CONCURRENCY,Number(value));
+        };
         el('auto-context').onchange = () => {
             if (ctl.state.busy || courseRunActive()) return;
             set(KEY_AUTO_CONTEXT,el('auto-context').checked); changedModelSettings();
@@ -1137,13 +1192,14 @@
             s.getElementById('model-test-status').textContent=currentConnection?.message||'尚未检测';
             s.getElementById('model-test-status').dataset.state=currentConnection?.state||'idle';
             refreshModelCapabilities(s, busy);
-            s.getElementById('prefill').disabled = busy || !questionPrefillCandidates(controller?.last,controller?.last?.answers).length;
+            s.getElementById('prefill').disabled = busy || controller?.result?.analysisComplete===false || !questionPrefillCandidates(controller?.last,controller?.last?.answers).length;
             const task=controller?.task;
             s.getElementById('analysis-stop').hidden = !state.busy || !task?.active;
             s.getElementById('analysis-stop').disabled = !state.busy || !task?.active || task.abortController.signal.aborted;
             s.getElementById('analysis-stop').textContent = task?.abortController.signal.aborted ? '正在停止…' : '停止分析';
             s.getElementById('analysis-resume').hidden = !task?.snapshot || !['failed','stopped'].includes(task.status);
             s.getElementById('analysis-resume').disabled = busy;
+            for(const button of s.querySelectorAll('[data-analysis-retry]'))button.disabled=busy;
             const hasQuestions = hasQuestionNodes(document);
             for (const id of ['extract', 'solve']) s.getElementById(id).disabled = busy || !hasQuestions;
             s.getElementById('catalog-refresh').disabled = busy;
@@ -1216,35 +1272,10 @@
         return (counts.join('，') || '未填写答案')+(s.requiresManualSave?'，请手动保存或提交':'')
             +(s.details.length?'\n'+s.details.slice(0,5).join('\n'):'');
     }
-    const MAX_BATCH_QUESTIONS = 10;
-    const MAX_BATCH_CHARACTERS = 12000;
-    function splitQuestionBatches(questions, settings = {}, preparedMedia = new Map()) {
-        const batches = [];
-        let batch = [], size = 2;
-        for (const question of questions) {
-            const weight = JSON.stringify(toAIQuestion(question)).length + 1;
-            if (batch.length && (batch.length >= MAX_BATCH_QUESTIONS || size + weight > MAX_BATCH_CHARACTERS)) {
-                batches.push(batch); batch = []; size = 2;
-            }
-            const model = resolveQuestionModel(settings.model, question);
-            if (batch.length && model !== resolveQuestionModel(settings.model, batch[0])) { batches.push(batch); batch = []; size = 2; }
-            const fits = candidate => {
-                const placeholderEvidence = settings.search ? Object.fromEntries(candidate.map(q => [q.id, Array.from({length:3}, () => ({title:'占'.repeat(120),url:'u'.repeat(500),excerpt:'摘'.repeat(650)}))])) : {};
-                assertConfiguredRequestSize(settings, buildConfiguredAnswerPayload({...settings,model},candidate,placeholderEvidence,preparedMedia));
-            };
-            try { fits([...batch,question]); }
-            catch (error) {
-                if (batch.length) { batches.push(batch); batch = []; size = 2; }
-                try { fits([question]); } catch (singleError) { throw new Error(`第 ${question.number} 题材料超限或不完整：${singleError.message}`); }
-            }
-            // 单道长题保持完整；不切断题干或选项，也不把批大小当总题数限制。
-            batch.push(question); size += weight;
-        }
-        if (batch.length) batches.push(batch);
-        return batches;
-    }
+    // 保留调用入口；所有题目独立请求，不再按学科或题型共享输出预算。
+    function splitQuestionBatches(questions) { return questions.map(question=>[question]); }
     function analysisConfiguration(settings) {
-        return modelConfigurationSignature(settings);
+        return {...modelConfigurationSignature(settings),credentialFingerprint:endpointFingerprint(settings.key || '')};
     }
     function currentAnalysisSettings() {
         return readModelConfiguration();
@@ -1252,7 +1283,8 @@
     let assistantTaskSequence=0;
     function newAssistantDiagnosticTaskId() {return `cx-task-${++assistantTaskSequence}`;}
     function createAnalysisTask(snapshot, settings, autoPrefill) {
-        return {id:Symbol('analysis'),diagnosticTaskId:newAssistantDiagnosticTaskId(),snapshot,configuration:analysisConfiguration(settings),settings,
+        return {id:Symbol('analysis'),diagnosticTaskId:newAssistantDiagnosticTaskId(),snapshot,configuration:analysisConfiguration(settings),settings:Object.freeze({...settings}),
+            concurrency:analysisConcurrency(settings.analysisConcurrency),execution:0,resultsByQuestion:new Map(),retryGate:{notBefore:0,failures:0,paused:false},
             autoPrefill,status:'preparing',abortController:new AbortController(),preparedMedia:new Map(),answerPolicies:new Map(),batches:[],skippedQuestions:[]};
     }
     function checkAnalysisTask(task) {
@@ -1263,8 +1295,9 @@
         }
     }
     function analysisProgressText(progress) {
-        const state={preparing:'正在准备',classifying:'判断作答要求',running:'分析中',failed:'已暂停，等待重试',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成'}[progress.status] || progress.status;
-        return `${state} · 已分析 ${progress.completed}/${progress.total} 题`;
+        const state={preparing:'正在准备',running:'正在分析',failed:'分析结束',stopped:'已停止',stale:'题目或配置已变化',complete:'AI 分析完成'}[progress.status] || progress.status;
+        return `${state}：已完成 ${progress.completed}/${progress.total}，运行中 ${progress.running || 0}，等待 ${progress.waiting || 0}，重试等待 ${progress.retryWaiting || 0}，失败 ${progress.failed || 0}`
+            +(progress.skipped?`，跳过 ${progress.skipped}`:'')+(progress.cancelled?`，取消 ${progress.cancelled}`:'');
     }
     function analysisSkipped(snapshot, settings, policies=new Map()) {
         return snapshot.questions.flatMap(q=>{
@@ -1279,11 +1312,10 @@
         const policies=progress?.answerPolicies || new Map();
         for(const q of snapshot.questions) {
             const local=questionLocalAnswerPolicy(q);
-            if(['manual','auto','uncertain'].includes(local.status))policies.set(q.id,local);
-            else if(questionImageIds(q).length && !modelSupportsImages(settings.model,settings))
+            if(local.status==='auto' && questionImageIds(q).length && !modelSupportsImages(settings.model,settings))
                 policies.set(q.id,{status:'uncertain',category:'images',reason:'所选模型不支持图片，此题需人工确认',evidence:''});
+            else policies.set(q.id,local);
         }
-        const pending=snapshot.questions.filter(q=>!policies.has(q.id));
         // 按题准备材料：单题图片失败只降级该题，成功材料仍复用；取消及快照变化必须退出。
         for(const q of snapshot.questions.filter(q=>!policies.has(q.id) || policies.get(q.id).status==='auto')) {
             check();throwIfAborted(signal);
@@ -1295,54 +1327,54 @@
             }
             catch(error){check();throwIfAborted(signal);policies.set(q.id,{status:'uncertain',category:'images',reason:`图片材料无法读取，需人工确认：${error.message}`,evidence:''});}
         }
-        const classify=pending.filter(q=>!policies.has(q.id));
-        for(const batch of splitQuestionBatches(classify,{...settings,search:false,courseContext:[]},preparedMedia)) {
-            check();report(`正在判断第 ${batch[0].number}–${batch.at(-1).number} 题的作答要求…`,'classifying');
-            const model=resolveQuestionModel(settings.model,batch[0]);
-            const result=await retry(()=>classifyQuestionAnswerPolicies({...settings,model,courseContext:[]},batch,preparedMedia,signal),'classifying');
-            check();throwIfAborted(signal);
-            for(const [id,policy] of result)policies.set(id,policy);
-        }
         return policies;
     }
-    function collectBatchResults(snapshot, records, skippedQuestions, complete=false, policies=new Map()) {
-        const answers=[],evidence={},modelsByQuestion={},mediaAnalysis=new Map();
+    function collectBatchResults(snapshot, records, skippedQuestions, complete=false, policies=new Map(),resultsByQuestion) {
+        const answers=[],evidence={},modelsByQuestion={},mediaAnalysis=new Map(),analysisStates=Object.create(null);
+        for(const record of records)for(const q of record.questions)analysisStates[q.id]={status:record.status,attempts:record.attempts || 0,
+            ...(record.error?{error:record.error,code:record.errorCode}:{}),...(record.status==='retry-wait'?{retryAt:record.retryAt}:{})};
         for(const record of records.filter(item=>item.status==='success')) {
-            for(const entry of record.result.answers) {
+            const entries=resultsByQuestion?record.questions.map(q=>resultsByQuestion.get(q.id)).filter(Boolean):record.result.answers;
+            for(const entry of entries) {
                 const policy=entry.answerPolicy || policies.get(entry.id);
                 answers.push({...entry,...(policy?{answerPolicy:policy}:{})});
             }
             Object.assign(evidence,record.evidence);
             for(const q of record.questions)modelsByQuestion[q.id]=record.model;
-            for(const entry of record.result.mediaAnalysis)if(!mediaAnalysis.has(entry.imageIds[0]))mediaAnalysis.set(entry.imageIds[0],entry);
+            for(const entry of record.result.mediaAnalysis)for(const id of entry.imageIds)if(!mediaAnalysis.has(id))mediaAnalysis.set(id,{...entry,imageIds:[id]});
         }
         const byId=new Map(answers.map(answer=>[answer.id,answer]));
-        const ordered=snapshot.questions.flatMap(q=>byId.has(q.id)?[byId.get(q.id)]:complete?[{id:q.id,number:q.number,type:q.type,answer:[],answerPolicy:policies.get(q.id) || questionLocalAnswerPolicy(q),reason:skippedQuestions.find(item=>item.id===q.id)?.reason || q.diagnostics?.join('；') || '题型未适配，需人工核对'}]:[]);
+        const ordered=snapshot.questions.flatMap(q=>byId.has(q.id)?[byId.get(q.id)]:complete?[{id:q.id,number:q.number,type:q.type,answer:[],answerPolicy:policies.get(q.id) || questionLocalAnswerPolicy(q),reason:analysisStates[q.id]?.error || skippedQuestions.find(item=>item.id===q.id)?.reason || q.diagnostics?.join('；') || '尚未生成答案'}]:[]);
         const answerPolicies=Object.fromEntries(policies);
         for(const entry of answers)if(entry.answerPolicy)answerPolicies[entry.id]=entry.answerPolicy;
-        return {answers:ordered,answerPolicies,evidence,modelsByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,
+        const count=status=>records.filter(record=>record.status===status).length;
+        const analysisComplete=records.every(record=>['success','skipped'].includes(record.status));
+        return {answers:ordered,answerPolicies,evidence,modelsByQuestion,mediaAnalysis:[...mediaAnalysis.values()],skippedQuestions,analysisStates,
+            analysisComplete,
+            analysisProgress:{status:analysisComplete?'complete':count('pending')+count('running')+count('retry-wait')?'running':'failed',
+                completed:answers.length,total:snapshot.questions.length,running:count('running'),waiting:count('pending'),retryWaiting:count('retry-wait'),
+                failed:count('failed'),cancelled:count('cancelled'),skipped:count('skipped')},
+            analysisFailures:records.filter(record=>['failed','cancelled'].includes(record.status)).map(record=>({id:record.questions[0].id,code:record.errorCode,reason:record.error})),
             manualCount:Object.values(answerPolicies).filter(p=>p.status==='manual').length,
             uncertainCount:Object.values(answerPolicies).filter(p=>p.status==='uncertain').length,
             analyzedCount:answers.filter(a=>a.answer.length).length,batchCount:records.length};
     }
     function renderAnalysisProgress(task, complete=false) {
         if(controller?.task!==task || !task.snapshot)return;
-        const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies));
+        if(task.status==='stale'){controller.clearOutput();return;}
+        const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies,task.resultsByQuestion));
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
-        const total=(task.requestSnapshot||task.snapshot).questions.filter(q=>q.capabilities?.analyze!==false&&!skipped.has(q.id)).length;
-        controller.output({version: '1.28.1',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        const total=(task.requestSnapshot||task.snapshot).questions.length;
+        const count=status=>task.batches.filter(record=>record.status===status).length;
+        controller.output({version: '1.28.2',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
-            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total}});
+            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
+                running:count('running'),waiting:task.batches.length?count('pending'):total-skipped.size,retryWaiting:count('retry-wait'),
+                failed:count('failed'),skipped:skipped.size,cancelled:count('cancelled')}});
     }
     function retryWait(signal) {
-        return new Promise((resolve,reject)=>{
-            let timer;
-            const cancel=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);reject(cancelledError());};
-            if(signal?.aborted){cancel();return;}
-            signal?.addEventListener('abort',cancel,{once:true});
-            timer=setTimeout(()=>{signal?.removeEventListener('abort',cancel);resolve();},2000);
-        });
+        return analysisDelay(2000,signal);
     }
     async function withAnalysisRetry(action, {signal,enabled=false,report=()=>{},onRetry=()=>{}}={}) {
         for(let attempt=0;;attempt++) {
@@ -1357,59 +1389,98 @@
             }
         }
     }
-    async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},retryTransient=false}={}) {
+    async function solveQuestionBatches(snapshot, settings, report, {progress,onBatchComplete=()=>{},onProgress=()=>{},retryTransient=false,questionIds}={}) {
         snapshot=questionAnswerSnapshot(snapshot);
         if(progress)progress.requestSnapshot=snapshot;
-        const check=()=>{throwIfAborted(settings.signal);checkSnapshot(snapshot);};
-        const retry=(action,phase)=>withAnalysisRetry(action,{signal:settings.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
+        const parentSignal=settings.signal,abort=new AbortController(),configuration=analysisConfiguration(settings);
+        const generation=progress?++progress.execution:0;
+        let failureCause=null;
+        const cancel=error=>{failureCause ||= error;abort.abort();};
+        const parentAbort=()=>cancel(cancelledError());
+        parentSignal?.addEventListener('abort',parentAbort,{once:true});
+        if(parentSignal?.aborted)parentAbort();
+        const check=()=>{
+            if(failureCause)throw failureCause;
+            throwIfAborted(abort.signal);
+            try {
+                if(progress && (controller?.task!==progress || progress.execution!==generation))throw cancelledError();
+                if(JSON.stringify(configuration)!==JSON.stringify(analysisConfiguration(currentAnalysisSettings())))
+                    throw Object.assign(new Error('分析配置已变化，请重新分析'),{code:'ANALYSIS_CONFIG_CHANGED'});
+                checkSnapshot(snapshot);
+            } catch(error){cancel(error);throw error;}
+        };
+        const guarded=()=>{try{check();}catch(error){cancel(error);}};
+        const guardTimer=setInterval(guarded,500);
+        const views=new Set([snapshot.doc?.defaultView,...[...(snapshot.bindings?.values() || [])].map(binding=>binding.node?.ownerDocument?.defaultView)].filter(Boolean));
+        const leaving=()=>cancel(createCxError('CX-PAR-008',{module:'analysis',operation:'snapshot'},{legacyCode:'SNAPSHOT_CHANGED'}));
+        for(const view of views)view.addEventListener('pagehide',leaving,{once:true});
+        const retry=(action,phase)=>withAnalysisRetry(action,{signal:abort.signal,enabled:retryTransient,onRetry:()=>settings.onModelRetry?.(),report:message=>{check();report(message,phase);}});
         const prepared=progress?.preparedMedia || new Map();
-        let records,policies,skippedQuestions;
+        const records=progress?.batches.length?progress.batches:splitQuestionBatches(snapshot.questions)
+            .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
+        const resultsByQuestion=progress?.resultsByQuestion || new Map();
+        if(progress)progress.batches=records;
+        const selected=records.filter(record=>record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)));
+        const gate=progress?.retryGate || {notBefore:0,failures:0,paused:false};
+        let searchTail=Promise.resolve();
         try {
-            policies=await prepareAnswerPolicies(snapshot,settings,prepared,{signal:settings.signal,progress,report,check,retry});
+            const pending={...snapshot,questions:selected.flatMap(record=>record.questions)};
+            const policies=await prepareAnswerPolicies(pending,settings,prepared,{signal:abort.signal,progress,report,check,retry});
             check();
-            skippedQuestions=analysisSkipped(snapshot,settings,policies);
-            if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
-            const analyzable=snapshot.questions.filter(q=>questionCanAutoAnswer(q,policies.get(q.id)));
-            records=progress?.batches.length?progress.batches:splitQuestionBatches(analyzable,settings,prepared)
-                .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
-            if(progress){progress.batches=records;progress.status='running';}
-            for(let i=0;i<records.length;i++) {
-                const record=records[i];if(record.status==='success')continue;
-                check();record.status='running';record.error=null;
-                const batch=record.questions,model=resolveQuestionModel(settings.model,batch[0]);record.model=model;
-                const count=records.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
-                const prefix=`第 ${i+1}/${records.length} 批（第 ${batch[0].number}–${batch.at(-1).number} 题，已分析 ${count}/${snapshot.questions.length} 题）`;
-                try {
-                    if(settings.search) {
-                        if(progress) {
-                            for(const question of batch) {
-                                if(record.evidence[question.id])continue;
-                                report(`${prefix}：正在联网检索第 ${question.number} 题…`,'searching');
-                                const found=await retry(()=>getWebEvidence([question],settings.key,model,message=>{check();report(`${prefix}：${message}`,'searching');},prepared,settings.signal),'searching');
-                                check();Object.assign(record.evidence,found);
-                            }
-                        } else {
-                            report(`${prefix}：正在联网检索…`,'searching');
-                            record.evidence=await getWebEvidence(batch,settings.key,model,message=>{check();report(`${prefix}：${message}`,'searching');},prepared,settings.signal);
-                            check();
-                        }
-                    }
-                    report(`${prefix}：正在请求 ${model}…`,'generating');
-                    const result=await retry(()=>askConfiguredModel({...settings,model},batch,record.evidence,prepared,settings.signal),'generating');
-                    check();record.result=result;record.status='success';
-                    onBatchComplete(record,i);
-                } catch(error) {
-                    record.status=settings.signal?.aborted?'pending':'failed';record.error=error.message;
-                    error.batchIndex=i+1;error.batchCount=records.length;
-                    error.message=`第 ${i+1}/${records.length} 批未完成：${error.message}；本次尚未预填`;throw error;
-                }
+            const skippedQuestions=analysisSkipped(snapshot,settings,policies),skipped=new Map(skippedQuestions.map(item=>[item.id,item]));
+            for(const record of selected)if(skipped.has(record.questions[0].id)) {
+                record.status='skipped';record.error=skipped.get(record.questions[0].id).reason;
             }
-            return questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,true,policies));
-        } finally {if(!progress)prepared.clear();}
+            if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
+            await runAnalysisQueue(selected.filter(record=>!skipped.has(record.questions[0].id)),{
+                concurrency:progress?.concurrency ?? settings.analysisConcurrency,signal:abort.signal,check,gate,retryTransient,
+                onFatal:cancel,onRetry:()=>settings.onModelRetry?.(),onError:error=>recordCxDiagnostic(error,{module:'analysis',operation:'solve',taskId:settings.diagnosticTaskId}),onChange:()=>{
+                    check();onBatchComplete();
+                    if(!progress)onProgress(questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,false,policies,resultsByQuestion)));
+                },
+                onSuccess:record=>{
+                    check();
+                    const answer=record.result.answers[0];
+                    resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
+                },
+                execute:async record=>{
+                    const question=record.questions[0],model=resolveQuestionModel(settings.model,question);record.model=model;
+                    const config={...settings,model,signal:abort.signal};
+                    assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,[question],record.evidence,prepared));
+                    if(settings.search && !record.evidence[question.id]) {
+                        const previous=searchTail;let release;
+                        searchTail=new Promise(resolve=>{release=resolve;});
+                        try {
+                            await previous;await waitAnalysisGate(gate,abort.signal,check);
+                            report(`正在检索第 ${question.number} 题…`,'searching');
+                            const found=await getWebEvidence([question],settings.key,model,message=>{check();report(message,'searching');},prepared,abort.signal);
+                            check();record.evidence={[question.id]:found[question.id]};
+                        } finally {release();}
+                    }
+                    await waitAnalysisGate(gate,abort.signal,check);
+                    report(`正在分析第 ${question.number} 题…`,'generating');
+                    const result=await askConfiguredModel(config,[question],record.evidence,prepared,abort.signal);
+                    check();
+                    if(result.answers.length!==1 || result.answers[0].id!==question.id)throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
+                    if(!result.answers[0].answer.length) {
+                        const error=createCxError('CX-RES-003',{module:'analysis',operation:'answers'});
+                        error.analysisReason=result.answers[0].reason || error.message;throw error;
+                    }
+                    return result;
+                }
+            });
+            check();
+            return questionResultProjection(snapshot,collectBatchResults(snapshot,records,skippedQuestions,true,policies,resultsByQuestion));
+        } catch(error){throw failureCause || error;}
+        finally {
+            clearInterval(guardTimer);parentSignal?.removeEventListener('abort',parentAbort);
+            for(const view of views)view.removeEventListener('pagehide',leaving);
+            if(!progress)prepared.clear();
+        }
     }
     function invalidateAnalysisTask(reason) {
         const task=controller?.task;if(!task)return;
-        task.status='stale';task.error=reason;task.preparedMedia.clear();controller.last=null;
+        task.abortController.abort();task.status='stale';task.error=reason;task.preparedMedia.clear();task.resultsByQuestion.clear();task.batches=[];controller.last=null;
         renderAnalysisProgress(task);
     }
     function stopAnalysisTask() {
@@ -1417,21 +1488,21 @@
         if(!task?.active || !controller.state.busy || task.abortController.signal.aborted)return;
         task.abortController.abort();controller.report('正在停止分析…','stopping');
     }
-    async function resumeAnalysisTask() {
+    async function resumeAnalysisTask(questionIds) {
         const ctl=controller,task=ctl?.task;
         if(!task?.snapshot || ctl.state.busy || courseRunActive() || !['failed','stopped'].includes(task.status))return;
         const settings=currentAnalysisSettings();
-        if(!settings.key){ctl.openPanel('model');ctl.report('请先保存 API Key，再重试未完成批次','error');return;}
+        if(!settings.key){ctl.openPanel('model');ctl.report('请先保存 API Key，再重试未完成题目','error');return;}
         // Explicit retry replaces the cancelled signal before validating the same frozen content.
         task.abortController=new AbortController();
         try {
             if(JSON.stringify(task.configuration)!==JSON.stringify(analysisConfiguration(settings)))throw new Error('分析配置已变化，请重新分析');
             checkSnapshot(task.snapshot);
         } catch(error) {invalidateAnalysisTask(error.message);ctl.report(error.message,'error');return;}
-        task.settings=settings;task.abortController=new AbortController();
-        await executeAnalysisTask(task);
+        task.abortController=new AbortController();
+        await executeAnalysisTask(task,{questionIds});
     }
-    async function executeAnalysisTask(task) {
+    async function executeAnalysisTask(task,{questionIds}={}) {
         const ctl=controller;
         task.active=true;
         ctl.last=null;ctl.report('正在还原题目字体…','decoding',true);switchPanelView('questions');
@@ -1449,25 +1520,30 @@
             }
             const result=await solveQuestionBatches(task.snapshot,{...task.settings,diagnosticTaskId:task.diagnosticTaskId,courseContext:task.snapshot.courseContext || [],signal:task.abortController.signal},
                 (message,phase)=>{checkAnalysisTask(task);ctl.report(message,phase);if(ctl.result?.analysisProgress?.status!==task.status)renderAnalysisProgress(task);},
-                {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true});
-            checkSnapshot(task.snapshot);task.status='complete';renderAnalysisProgress(task,true);
+                {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true,questionIds});
+            checkSnapshot(task.snapshot);task.status=result.analysisComplete?'complete':'failed';renderAnalysisProgress(task,true);
+            if(!result.analysisComplete) {
+                ctl.report(`已完成 ${result.analyzedCount}/${task.requestSnapshot.questions.length} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
+            }
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('模型未返回有效答案，请核对题目与模型结果');ctl.report(`本次未生成有效答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
             ctl.last={...task.snapshot,rootSnapshot:task.snapshot,answers:result.answers};
             const prefillable=questionPrefillCandidates(ctl.last,result.answers);
             if(!prefillable.length) {
-                ctl.report(`AI 已分析 ${result.analyzedCount} 道题；当前作答控件暂不支持预填或需人工处理，答案与解析已保留，请核对后手动填写。`,'done');
+                ctl.report(`已生成 ${result.analyzedCount} 道题的答案与解析`,'done');
             } else if(task.autoPrefill) {
                 ctl.report('正在校验并预填…','prefilling');
                 const summary=await prefillChecked(ctl.last,result.answers);checkAnalysisTask(task);
                 ctl.output({...ctl.result,prefill:summary});
                 ctl.report(summaryText(summary)+(result.skippedQuestions.length?`\n${result.skippedQuestions.length} 道题需人工处理或确认，已跳过。`:''),'done');
-            } else ctl.report(`AI 已分析 ${result.analyzedCount} 道题${result.skippedQuestions.length?`，${result.skippedQuestions.length} 道题需人工处理或确认，已跳过`:''}，请核对结果后点击预填。`,'done');
+            } else ctl.report(`AI 已分析 ${result.analyzedCount} 道题${result.skippedQuestions.length?`，${result.skippedQuestions.length} 道题已跳过`:''}，点击预填。`,'done');
         } catch(error) {
             if(ctl.task!==task)return;
             ctl.last=null;task.error=error.message;
             const changed=error.code==='ANALYSIS_CONFIG_CHANGED' || task.snapshot && (()=>{try{checkSnapshot(task.snapshot);return false;}catch(e){return e.code!=='ABORTED';}})();
             task.status=changed?'stale':task.abortController.signal.aborted?'stopped':'failed';
-            if(changed)task.preparedMedia.clear();
+            for(const record of task.batches)if(['pending','running','retry-wait'].includes(record.status))
+                Object.assign(record,{status:'cancelled',error:error.message,errorCode:normalizeCxError(error).code});
+            if(changed){task.preparedMedia.clear();task.resultsByQuestion.clear();task.batches=[];}
             renderAnalysisProgress(task);
             if(error.prefillSummary)ctl.output({...ctl.result,prefill:error.prefillSummary});
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
@@ -1496,14 +1572,18 @@
             report(message, phase = ctl.state.phase, busy = ctl.state.busy) {
                 Object.assign(ctl.state, { message, phase, busy }); renderRunState(ctl.state);
             },
-            openPanel(view) {
+            openPanel(view, { placement, focus = false } = {}) {
                 if (assistantUiHidden) return;
                 if (!panelView) return;
                 movePanelToStudyPage();
+                if (placement && [placement.left, placement.top, placement.width, placement.height].every(Number.isFinite) && placement.width > 0 && placement.height > 0) {
+                    panelView.userPosition = { left: placement.left, top: placement.top };
+                    panelView.userSize = { width: placement.width, height: placement.height };
+                }
                 refreshCourseSidebar();
                 setAssistantWindowMode('open');
                 if (view === 'model') switchSettingsView('model');
-                if (typeof view === 'string') switchPanelView(view);
+                if (typeof view === 'string') switchPanelView(view, { focus: focus === true });
                 positionAssistantPanel();
                 settingsButton()?.setAttribute('aria-expanded', 'true');
             },
@@ -1527,7 +1607,7 @@
                 finally { ctl.state.busy = false; renderRunState(ctl.state); }
             },
             async prefillLast() {
-                if (ctl.state.busy || courseRunActive() || !questionPrefillCandidates(ctl.last,ctl.last?.answers).length) return;
+                if (ctl.state.busy || courseRunActive() || ctl.result?.analysisComplete===false || !questionPrefillCandidates(ctl.last,ctl.last?.answers).length) return;
                 const task=ctl.task;
                 if(task){task.active=true;task.abortController=new AbortController();}
                 ctl.report('正在校验并预填…', 'prefilling', true);
@@ -1640,14 +1720,23 @@
             shadow.innerHTML = `<style>button{font:14px/1.5 system-ui,sans-serif;border:0;border-radius:7px;min-height:34px;padding:6px 12px;background:#edf2ff;color:#355dcc;cursor:pointer}button+button{margin-left:8px}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}</style><button type="button" id="settings" aria-expanded="false">学习通AI助手</button>`;
             studyToolbarView = { host, shadow };
             // 只有统一助手入口；测验侧边“自动刷课”导航打开顶层课程面板，不执行课程动作。
-            const showCoursePanel=()=>controller.openPanel('chapters');
+            const showCoursePanel = event => {
+                const handoff = event.detail;
+                if (handoff) {
+                    const quizDoc = findStudyQuizPanel(doc, handoff.sourceDoc);
+                    if (!quizDoc || quizDoc !== handoff.sourceDoc) return;
+                    panelView.returnQuizDoc = quizDoc;
+                }
+                controller.openPanel('chapters', handoff || {});
+            };
             doc.addEventListener('cx-ai-show-study-panel',showCoursePanel);
             view.addEventListener('pagehide',()=>doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel),{once:true});
             shadow.getElementById('settings').onclick = () => {
-                const quizDoc = findQuizPanel(doc.querySelector('#mainid #iframe')?.contentDocument);
+                const quizDoc = findStudyQuizPanel(doc, panelView.returnQuizDoc);
+                panelView.returnQuizDoc = quizDoc;
                 if (quizDoc) {
-                    setAssistantWindowMode('closed');
-                    quizDoc.dispatchEvent(new quizDoc.defaultView.Event('cx-ai-toggle-quiz-panel'));
+                    if (panelView.windowMode === 'open') quizDoc.dispatchEvent(new quizDoc.defaultView.CustomEvent('cx-ai-show-quiz-panel', {detail:assistantWindowHandoff()}));
+                    else quizDoc.dispatchEvent(new quizDoc.defaultView.Event('cx-ai-toggle-quiz-panel'));
                 } else controller.togglePanel();
             };
             const realign = () => alignStudyToolbar(doc);

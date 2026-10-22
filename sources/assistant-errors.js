@@ -16,7 +16,7 @@
         'CX-RES-001':'服务响应不是合法 JSON',
         'CX-RES-002':'接口没有返回有效的必要响应字段',
         'CX-RES-003':'模型返回空答案或空消息',
-        'CX-RES-004':'模型输出被截断，请减少单次题量',
+        'CX-RES-004':'模型输出达到长度上限，当前题目未完成',
         'CX-RES-005':'AI 答案结构不符合协议',
         'CX-RES-006':'AI 答案与请求的题目数量或 ID 不匹配',
         'CX-RES-007':'服务商返回业务错误，请检查模型和服务配置',
@@ -133,7 +133,7 @@
             ...(cxSafeLocalId(context.requestId) || stored.requestId || cxSafeLocalId(source.requestId)?{requestId:cxSafeLocalId(context.requestId) || stored.requestId || cxSafeLocalId(source.requestId)}:{}),
             timestamp:new Date().toISOString(),...(elapsedMs!==undefined?{elapsedMs}:{}),
             ...(status>=100 && status<=599?{httpStatus:status}:{}),
-            retryable:code==='CX-NET-001' || code==='CX-NET-002' || ['CX-HTTP-502','CX-HTTP-503','CX-HTTP-504'].includes(code),
+            retryable:code==='CX-NET-001' || code==='CX-NET-002' || ['CX-HTTP-429','CX-HTTP-502','CX-HTTP-503','CX-HTTP-504'].includes(code),
             recoverable:!['CX-EXE-003','CX-EXE-006','CX-SYS-003'].includes(code),diagnostics};
     }
     function recordCxDiagnostic(errorOrDiagnostic,context={}) {

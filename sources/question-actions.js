@@ -131,16 +131,30 @@
     }
     function questionActionMooc2State(binding,question) {
         const adapter=binding.mooc2,keys=[],values=[];
-        let consistent=adapter.valid;
+        const saved=adapter.savedInput?.value || '';
+        if(!adapter.valid||adapter.type!==question.type||adapter.qid!==String(question.parentQuestionId||question.id))
+            return {keys:[],values:[],saved,unknownSaved:true};
+        let consistent=true;
         for (const record of adapter.records) {
-            const checked=record.marker.classList.contains('check_answer'),aria=record.row.getAttribute('aria-checked');
+            const checked=record.marker.classList.contains(adapter.selectedClass),aria=record.row.getAttribute('aria-checked');
             const pressed=record.row.getAttribute('aria-pressed');
+            if(record.marker.classList.contains(adapter.type==='multiple'?'check_answer':'check_answer_dx'))consistent=false;
+            // Unticked options may omit ARIA attributes; any present value must agree with CSS.
             if ((aria!==null && !['true','false'].includes(aria)) || (checked ? aria!=='true' : aria==='true')) consistent=false;
             if (pressed!==null && pressed!==(checked?'true':'false')) consistent=false;
             if (checked) { keys.push(record.key);values.push(record.value); }
         }
-        const saved=adapter.savedInput?.value || '';
-        if (saved!==values.join('') || question.type!=='multiple' && keys.length>1) consistent=false;
+        if(adapter.type==='multiple') {
+            // The native handler owns encoding order. Decode its concatenated data values
+            // uniquely, reject duplicates/ambiguity, and compare the exact selected set.
+            const decoded=new Set();let offset=0;
+            while(offset<saved.length) {
+                const matches=adapter.records.filter(record=>saved.startsWith(record.value,offset));
+                if(matches.length!==1||decoded.has(matches[0].key)){consistent=false;break;}
+                decoded.add(matches[0].key);offset+=matches[0].value.length;
+            }
+            if(offset!==saved.length||decoded.size!==keys.length||keys.some(key=>!decoded.has(key)))consistent=false;
+        }else if(saved!==values.join('')||keys.length>1)consistent=false;
         return {keys:[...keys].sort(),values:[],saved,unknownSaved:!consistent};
     }
     function questionActionMooc2Verified(unit,expected=unit.targetKeys) {
@@ -234,7 +248,7 @@
             } else {
                 const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
                 if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
-                if(state.unknownSaved){failUnit(question,entry,'已有无法识别的手工答案，跳过');continue;}
+                if(state.unknownSaved){failUnit(question,entry,binding.mooc2?'mooc2 选中标记、ARIA 或原生答案编码无法可靠核对，未填写':'已有无法识别的手工答案，跳过');continue;}
                 if((chapterCheckbox || chapterRows || binding.mooc2) && (state.keys.length || state.saved) && (state.keys.length!==targetKeys.size || state.keys.some(key=>!targetKeys.has(key)))) {failUnit(question,entry,'已有手工作答，未覆盖');continue;}
                 if(owns && (!previous.keys || previous.keys.length!==state.keys.length || previous.keys.some(key=>!state.keys.includes(key))))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
                 if(parseContext.scope==='video-quiz' && state.keys.length && !owns){failUnit(question,entry,'已有手工作答，等待人工处理');continue;}
@@ -368,6 +382,7 @@
                         const clickTarget=unit.chapterInputs ? input : target;
                         // A previous native action may already have produced the desired state; do not toggle it again.
                         if(unit.chapterInputs?.nativeTargets.has(action.value) && selected(clickTarget)===(action.type==='select'))continue;
+                        if(unit.binding.mooc2 && unit.state.keys.includes(action.value)===(action.type==='select'))continue;
                         // The input owns native selection; its click bubbles to the original row handler once.
                         write(()=>clickTarget.click());
                         activeWrites++;
@@ -376,7 +391,7 @@
                         const verifiedAction=()=>unit.binding.mooc2 ? questionActionMooc2Verified(unit,expected) : unit.chapterRows ? Date.now()>=notBefore&&questionActionRowChoiceVerified(unit,expected) : unit.chapterCheckbox ? Date.now()>=notBefore && questionActionCheckboxVerified(unit,expected) : selected(clickTarget)===(action.type==='select');
                         await waitFor(()=>{if(nativeSync && (signal?.aborted || userEdited))validate();return verifiedAction();},nativeSync?750:450);
                         validateUnit(unit,false);
-                        if(!verifiedAction()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：${nativeSync?'原生选中状态或答案同步未确认':'控件状态未确认'}，已停止后续填写`);break unitLoop;}
+                        if(!verifiedAction()){result(unit,'unverified');summary.details.push(`第${unit.question.number}题：${nativeSync||unit.binding.mooc2?'原生选中状态或答案同步未确认':'控件状态未确认'}，已停止后续填写`);break unitLoop;}
                         // Capture after the platform's saved-answer timer; do not misclassify it as user input.
                         unit.state=questionActionState(unit.binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs);
                     }
