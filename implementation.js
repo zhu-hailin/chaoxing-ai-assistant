@@ -526,13 +526,31 @@
         shadow.getElementById('settings').onclick = () => ctl.togglePanel();
     }
 
+    function refreshQuestionNavigation() {
+        if (!panelView) return false;
+        const { sourceDoc, shadow } = panelView;
+        const owner = studyOwnerDocument(sourceDoc);
+        let available = hasQuestionNodes(sourceDoc);
+        if (owner) {
+            const quizDoc = findStudyQuizPanel(owner, owner === sourceDoc ? panelView.returnQuizDoc : sourceDoc);
+            available = owner === sourceDoc ? Boolean(quizDoc) : quizDoc === sourceDoc;
+            if (owner === sourceDoc) panelView.returnQuizDoc = quizDoc;
+        }
+        const button = shadow.getElementById('nav-questions');
+        button.disabled = !available;
+        button.setAttribute('aria-disabled', String(!available));
+        button.title = available ? '题目' : '当前页面暂无可用题目';
+        button.tabIndex = available && button.getAttribute('aria-selected') === 'true' ? 0 : -1;
+        return available;
+    }
     function switchPanelView(view, { focus = false } = {}) {
         if (!panelView || !['model','questions','chapters','other'].includes(view)) return;
+        if (!refreshQuestionNavigation() && view === 'questions') view = 'chapters';
         const { shadow } = panelView;
         for (const button of shadow.querySelectorAll('[data-panel-view]')) {
             const selected = button.dataset.panelView === view;
             button.setAttribute('aria-selected', String(selected));
-            button.tabIndex = selected ? 0 : -1;
+            button.tabIndex = selected && !button.disabled ? 0 : -1;
             shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
         }
         shadow.getElementById('course-nav').hidden = view !== 'chapters';
@@ -573,6 +591,7 @@
     function initPanelNavigation() {
         const buttons = [...panelView.shadow.querySelectorAll('[data-panel-view]')];
         const activate=(view,options={})=>{
+            if (!refreshQuestionNavigation() && view === 'questions') return;
             const owner=studyOwnerDocument(panelView.sourceDoc);
             if(view==='chapters' && owner && owner!==panelView.sourceDoc && owner.getElementById('cx-ai-study-toolbar')) {
                 owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-show-study-panel', {detail:assistantWindowHandoff(options)}));
@@ -587,17 +606,21 @@
             switchPanelView(view,options);
         };
 
-        buttons.forEach((button, index) => {
+        buttons.forEach(button => {
             button.onclick = () => activate(button.dataset.panelView);
             button.addEventListener('keydown', event => {
+                refreshQuestionNavigation();
+                const available = buttons.filter(item => !item.disabled);
+                const index = available.indexOf(button);
+                if (index < 0) return;
                 let next;
-                if (event.key === 'ArrowDown') next = (index + 1) % buttons.length;
-                else if (event.key === 'ArrowUp') next = (index + buttons.length - 1) % buttons.length;
+                if (event.key === 'ArrowDown') next = (index + 1) % available.length;
+                else if (event.key === 'ArrowUp') next = (index + available.length - 1) % available.length;
                 else if (event.key === 'Home') next = 0;
-                else if (event.key === 'End') next = buttons.length - 1;
+                else if (event.key === 'End') next = available.length - 1;
                 else return;
                 event.preventDefault(); event.stopPropagation();
-                activate(buttons[next].dataset.panelView, {focus:true});
+                activate(available[next].dataset.panelView, {focus:true});
             });
         });
         const chapterButtons = [...panelView.shadow.querySelectorAll('[data-chapter-view]')];
@@ -1166,6 +1189,7 @@
             s.getElementById('status').hidden = true;
         }
         if (panelView) {
+            refreshQuestionNavigation();
             const s = panelView.shadow;
             const configuration = readModelConfiguration();
             refreshCredentialEditor(configuration, busy);
@@ -1367,7 +1391,7 @@
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
-        controller.output({version: '1.28.2',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.28.3',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
                 running:count('running'),waiting:task.batches.length?count('pending'):total-skipped.size,retryWaiting:count('retry-wait'),
@@ -1576,6 +1600,7 @@
                 if (assistantUiHidden) return;
                 if (!panelView) return;
                 movePanelToStudyPage();
+                const questionsAvailable = refreshQuestionNavigation();
                 if (placement && [placement.left, placement.top, placement.width, placement.height].every(Number.isFinite) && placement.width > 0 && placement.height > 0) {
                     panelView.userPosition = { left: placement.left, top: placement.top };
                     panelView.userSize = { width: placement.width, height: placement.height };
@@ -1584,6 +1609,7 @@
                 setAssistantWindowMode('open');
                 if (view === 'model') switchSettingsView('model');
                 if (typeof view === 'string') switchPanelView(view, { focus: focus === true });
+                else if (!questionsAvailable && panelView.activeView === 'questions') switchPanelView('chapters');
                 positionAssistantPanel();
                 settingsButton()?.setAttribute('aria-expanded', 'true');
             },
@@ -1730,7 +1756,11 @@
                 controller.openPanel('chapters', handoff || {});
             };
             doc.addEventListener('cx-ai-show-study-panel',showCoursePanel);
-            view.addEventListener('pagehide',()=>doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel),{once:true});
+            doc.addEventListener('cx-ai-quiz-navigation-refresh', refreshQuestionNavigation);
+            view.addEventListener('pagehide',()=>{
+                doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel);
+                doc.removeEventListener('cx-ai-quiz-navigation-refresh', refreshQuestionNavigation);
+            },{once:true});
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findStudyQuizPanel(doc, panelView.returnQuizDoc);
                 panelView.returnQuizDoc = quizDoc;
@@ -1758,6 +1788,9 @@
                 scheduled = false;
                 initQuizAssistant();
                 initStudyAssistant();
+                refreshQuestionNavigation();
+                const owner = studyOwnerDocument(document);
+                if (owner && owner !== document) owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh'));
                 ensureFontDecoded().catch(error => {
                     if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
@@ -1769,8 +1802,15 @@
                 n.nodeType === 1 && !n.id?.startsWith('cx-ai-') && n.className !== 'cx-ai-title-row'))) refresh();
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
+        const frameLoaded = event => { if (event.target?.tagName === 'IFRAME') refresh(); };
+        document.addEventListener('load', frameLoaded, true);
         refresh();
-        window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
+        window.addEventListener('pagehide', () => {
+            observer.disconnect();
+            document.removeEventListener('load', frameLoaded, true);
+            const owner = studyOwnerDocument(document);
+            if (owner && owner !== document) owner.defaultView.setTimeout(() => owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh')), 0);
+        }, { once: true });
     }
     initCredentialSettings();
     initCourseDocumentBridge();

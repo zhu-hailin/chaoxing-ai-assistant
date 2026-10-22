@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.28.2
+// @version      1.28.3
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2917,7 +2917,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.28.2';
+    const ASSISTANT_VERSION = '1.28.3';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2965,7 +2965,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.28.2', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.28.3', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -6336,7 +6336,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.28.2');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.28.3');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -10115,13 +10115,31 @@ Typr["U"] = {
         shadow.getElementById('settings').onclick = () => ctl.togglePanel();
     }
 
+    function refreshQuestionNavigation() {
+        if (!panelView) return false;
+        const { sourceDoc, shadow } = panelView;
+        const owner = studyOwnerDocument(sourceDoc);
+        let available = hasQuestionNodes(sourceDoc);
+        if (owner) {
+            const quizDoc = findStudyQuizPanel(owner, owner === sourceDoc ? panelView.returnQuizDoc : sourceDoc);
+            available = owner === sourceDoc ? Boolean(quizDoc) : quizDoc === sourceDoc;
+            if (owner === sourceDoc) panelView.returnQuizDoc = quizDoc;
+        }
+        const button = shadow.getElementById('nav-questions');
+        button.disabled = !available;
+        button.setAttribute('aria-disabled', String(!available));
+        button.title = available ? '题目' : '当前页面暂无可用题目';
+        button.tabIndex = available && button.getAttribute('aria-selected') === 'true' ? 0 : -1;
+        return available;
+    }
     function switchPanelView(view, { focus = false } = {}) {
         if (!panelView || !['model','questions','chapters','other'].includes(view)) return;
+        if (!refreshQuestionNavigation() && view === 'questions') view = 'chapters';
         const { shadow } = panelView;
         for (const button of shadow.querySelectorAll('[data-panel-view]')) {
             const selected = button.dataset.panelView === view;
             button.setAttribute('aria-selected', String(selected));
-            button.tabIndex = selected ? 0 : -1;
+            button.tabIndex = selected && !button.disabled ? 0 : -1;
             shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
         }
         shadow.getElementById('course-nav').hidden = view !== 'chapters';
@@ -10162,6 +10180,7 @@ Typr["U"] = {
     function initPanelNavigation() {
         const buttons = [...panelView.shadow.querySelectorAll('[data-panel-view]')];
         const activate=(view,options={})=>{
+            if (!refreshQuestionNavigation() && view === 'questions') return;
             const owner=studyOwnerDocument(panelView.sourceDoc);
             if(view==='chapters' && owner && owner!==panelView.sourceDoc && owner.getElementById('cx-ai-study-toolbar')) {
                 owner.dispatchEvent(new owner.defaultView.CustomEvent('cx-ai-show-study-panel', {detail:assistantWindowHandoff(options)}));
@@ -10176,17 +10195,21 @@ Typr["U"] = {
             switchPanelView(view,options);
         };
 
-        buttons.forEach((button, index) => {
+        buttons.forEach(button => {
             button.onclick = () => activate(button.dataset.panelView);
             button.addEventListener('keydown', event => {
+                refreshQuestionNavigation();
+                const available = buttons.filter(item => !item.disabled);
+                const index = available.indexOf(button);
+                if (index < 0) return;
                 let next;
-                if (event.key === 'ArrowDown') next = (index + 1) % buttons.length;
-                else if (event.key === 'ArrowUp') next = (index + buttons.length - 1) % buttons.length;
+                if (event.key === 'ArrowDown') next = (index + 1) % available.length;
+                else if (event.key === 'ArrowUp') next = (index + available.length - 1) % available.length;
                 else if (event.key === 'Home') next = 0;
-                else if (event.key === 'End') next = buttons.length - 1;
+                else if (event.key === 'End') next = available.length - 1;
                 else return;
                 event.preventDefault(); event.stopPropagation();
-                activate(buttons[next].dataset.panelView, {focus:true});
+                activate(available[next].dataset.panelView, {focus:true});
             });
         });
         const chapterButtons = [...panelView.shadow.querySelectorAll('[data-chapter-view]')];
@@ -10343,7 +10366,7 @@ Typr["U"] = {
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.28.2</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.28.3</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
@@ -10898,6 +10921,7 @@ Typr["U"] = {
             s.getElementById('status').hidden = true;
         }
         if (panelView) {
+            refreshQuestionNavigation();
             const s = panelView.shadow;
             const configuration = readModelConfiguration();
             refreshCredentialEditor(configuration, busy);
@@ -11099,7 +11123,7 @@ Typr["U"] = {
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
-        controller.output({version: '1.28.2',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
+        controller.output({version: '1.28.3',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
                 running:count('running'),waiting:task.batches.length?count('pending'):total-skipped.size,retryWaiting:count('retry-wait'),
@@ -11308,6 +11332,7 @@ Typr["U"] = {
                 if (assistantUiHidden) return;
                 if (!panelView) return;
                 movePanelToStudyPage();
+                const questionsAvailable = refreshQuestionNavigation();
                 if (placement && [placement.left, placement.top, placement.width, placement.height].every(Number.isFinite) && placement.width > 0 && placement.height > 0) {
                     panelView.userPosition = { left: placement.left, top: placement.top };
                     panelView.userSize = { width: placement.width, height: placement.height };
@@ -11316,6 +11341,7 @@ Typr["U"] = {
                 setAssistantWindowMode('open');
                 if (view === 'model') switchSettingsView('model');
                 if (typeof view === 'string') switchPanelView(view, { focus: focus === true });
+                else if (!questionsAvailable && panelView.activeView === 'questions') switchPanelView('chapters');
                 positionAssistantPanel();
                 settingsButton()?.setAttribute('aria-expanded', 'true');
             },
@@ -11462,7 +11488,11 @@ Typr["U"] = {
                 controller.openPanel('chapters', handoff || {});
             };
             doc.addEventListener('cx-ai-show-study-panel',showCoursePanel);
-            view.addEventListener('pagehide',()=>doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel),{once:true});
+            doc.addEventListener('cx-ai-quiz-navigation-refresh', refreshQuestionNavigation);
+            view.addEventListener('pagehide',()=>{
+                doc.removeEventListener('cx-ai-show-study-panel',showCoursePanel);
+                doc.removeEventListener('cx-ai-quiz-navigation-refresh', refreshQuestionNavigation);
+            },{once:true});
             shadow.getElementById('settings').onclick = () => {
                 const quizDoc = findStudyQuizPanel(doc, panelView.returnQuizDoc);
                 panelView.returnQuizDoc = quizDoc;
@@ -11490,6 +11520,9 @@ Typr["U"] = {
                 scheduled = false;
                 initQuizAssistant();
                 initStudyAssistant();
+                refreshQuestionNavigation();
+                const owner = studyOwnerDocument(document);
+                if (owner && owner !== document) owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh'));
                 ensureFontDecoded().catch(error => {
                     if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
@@ -11501,8 +11534,15 @@ Typr["U"] = {
                 n.nodeType === 1 && !n.id?.startsWith('cx-ai-') && n.className !== 'cx-ai-title-row'))) refresh();
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
+        const frameLoaded = event => { if (event.target?.tagName === 'IFRAME') refresh(); };
+        document.addEventListener('load', frameLoaded, true);
         refresh();
-        window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
+        window.addEventListener('pagehide', () => {
+            observer.disconnect();
+            document.removeEventListener('load', frameLoaded, true);
+            const owner = studyOwnerDocument(document);
+            if (owner && owner !== document) owner.defaultView.setTimeout(() => owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh')), 0);
+        }, { once: true });
     }
     initCredentialSettings();
     initCourseDocumentBridge();
