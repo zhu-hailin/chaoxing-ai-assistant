@@ -25,6 +25,44 @@
     }
     const courseRunnerControllers = new WeakMap();
     function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
+    function courseForcePlaybackEnabled() {return get('cx_course_force_playback',true)!==false;}
+    const courseVideoPlaybackRequests=new WeakMap();
+    function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs) {
+        if(signal?.aborted)return Promise.reject(cancelledError());
+        const request=Symbol('playback');courseVideoPlaybackRequests.set(video,request);
+        if(!video.paused||video.ended)return Promise.resolve();
+        return new Promise((resolve,reject)=>{
+            let settled=false,abandoned=false,timer;
+            const finish=error=>{
+                if(settled)return;settled=true;clearTimeout(timer);
+                video.removeEventListener('playing',playing);video.removeEventListener('pause',paused);video.removeEventListener('ended',ended);video.removeEventListener('error',failed);signal?.removeEventListener('abort',cancel);
+                if(error)reject(error);else resolve();
+            };
+            const playing=()=>{if(!video.paused)finish();};
+            const paused=()=>finish(Object.assign(new Error('播放已暂停'),{name:'AbortError'}));
+            const ended=()=>finish();
+            const failed=()=>finish(new Error('视频播放失败'));
+            const cancel=()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(cancelledError());};
+            video.addEventListener('playing',playing);video.addEventListener('pause',paused);video.addEventListener('ended',ended);video.addEventListener('error',failed);signal?.addEventListener('abort',cancel,{once:true});
+            timer=setTimeout(()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(courseTimeoutError('视频播放请求超时'));},timeoutMs);
+            try {
+                const button=courseVideoStartButton(video);
+                if(button)button.click();
+                else Promise.resolve(video.play()).then(()=>{
+                    if((abandoned||signal?.aborted)&&courseVideoPlaybackRequests.get(video)===request)video.pause();
+                    finish();
+                },error=>finish(error));
+                if(!video.paused||video.ended)finish();
+            } catch(error){finish(error);}
+        });
+    }
+    function courseVideoDelaySettings(value={}) {
+        if(!value||typeof value!=='object')value={};
+        const seconds=(value,fallback)=>Number.isInteger(value)&&value>=0&&value<=60?value:fallback;
+        const min=seconds(value.minSeconds,5),max=seconds(value.maxSeconds,15);
+        return {enabled:value.enabled===true,mode:value.mode==='random'?'random':'fixed',fixedSeconds:seconds(value.fixedSeconds,10),minSeconds:Math.min(min,max),maxSeconds:Math.max(min,max)};
+    }
+    function readCourseVideoDelaySettings() {return courseVideoDelaySettings(get('cx_course_video_delay',{}));}
     function courseLearningSettings(value={}) {
         const minutes=(raw,min,max,fallback)=>{const n=Number(raw);return Number.isInteger(n)&&n>=min&&n<=max?n:fallback;};
         return {restEnabled:value.restEnabled===true,studyMinutes:minutes(value.studyMinutes,10,180,50),restMinutes:minutes(value.restMinutes,1,60,10)};
@@ -294,7 +332,7 @@
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings() } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -368,12 +406,15 @@
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
                 const learning=courseLearningSettings(resume?previous.learning||{}:{restEnabled,studyMinutes,restMinutes});
                 const savedPacing=resume?previous.pacing:null;
+                const delaySettings=courseVideoDelaySettings(resume?previous.videoDelay||{}:videoDelay);
+                const savedDelay=resume?previous.videoDelayUntil:null;
                 const protection=courseRunProtection(resume?previous:null,report.chapters,resume?previous.chapterIndex:0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
                 report.protection=protection;
                 const run = {id:crypto.randomUUID(),queue,report,settings,protection,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
                     previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? false : submit===true,
-                    learning,pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
+                    learning,videoDelay:delaySettings,videoDelayUntil:Number.isFinite(savedDelay)&&savedDelay>=0&&savedDelay<=now()+60000?savedDelay:null,
+                    pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
                     skipLearned:resume ? previous.skipLearned!==false : skipLearned!==false,
                     continueOnTimeout:resume ? previous.continueOnTimeout!==false : continueOnTimeout!==false,
                     muteVideo:resume ? previous.muteVideo!==false : muteVideo!==false,
@@ -407,7 +448,7 @@
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
                     set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
-                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,tabProgress:run.tabProgress,report});
+                        learning:run.learning,videoDelay:run.videoDelay,videoDelayUntil:run.videoDelayUntil,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,tabProgress:run.tabProgress,report});
                     run.claimed=true;
                     run.lastSaved = now();
                 };
@@ -607,7 +648,7 @@
                         let wakeMedia=null,pendingSeek=null,fatalError=null,replay=null,requiredReplay=null;
                         let excludedWaitMs=0,waitingStartedAt=null,foregroundWaitingStartedAt=null,manualWaitingStartedAt=null,quizWaitingStartedAt=null;
                         let foregroundPausePending=false,policyPauseExpected=false,playingEventCount=0;
-                        const pauseControl={manualIntentUntil:0,manualPaused:false,lastAttemptAt:-Infinity,recoveryBlocked:false};
+                        const pauseControl={manualIntentUntil:0,manualPaused:false,scriptPaused:false,resumeRequested:false,pausedAt:null,lastAttemptAt:-Infinity,recoveryBlocked:false};
                         let playRequestPending=false;
                         const speedAttempts=new WeakMap();
                         let speedGeneration=0;
@@ -760,7 +801,8 @@
                             if(['pause','seeking','loadstart','emptied'].includes(event.type))suspendSpeed();
                             if(['loadstart','emptied'].includes(event.type))speedGeneration++;
                             const state=snapshot(event.type);observe(state);
-                            if(state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(!courseForcePlaybackEnabled()&&state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(event.type==='playing'&&pauseControl.scriptPaused&&!video.paused){policyPauseExpected=true;video.pause();}
                             if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
                             // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
@@ -768,17 +810,18 @@
                             task.playbackState=state;
                             if(event.type==='pause'){
                                 task.pauseCount++;task.lastPause=state;
-                                if(!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!courseForcePlaybackEnabled()&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!policyPauseExpected&&!pauseControl.scriptPaused)pauseControl.pausedAt??=now();
                                 policyPauseExpected=false;
                             }
-                            if(event.type==='playing'&&!video.paused){foregroundPausePending=false;playingEventCount++;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;}
+                            if(event.type==='playing'&&!video.paused){foregroundPausePending=false;playingEventCount++;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;pauseControl.pausedAt=null;}
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
                             wakeMedia?.();
                         };
                         // 媒体事件唤醒当前轮询；避免暂停后只能等后台定时器恢复调度。
-                        const waitForMedia=async()=>{
+                        const waitForMedia=async(ms=limits.pollMs)=>{
                             let wake;const mediaEvent=new Promise(resolve=>{wake=resolve;wakeMedia=resolve;});
-                            try {await race(Promise.race([wait(limits.pollMs),mediaEvent]));}
+                            try {await race(Promise.race([wait(ms),mediaEvent]));}
                             finally {if(wakeMedia===wake)wakeMedia=null;}
                         };
                         const popupKey=`cx_video_quiz:${scope}:${entry.id}:${run.expectedTab || 'current'}:${task.number || 1}`;
@@ -850,35 +893,53 @@
                             suspendSpeed();
                             if(manualWaitingStartedAt===null){
                                 manualWaitingStartedAt=now();task.pauseState.waitCount++;task.pauseState.waiting=true;
-                                task.pauseState.reason=pauseControl.recoveryBlocked?'连续恢复无效，请返回课程页手动播放':'已手动暂停，请手动播放后继续';
+                                task.pauseState.reason=pauseControl.scriptPaused?'已通过脚本暂停，点击继续':pauseControl.recoveryBlocked?'连续恢复无效，请返回课程页手动播放':'已手动暂停，请手动播放后继续';
                                 task.backgroundState.category=pauseControl.recoveryBlocked?'recovery-blocked':'manual';task.backgroundState.reason=task.pauseState.reason;
                                 syncVideoWaitBudget();pausePacing();
                             }
                             try {
-                                while(video.paused&&!video.ended){
+                                while((video.paused||pauseControl.scriptPaused)&&!video.ended){
+                                    if(!pauseControl.scriptPaused&&(courseForcePlaybackEnabled()||pauseControl.resumeRequested))break;
                                     await handleVideoQuiz();guard();await waitForVideoForeground();
                                     if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
                                     if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                    emit('视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
+                                    emit(pauseControl.scriptPaused?'视频已暂停，点击脚本“继续”':'视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
                                 }
                                 foregroundPausePending=false;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;
                                 task.backgroundState.category='playing';task.backgroundState.reason=null;
                             } finally {
                                 if(manualWaitingStartedAt!==null)task.pauseState.waitMs+=Math.max(0,now()-manualWaitingStartedAt);
-                                manualWaitingStartedAt=null,quizWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
+                                manualWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
                                 if(foregroundWaitingStartedAt===null&&quizWaitingStartedAt===null)resumePacing();
                             }
                         };
                         const onPlayerInput=event=>{
+                            if(courseForcePlaybackEnabled())return;
                             if(context.skipped||run.cancelled||video.paused||video.ended||!courseVideoPauseInput(event,video))return;
                             pauseControl.manualIntentUntil=now()+limits.videoManualPauseIntentMs;
                         };
                         const pauseDocuments=[...new Set([owner,video.ownerDocument])];
                         for(const doc of pauseDocuments)for(const type of ['pointerdown','click','keydown'])doc.addEventListener(type,onPlayerInput,true);
                         const releaseProtection=backgroundPlaybackGuard?.activate({video,
+                            isPaused:()=>pauseControl.scriptPaused||video.paused,
+                            canToggle:()=>!context.submitting&&quizWaitingStartedAt===null&&!courseVideoQuizCandidate(video),
+                            wake:()=>wakeMedia?.(),
+                            settingsChanged:()=>{
+                                if(courseForcePlaybackEnabled()&&!pauseControl.scriptPaused){pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;pauseControl.manualIntentUntil=0;}
+                                wakeMedia?.();
+                            },
+                            togglePause:()=>{
+                                guard();
+                                if(pauseControl.scriptPaused||video.paused){
+                                    pauseControl.scriptPaused=false;pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;
+                                    pauseControl.resumeRequested=true;pauseControl.manualIntentUntil=0;pauseControl.pausedAt=now()-500;
+                                    task.unstableResumes=0;
+                                } else {pauseControl.scriptPaused=true;policyPauseExpected=true;video.pause();}
+                                wakeMedia?.();
+                            },
                             canProtect:()=>{
                                 if(current!==run||run.cancelled||context!==run.chapter||context.skipped||context.submitting||run.resting
-                                    ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
+                                    ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.scriptPaused||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
                                     ||manualWaitingStartedAt!==null||foregroundWaitingStartedAt!==null||quizWaitingStartedAt!==null
                                     ||task.foregroundState.required||courseVideoForegroundPolicy(video).required||courseVideoQuizCandidate(video))return false;
                                 guard();return courseFrameTree(owner).documents.includes(video.ownerDocument);
@@ -915,29 +976,30 @@
                                             if(pendingSeek){await waitForMedia();continue;}
                                         }
                                         // 明确手动暂停交给人工等待；未知中断可有限重试，浏览器拒绝不能绕过。
-                                        if(pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
+                                        if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
+                                        if(!courseForcePlaybackEnabled()&&pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
                                         if(playError?.name==='AbortError'&&(task.foregroundState.waitCount>foregroundWaitCount
                                             ||!pauseControl.manualPaused))playError=null;
                                         if(playError)throw playError;
                                         // 已收到真正开始播放的事件，随后暂停交给人工暂停流程，不能抢播。
                                         if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)break;
-                                        if(recovery&&task.unstableResumes>=limits.maxResumes){pauseControl.recoveryBlocked=true;return;}
+                                        if(recovery&&task.unstableResumes>=limits.maxResumes){
+                                            if(courseForcePlaybackEnabled())throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
+                                            pauseControl.recoveryBlocked=true;return;
+                                        }
                                         if(videoBudgetNow()>=startDeadline)throw courseTimeoutError('视频启动超时，播放入口重试后仍未开始播放');
-                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?limits.resumeMs:limits.videoStartRetryMs)
-                                            &&(!recovery||now()-pauseControl.lastAttemptAt>=limits.resumeMs)) {
+                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
+                                            &&(!recovery||now()-pauseControl.lastAttemptAt>=(courseForcePlaybackEnabled()?500:limits.resumeMs))) {
                                             lastAttemptAt=videoBudgetNow();pauseControl.lastAttemptAt=now();foregroundWaitCount=task.foregroundState.waitCount;
                                             task.startAttempts=(task.startAttempts||0)+1;
                                             if(recovery){
                                                 if(task.unstableResumes===0)resumeProgress=0;
                                                 task.resumes++;task.unstableResumes++;task.backgroundState.recoveryAttempts++;task.backgroundState.category='recovering';
                                             }
-                                            const button=courseVideoStartButton(video);
-                                            if(button)button.click();
-                                            else {
-                                                playRequestPending=true;
-                                                Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();},error=>{playError=error;})
-                                                    .finally(()=>{playRequestPending=false;wakeMedia?.();});
-                                            }
+                                            playRequestPending=true;
+                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs).then(()=>{
+                                                if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                            },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
                                         }
                                         emit('视频尚未开始播放，等待启动重试…','course-video-start');
@@ -949,6 +1011,27 @@
                                     throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
                                 }
                             };
+                            if(releaseProtection.settled)await race(releaseProtection.settled);
+                            if(run.videoDelay.enabled&&run.videoDelayUntil!==null){
+                                const deadline=run.videoDelayUntil;
+                                const manualStart=event=>{if(courseVideoPauseInput(event,video))pauseControl.resumeRequested=true;};
+                                video.ownerDocument.addEventListener('pointerdown',manualStart,true);video.ownerDocument.addEventListener('keydown',manualStart,true);
+                                pausePacing();
+                                try {
+                                    while(now()<deadline&&!pauseControl.resumeRequested){
+                                        guard();await waitForVideoForeground();
+                                        if(!video.isConnected||!courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
+                                        if(!video.paused){policyPauseExpected=true;video.pause();}
+                                        emit(`下一段视频将在 ${Math.ceil(Math.max(0,deadline-now())/1000)} 秒后播放`,'course-video-delay');
+                                        await waitForMedia(Math.min(limits.pollMs,Math.max(1,deadline-now())));
+                                    }
+                                    run.videoDelayUntil=null;save();
+                                } finally {
+                                    video.ownerDocument.removeEventListener('pointerdown',manualStart,true);video.ownerDocument.removeEventListener('keydown',manualStart,true);resumePacing();
+                                }
+                            }
+                            if(pauseControl.scriptPaused)await waitForManualPlayback();
+                            pauseControl.resumeRequested=false;
                             if(video.paused)await startPlayback();
                             if(video.paused&&!video.ended&&pauseControl.manualPaused)await waitForManualPlayback();
                             emit('已启动视频，正在读取时长…','course-video');
@@ -959,17 +1042,18 @@
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
                                 await waitForVideoForeground();
                                 await handleVideoQuiz();
+                                if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
                                 collectVideoInfo();
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if(video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!courseForcePlaybackEnabled()&&video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){
                                     if(video.paused){pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;}
-                                    if(video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
+                                    if(!courseForcePlaybackEnabled()&&video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
                                     else await waitForMedia();
                                     continue;
                                 }
@@ -986,12 +1070,18 @@
                                 if(replay&&currentSample.budgetAt>=replayDeadline(currentSample.budgetAt)){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
                                 if(!video.ended&&video.paused){
                                     // 未收到 pause 事件时也回读可信输入意图；不能因后台事件排队而抢播。
-                                    if(pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
+                                    if(!courseForcePlaybackEnabled()&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
                                     pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;
-                                    if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
+                                    if(courseForcePlaybackEnabled()){
+                                        pauseControl.manualPaused=false;
+                                        if(pauseControl.recoveryBlocked)throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
+                                    } else if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
                                     if(videoBudgetNow()-lastMotionAt>=limits.stallMs)throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
-                                    task.backgroundState.category='unknown';task.backgroundState.reason='暂停来源未确认，按旧版规则有限恢复';
-                                    if(video.readyState>=2&&now()-pauseControl.lastAttemptAt>=limits.resumeMs){
+                                    task.backgroundState.category='unknown';task.backgroundState.reason=courseForcePlaybackEnabled()?'强制连续播放：暂停后有限恢复':'暂停来源未确认，按旧版规则有限恢复';
+                                    pauseControl.pausedAt??=now();
+                                    const retryDelay=courseForcePlaybackEnabled()?500:limits.resumeMs;
+                                    if(video.readyState>=2&&now()-pauseControl.pausedAt>=(courseForcePlaybackEnabled()?500:0)&&now()-pauseControl.lastAttemptAt>=retryDelay){
+                                        pauseControl.resumeRequested=false;
                                         emit('视频暂停，正在尝试恢复播放','course-video');await startPlayback(true);
                                     }else await waitForMedia();
                                     continue;
@@ -1021,6 +1111,10 @@
                                 emit('视频已结束，正在整理已采样的画面信息…','course-video');await race(videoInfo.flush());guard();
                             }
                             task.status='done';task.endedAt=now();report.videos++;
+                            if(run.videoDelay.enabled){
+                                const cfg=run.videoDelay,seconds=cfg.mode==='random'?cfg.minSeconds+Math.floor(Math.random()*(cfg.maxSeconds-cfg.minSeconds+1)):cfg.fixedSeconds;
+                                run.videoDelayUntil=now()+seconds*1000;save();
+                            }
                         } finally {
                             suspendSpeed();
                             releaseProtection();if(run.releaseVideoProtection===releaseProtection)run.releaseVideoProtection=null;
@@ -1652,6 +1746,40 @@
         };
         const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video'),skipUnanswerable=s.getElementById('course-skip-unanswerable'),videoQuizAuto=s.getElementById('course-video-quiz-auto'),speedEnabled=s.getElementById('course-speed-enabled');
         const autoSubmit=s.getElementById('course-auto-submit');
+        const forcePlayback=s.getElementById('course-force-playback'),videoPause=s.getElementById('course-video-pause');
+        forcePlayback.checked=courseForcePlaybackEnabled();
+        forcePlayback.onchange=event=>{
+            if(!trustedAssistantActivation(event,forcePlayback,'change')){forcePlayback.checked=courseForcePlaybackEnabled();return;}
+            set('cx_course_force_playback',forcePlayback.checked);backgroundPlaybackGuard?.refresh();render();
+        };
+        videoPause.onclick=event=>{
+            if(!trustedAssistantActivation(event,videoPause))return;
+            try {backgroundPlaybackGuard?.togglePause();}catch(error){ctl.report(error.message,'error');}
+            render();
+        };
+        const delayEnabled=s.getElementById('course-video-delay-enabled'),delayMode=s.getElementById('course-video-delay-mode'),
+            delayFixed=s.getElementById('course-video-delay-fixed'),delayMin=s.getElementById('course-video-delay-min'),delayMax=s.getElementById('course-video-delay-max');
+        const renderDelay=()=>{
+            const cfg=readCourseVideoDelaySettings(),random=cfg.mode==='random';
+            delayEnabled.checked=cfg.enabled;delayMode.value=cfg.mode;delayFixed.value=cfg.fixedSeconds;delayMin.value=cfg.minSeconds;delayMax.value=cfg.maxSeconds;
+            s.getElementById('course-video-delay-fields').hidden=!cfg.enabled;
+            delayFixed.hidden=random;s.getElementById('course-video-delay-random').hidden=!random;
+            s.getElementById('course-video-delay-value').textContent=random?`${cfg.minSeconds}–${cfg.maxSeconds} 秒`:`${cfg.fixedSeconds} 秒`;
+            s.getElementById('course-video-delay-random').style.setProperty('--delay-min',`${cfg.minSeconds/60*100}%`);
+            s.getElementById('course-video-delay-random').style.setProperty('--delay-max',`${cfg.maxSeconds/60*100}%`);
+            delayMin.style.zIndex=cfg.minSeconds===60?'3':'';
+            for(const control of [delayEnabled,delayMode,delayFixed,delayMin,delayMax])control.disabled=courseRunActive(doc)||ctl.state.busy;
+        };
+        for(const [control,field,type] of [[delayEnabled,'enabled','change'],[delayMode,'mode','change'],[delayFixed,'fixedSeconds','input'],[delayMin,'minSeconds','input'],[delayMax,'maxSeconds','input']]) {
+            control.addEventListener(type,event=>{
+                if(!trustedAssistantActivation(event,control,type)||courseRunActive(doc)||ctl.state.busy){renderDelay();return;}
+                const cfg=readCourseVideoDelaySettings();
+                cfg[field]=field==='enabled'?control.checked:field==='mode'?control.value:Number(control.value);
+                if(field==='minSeconds')cfg.minSeconds=Math.min(cfg.minSeconds,cfg.maxSeconds);
+                if(field==='maxSeconds')cfg.maxSeconds=Math.max(cfg.maxSeconds,cfg.minSeconds);
+                set('cx_course_video_delay',courseVideoDelaySettings(cfg));renderDelay();
+            });
+        }
         const failureProtection=s.getElementById('course-failure-protection');
         failureProtection.checked=get('cx_course_failure_protection_enabled',false)===true;
         failureProtection.onchange=event=>{
@@ -1738,6 +1866,11 @@
         };
         const render=()=>{
             const running=courseRunActive(doc),report=latestReport();
+            forcePlayback.checked=courseForcePlaybackEnabled();
+            forcePlayback.disabled=!backgroundPlaybackGuard;
+            const playback=backgroundPlaybackGuard?.controls;
+            videoPause.disabled=!playback?.available;videoPause.textContent=playback?.paused?'继续':'暂停';
+            renderDelay();
             renderPending(report);
             const lease=owner?.getElementById('cx-ai-course-lease');
             if(stopRunId && (!running || lease?.getAttribute('data-run-id')!==stopRunId || Date.now()>=stopUntil))clearStopConfirmation();

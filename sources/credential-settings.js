@@ -22,7 +22,7 @@
         credentialView.provider = cfg.provider; credentialView.baseURL = cfg.baseURL;
         credentialView.input.disabled = busy; credentialView.save.disabled = busy;
         credentialView.clear.disabled = busy || !readProviderSetting(cfg.provider, 'key', '');
-        credentialView.input.placeholder = cfg.key ? '输入新 Key 替换，留空保留已保存值' : '输入当前平台 API Key';
+        credentialView.input.placeholder = cfg.key ? '输入新 Key，留空保留当前值' : '输入当前平台 API Key';
         credentialView.input.setAttribute('aria-label', `${getModelProvider(cfg.provider).name} API Key`);
     }
     function refreshCredentialStatus(provider) {
@@ -34,7 +34,7 @@
     function initCredentialEditor(host) {
         if (credentialView) return;
         const shadow = host.attachShadow({mode:'closed'});
-        shadow.innerHTML = `<style>*{box-sizing:border-box}label,input,button{font:inherit}div{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}label{min-width:65px;font-size:13px;color:var(--muted,#6c7b90)}input{flex:1;min-width:120px;width:180px;padding:8px;border:1px solid #cbd5e3;border-radius:6px;background:#fff;color:var(--ink,#26354a)}button{padding:7px 11px;border:1px solid transparent;border-radius:6px;background:var(--accent,#315fbd);color:#fff;cursor:pointer}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
+        shadow.innerHTML = `<style>:host{display:block;container-type:inline-size}*{box-sizing:border-box}label,input,button{font:inherit;font-size:12px}div{display:grid;grid-template-columns:64px minmax(90px,1fr) auto auto;align-items:center;gap:6px;margin:4px 0}label{color:var(--muted,#6c7b90)}input{min-width:0;width:100%;height:30px;padding:5px 8px;border:1px solid #cbd5e3;border-radius:5px;background:#fff;color:#26354a}button{min-height:30px;line-height:1.4;padding:4px 9px;border:1px solid transparent;border-radius:5px;background:var(--accent,#315fbd);color:#fff;cursor:pointer;white-space:nowrap}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}@container(max-width:320px){div{grid-template-columns:minmax(0,1fr) auto auto}label{grid-column:1/-1;margin-bottom:1px}}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
         const input = shadow.getElementById('credential-key'), save = shadow.getElementById('credential-save'), clear = shadow.getElementById('credential-clear');
         credentialView = {host,shadow,input,save,clear,provider:null,baseURL:''};
         const current = () => {

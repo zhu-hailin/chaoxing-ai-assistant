@@ -21,7 +21,13 @@
         button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-expanded', 'false');
         button.setAttribute('aria-controls', `${id}-listbox`);
         const value = doc.createElement('span'); value.id = `${id}-picker-value`; value.className = 'model-picker-value';
-        const arrow = doc.createElement('span'); arrow.textContent = '⌄'; arrow.setAttribute('aria-hidden', 'true');
+        const arrow = doc.createElementNS('http://www.w3.org/2000/svg','svg');
+        arrow.classList.add('model-picker-arrow');arrow.setAttribute('viewBox','0 0 16 16');
+        arrow.setAttribute('width','14');arrow.setAttribute('height','14');arrow.setAttribute('fill','none');
+        arrow.setAttribute('stroke','currentColor');arrow.setAttribute('stroke-width','1.6');
+        arrow.setAttribute('stroke-linecap','round');arrow.setAttribute('stroke-linejoin','round');
+        arrow.setAttribute('aria-hidden','true');arrow.setAttribute('focusable','false');
+        const chevron=doc.createElementNS('http://www.w3.org/2000/svg','path');chevron.setAttribute('d','m4 6 4 4 4-4');arrow.append(chevron);
         button.append(value, arrow);
         if (label) {
             label.id ||= `${id}-picker-label`; label.htmlFor = button.id;

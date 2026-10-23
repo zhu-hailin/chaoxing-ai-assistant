@@ -2,10 +2,108 @@
     function initBackgroundPlayback() {
         if (window.top !== window.self || !isCourseStudyURL(location)) return null;
         if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
-        let active = null, closed = false;
+        let active = null, closed = false, lastScan = -Infinity;
+        const videos = new Map(), documents = new Map();
+        const notify = () => document.dispatchEvent(new window.Event('cx-ai-course-update'));
+        const standalone = () => [...videos.values()].find(record => record.video.isConnected && !record.video.paused && !record.video.ended)
+            || [...videos.values()].find(record => record.video.isConnected && record.armed && !record.video.ended)
+            || [...videos.values()].find(record => record.video.isConnected && !record.video.ended);
+        const allowed = record => {
+            const video=record.video;
+            if(closed || active || courseRunActive(document) || !record.identity
+                || courseScoreKey(document)!==record.identity || !video.isConnected || video.ended || video.error || video.seeking)return false;
+            const tree=courseFrameTree(document);
+            if(tree.inaccessible.length || !tree.documents.includes(video.ownerDocument) || courseBlocker(tree.documents)
+                || courseVideoQuizCandidate(video))return false;
+            const foreground=courseOwnerForegroundState(document);
+            return !courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
+        };
+        const recover = async (record, explicit=false) => {
+            const video=record.video;
+            if(record.pending || record.manual || !allowed(record) || !explicit&&(!courseForcePlaybackEnabled() || !record.armed || record.blocked)
+                || !video.paused || video.readyState<2)return;
+            if(explicit){record.attempts=0;record.blocked=false;record.requireUserStart=false;}
+            if(record.attempts>=COURSE_RUN_LIMITS.maxResumes){record.blocked=true;controller?.report('视频连续恢复无效，可点击“继续”重试','course-paused');notify();return;}
+            record.pending=true;record.attempts++;record.lastAttempt=Date.now();
+            record.abort=new AbortController();
+            try {
+                await requestCourseVideoPlayback(video,record.abort.signal);
+                if(closed || record.manual || record.requireUserStart || active || courseRunActive(document) || !allowed(record)) {
+                    // Runner 接管后由它决定播放状态，旧恢复回调不再碰播放器。
+                    if(!active && !courseRunActive(document))video.pause();
+                }
+            } catch(error) {
+                if(error.name!=='AbortError'&&error.code!=='ABORTED'&&!active&&!closed){record.blocked=true;controller?.report('视频恢复未成功，可点击“继续”重试','course-paused');}
+            } finally {record.pending=false;notify();}
+        };
+        const scan = () => {
+            let changedNodes=false;
+            const tree=courseFrameTree(document);
+            for(const [doc,close] of documents)if(!tree.documents.includes(doc)){close();documents.delete(doc);}
+            for(const doc of tree.documents)if(!documents.has(doc)) {
+                const discover=event=>{
+                    if(event.type==='playing'&&event.target?.tagName==='VIDEO'&&!videos.has(event.target) || event.type==='load'&&event.target?.tagName==='IFRAME') {
+                        try {scan();}catch{}
+                    }
+                };
+                doc.addEventListener('playing',discover,true);doc.addEventListener('load',discover,true);
+                documents.set(doc,()=>{doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);});
+            }
+            const found=new Set(tree.documents.slice(1).flatMap(doc=>[...doc.querySelectorAll('video')].filter(courseElementVisible)));
+            for(const [video,record] of videos)if(!found.has(video)) {record.close();videos.delete(video);changedNodes=true;}
+            for(const video of found)if(!videos.has(video)) {
+                const record={video,identity:courseScoreKey(document),armed:!video.paused&&!video.ended,manual:false,blocked:false,pending:false,
+                    attempts:0,lastAttempt:-Infinity,pausedAt:video.paused?Date.now():null,progress:Number(video.currentTime),requireUserStart:false,userStartUntil:0};
+                const changed=event=>{
+                    if(event.type==='playing') {
+                        clearTimeout(record.resumeTimer);
+                        if(record.manual){video.pause();return;}
+                        if(!record.requireUserStart || Date.now()<=record.userStartUntil){record.armed=true;record.requireUserStart=false;}
+                        record.pausedAt=null;
+                    } else if(event.type==='pause') {
+                        record.pausedAt??=Date.now();clearTimeout(record.resumeTimer);
+                        record.resumeTimer=setTimeout(()=>{if(!record.pending)record.promise=recover(record);},500);
+                    }
+                    else {record.armed=false;record.manual=false;}
+                    notify();
+                };
+                const input=event=>{if(courseVideoPauseInput(event,video))record.userStartUntil=Date.now()+2000;};
+                for(const type of ['playing','pause','ended','emptied'])video.addEventListener(type,changed);
+                for(const type of ['pointerdown','keydown'])video.ownerDocument.addEventListener(type,input,true);
+                record.close=()=>{
+                    record.armed=false;record.requireUserStart=true;clearTimeout(record.resumeTimer);record.abort?.abort();
+                    for(const type of ['playing','pause','ended','emptied'])video.removeEventListener(type,changed);
+                    for(const type of ['pointerdown','keydown'])video.ownerDocument.removeEventListener(type,input,true);
+                };
+                videos.set(video,record);
+                changedNodes=true;
+            }
+            if(changedNodes)notify();
+        };
+        const tick = () => {
+            if(closed)return;
+            try {
+                if(Date.now()-lastScan>=2000){lastScan=Date.now();scan();}
+                if(active || courseRunActive(document))return;
+                for(const record of videos.values()) {
+                    const video=record.video;
+                    if(video.ended)continue;
+                    if(!video.paused) {
+                        record.pausedAt=null;
+                        record.identity ||= courseScoreKey(document);
+                        if(Number(video.currentTime)-record.progress>=COURSE_RUN_LIMITS.resumeProgressSeconds){record.attempts=0;record.blocked=false;record.progress=Number(video.currentTime);}
+                    } else {
+                        record.pausedAt??=Date.now();
+                        if(!record.pending&&Date.now()-record.pausedAt>=500 && Date.now()-record.lastAttempt>=500)record.promise=recover(record);
+                    }
+                }
+            } catch { /* 页面切换时等待下次重新识别，不执行播放。 */ }
+        };
         const onMouseExit = event => {
-            if (closed || event.relatedTarget !== null || !active) return;
-            const context = active;
+            if (closed || event.relatedTarget !== null) return;
+            const record=!active&&standalone();
+            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual&&!courseVideoForegroundPolicy(record.video).required,onSuppressed:()=>{}};
+            if(!context)return;
             try {
                 if (!context.video.isConnected || context.video.paused || context.video.ended
                     || !context.canProtect()) return;
@@ -16,20 +114,57 @@
         };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
+            get controls() {
+                if(active)return {available:active.video.isConnected&&!active.video.ended&&(active.canToggle?.() ?? true),paused:active.isPaused?.() ?? active.video.paused};
+                const record=standalone();
+                return {available:Boolean(record&&!courseRunActive(document)),paused:Boolean(record&&(record.manual||record.video.paused))};
+            },
+            togglePause() {
+                if(active){if(active.canToggle?.()!==false)active.togglePause?.();notify();return;}
+                const record=standalone();if(!record || courseRunActive(document))return;
+                if(record.manual || record.video.paused) {
+                    record.manual=false;record.armed=true;if(!record.pending)record.promise=recover(record,true);
+                } else {record.manual=true;record.video.pause();}
+                notify();
+            },
+            refresh() {active?.settingsChanged?.();tick();notify();},
             activate(context) {
                 if (closed || !context?.video || typeof context.canProtect !== 'function'
                     || typeof context.onSuppressed !== 'function') return () => {};
                 active = context;
-                return () => { if (active === context) active = null; };
+                courseVideoPlaybackRequests.delete(context.video);
+                const record=videos.get(context.video);
+                if(record){record.armed=false;record.manual=false;record.requireUserStart=true;record.userStartUntil=0;clearTimeout(record.resumeTimer);if(record.pending){context.video.pause();record.abort?.abort();}}
+                notify();
+                const release = () => {
+                    if (active !== context)return;
+                    active=null;
+                    const current=videos.get(context.video);
+                    if(current){current.armed=false;current.manual=false;current.requireUserStart=true;current.userStartUntil=0;}
+                    notify();
+                };
+                release.settled=record?.pending?record.promise:null;
+                return release;
             },
             close() {
                 if (closed) return;
                 closed = true; active = null;
+                window.clearInterval(timer);
+                for(const record of videos.values())record.close();videos.clear();
+                for(const close of documents.values())close();documents.clear();
                 window.removeEventListener('mouseout', onMouseExit, true);
+                document.removeEventListener('visibilitychange',onForeground);
+                window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
+                document.removeEventListener('DOMContentLoaded',tick);
             }
         };
         window.addEventListener('mouseout', onMouseExit, true);
+        const onForeground=()=>{active?.wake?.();tick();};
+        const timer=window.setInterval(tick,500);
+        document.addEventListener('DOMContentLoaded',tick,{once:true});
+        document.addEventListener('visibilitychange',onForeground);
+        window.addEventListener('focus',onForeground);
         window.addEventListener('pagehide', manager.close, { once: true });
         initBackgroundPlayback.instance = manager;
         return manager;
@@ -699,8 +834,7 @@
         }
         shadow.getElementById('course-nav').hidden = view !== 'chapters';
         shadow.getElementById('panel').dataset.activeView = view;
-        shadow.getElementById('about').hidden = true;
-        shadow.getElementById('about-toggle').setAttribute('aria-expanded','false');
+        closeProjectIntro();
         panelView.activeView = view;
         if (view === 'chapters') refreshCourseSidebar();
         if (focus) shadow.getElementById(`nav-${view}`).focus();
@@ -715,6 +849,8 @@
             shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
         }
         shadow.getElementById('catalog-refresh').hidden = view !== 'catalog';
+        shadow.getElementById('catalog-locate').hidden = view !== 'catalog';
+        shadow.getElementById('catalog-heading-actions').hidden = view !== 'catalog';
         shadow.getElementById('course-nav').dataset.activeView = view;
         // 只改变显示与目录读取，不启动/停止 runner，不重置搜索、报告或配置。
         if (view === 'catalog') refreshCourseSidebar();
@@ -795,7 +931,7 @@
                 switchSettingsView(settingsButtons[next].dataset.settingsView,{focus:true});
             });
         });
-        switchSettingsView('model');
+        switchSettingsView('learning');
         switchChapterView('run');
         switchPanelView('questions');
     }
@@ -943,17 +1079,28 @@
             switchPanelView('model');
             el('provider-picker').focus();
         };
-        const setAboutVisible = visible => {
-            el('about').hidden = !visible;
-            el('about-toggle').setAttribute('aria-expanded', String(visible));
+        const about = el('about');
+        initProjectIntroDragging();
+        const showProjectIntro = () => {
+            if (!about.open) about.showModal();
+            panelView.repositionProjectIntro();
+            el('about-toggle').setAttribute('aria-expanded', 'true');
+            el('about-close').focus();
         };
-        el('about-toggle').onclick = () => setAboutVisible(el('about').hidden);
-        el('about-close').onclick = () => { setAboutVisible(false); el('about-toggle').focus(); };
+        el('about-toggle').onclick = showProjectIntro;
+        el('about-close').onclick = closeProjectIntro;
+        about.addEventListener('click', event => { if (event.target === about) closeProjectIntro(); });
+        about.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
+        about.addEventListener('close', () => {
+            panelView.cancelProjectIntroDrag();
+            el('about-toggle').setAttribute('aria-expanded', String(about.open));
+            if (!about.open && panelView.windowMode === 'open') el('about-toggle').focus();
+        });
         el('github').onclick = () => {
             if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(PROJECT_GITHUB_URL)) {
                 window.open(PROJECT_GITHUB_URL, '_blank', 'noopener,noreferrer');
             } else {
-                setAboutVisible(true);
+                showProjectIntro();
                 el('github-note').textContent = 'GitHub 仓库尚未创建，项目暂未发布；当前没有可访问的项目链接。';
             }
         };
@@ -1108,9 +1255,56 @@
         doc.addEventListener('cx-ai-assistant-window-activate', listener);
     }
 
+    function initProjectIntroDragging() {
+        const { shadow, host } = panelView, view = host.ownerDocument.defaultView;
+        const dialog = shadow.getElementById('about'), heading = dialog.querySelector('.about-heading');
+        let drag = null, positioned = false;
+        const position = (left, top) => {
+            const rect = dialog.getBoundingClientRect();
+            left = Math.max(0, Math.min(left, view.innerWidth - rect.width));
+            top = Math.max(0, Math.min(top, view.innerHeight - rect.height));
+            Object.assign(dialog.style, { inset: 'auto', margin: '0', left: `${left}px`, top: `${top}px` });
+            positioned = true;
+        };
+        const cancel = () => {
+            const id = drag?.id;
+            drag = null;
+            if (id !== undefined && heading.hasPointerCapture(id)) heading.releasePointerCapture(id);
+        };
+        const reposition = () => {
+            cancel();
+            if (!dialog.open || !positioned) return;
+            const rect = dialog.getBoundingClientRect();
+            position(rect.left, rect.top);
+        };
+        heading.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.target.closest('button,a')) return;
+            const rect = dialog.getBoundingClientRect();
+            drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+            heading.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+        heading.addEventListener('pointermove', event => {
+            if (drag?.id === event.pointerId) position(drag.left + event.clientX - drag.x, drag.top + event.clientY - drag.y);
+        });
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) heading.addEventListener(type, cancel);
+        panelView.cancelProjectIntroDrag = cancel;
+        panelView.repositionProjectIntro = reposition;
+        view.addEventListener('resize', reposition);
+        view.addEventListener('pagehide', () => { cancel(); view.removeEventListener('resize', reposition); }, { once: true });
+    }
+
+    function closeProjectIntro() {
+        panelView?.cancelProjectIntroDrag?.();
+        const dialog = panelView?.shadow.getElementById('about');
+        if (dialog?.open) dialog.close();
+        panelView?.shadow.getElementById('about-toggle').setAttribute('aria-expanded', 'false');
+    }
+
     function setAssistantWindowMode(mode) {
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
+        if(mode!=='open')closeProjectIntro();
         if(mode!=='open')closeResultImage();
         if(mode!=='open')panelView.clearRetryConfirmation?.();
         if(mode==='closed')clearCredentialInput();
@@ -1573,7 +1767,7 @@
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.29',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.30',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,

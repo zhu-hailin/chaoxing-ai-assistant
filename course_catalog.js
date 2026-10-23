@@ -217,6 +217,7 @@
         const doc = list.ownerDocument;
         const entries = catalog.context?.entries || [];
         const query = clean(shadow.getElementById('catalog-search').value).toLocaleLowerCase();
+        const located=entries.find(entry=>!entry.isGroup&&entry.active&&entry.id===catalog.locatedId&&catalog.locatedScope===catalog.context?.scopeKey&&Date.now()<catalog.locatedUntil);
         const byId = new Map(entries.map(entry => [entry.id, entry]));
         const included = new Set();
         for (const entry of entries) {
@@ -247,11 +248,12 @@
         const appendEntries = (parentId, container) => {
             for (const entry of children.get(parentId) || []) {
                 const item = make('li', 'catalog-item'); item.dataset.chapterId = entry.id;
-                const row = make('div', `catalog-row${entry.active ? ' is-active' : ''}${entry.isGroup ? ' is-group' : ''}`);
+                const row = make('div', `catalog-row${entry.active ? ' is-active' : ''}${entry.isGroup ? ' is-group' : ''}${located===entry?' is-located':''}`);
                 const nested = children.get(entry.id) || [];
+                if(entry.isGroup)item.classList.add('is-group-item');
                 const expanded = Boolean(query) || !catalog.collapsed.has(entry.id);
                 if (nested.length) {
-                    const fold = make('button', 'catalog-fold', expanded ? '▾' : '▸'); fold.type = 'button';
+                    const fold = make('button', 'catalog-fold'); fold.type = 'button';
                     fold.setAttribute('aria-label', `${expanded ? '收起' : '展开'} ${entry.title}`);
                     fold.setAttribute('aria-expanded', String(expanded));
                     fold.onclick = () => {
@@ -267,15 +269,30 @@
                     button.disabled = button.dataset.navigationAvailable!=='true' || controller.state.busy || courseRunActive();
                 }
                 if (entry.active) button.setAttribute('aria-current', 'page');
-                button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
+                button.title=`${entry.number} ${entry.title}`.trim();
+                const main=make('span','catalog-main');
+                if(entry.number)main.append(make('span','catalog-number',entry.number+' '));
+                main.append(make('span','catalog-title',entry.title));button.append(main);
                 const meta = make('span', 'catalog-meta');
                 if (entry.isGroup) {
                     const descendants = entries.filter(candidate => !candidate.isGroup && (() => {
                         for (let p = byId.get(candidate.parentId); p; p = byId.get(p.parentId)) if (p.id === entry.id) return true;
                         return false;
                     })());
-                    if (descendants.length) meta.append(make('span', 'catalog-state', `${descendants.filter(e => e.completed).length}/${descendants.length} 已完成`));
-                } else meta.append(make('span', `catalog-state${entry.completed ? ' is-complete' : ''}`, catalogStatus(entry)));
+                    if (descendants.length) {
+                        const completed=descendants.filter(e=>e.completed).length;
+                        const progress=make('progress','catalog-group-progress');progress.max=descendants.length;progress.value=completed;
+                        progress.setAttribute('aria-label',`${entry.title}：${completed}/${descendants.length} 已完成`);
+                        const state=make('span',`catalog-state is-group-count${completed===descendants.length?' is-complete':''}`,`${completed}/${descendants.length}`);
+                        state.title='已完成章节 / 章节总数';meta.append(progress,state);
+                    }
+                } else {
+                    if(entry.active)meta.append(make('span',`catalog-current${located===entry?' is-located-label':''}`,located===entry?'已定位':'当前'));
+                    const locked=!entry.active&&entry.navigation?.status==='sequence-locked';
+                    const unknown=!entry.active&&entry.navigation?.status==='unknown';
+                    const tone=locked?' is-locked':unknown?'':entry.completed?' is-complete':entry.pending>0?' is-pending':'';
+                    meta.append(make('span',`catalog-state${tone}`,catalogStatus(entry)));
+                }
                 for (const score of entry.scores) {
                     const badge = make('span', 'catalog-score', `测验 ${score.score} 分`);
                     badge.title = score.title || '已查看的测验成绩'; meta.append(badge);
@@ -297,9 +314,40 @@
         appendEntries(null, fragment);
         if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
         list.replaceChildren(fragment);
-        shadow.getElementById('catalog-status').textContent = entries.length ? catalog.context?.structure === 'legacy-h4'
+        shadow.getElementById('catalog-locate').textContent=located?'已定位':'定位当前';
+        shadow.getElementById('catalog-status').textContent = located ? `已定位：${located.number} ${located.title}`.trim() : entries.length ? catalog.context?.structure === 'legacy-h4'
             ? `共 ${entries.length} 个章节；旧版目录层级与完成状态未确认`
             : `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
+    }
+
+    function locateCurrentCourseChapter() {
+        if(!panelView?.catalog)return;
+        refreshCourseSidebar();
+        const {catalog,shadow}=panelView;
+        const entries=catalog.context?.entries||[],current=entries.filter(entry=>!entry.isGroup&&entry.active);
+        if(current.length!==1){
+            shadow.getElementById('catalog-status').textContent=current.length?'当前章节尚未明确，请刷新目录后重试':'暂未找到当前章节，请刷新目录后重试';return;
+        }
+        const entry=current[0],byId=new Map(entries.map(item=>[item.id,item])),seen=new Set([entry.id]);
+        shadow.getElementById('catalog-search').value='';
+        for(let parent=byId.get(entry.parentId);parent&&!seen.has(parent.id);parent=byId.get(parent.parentId)){
+            seen.add(parent.id);catalog.collapsed.delete(parent.id);
+        }
+        clearTimeout(catalog.locateTimer);
+        catalog.locatedId=entry.id;catalog.locatedScope=catalog.context.scopeKey;catalog.locatedUntil=Date.now()+1800;
+        renderCourseCatalog();
+        const list=shadow.getElementById('catalog-list');
+        const row=[...list.querySelectorAll('.catalog-row.is-active')].find(item=>item.parentElement.dataset.chapterId===entry.id);
+        if(row){
+            const bounds=list.getBoundingClientRect(),target=row.getBoundingClientRect();
+            const top=Math.max(0,Math.min(list.scrollHeight-list.clientHeight,list.scrollTop+target.top-bounds.top-(list.clientHeight-target.height)/2));
+            const reduced=list.ownerDocument.defaultView.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            list.scrollTo({top,behavior:reduced?'auto':'smooth'});
+        }
+        catalog.locateTimer=setTimeout(()=>{
+            catalog.locateTimer=null;catalog.locatedId=null;catalog.locatedUntil=0;
+            if(panelView?.catalog===catalog)renderCourseCatalog();
+        },1800);
     }
 
     function navigateCourseChapter(id) {
@@ -336,9 +384,11 @@
         const { shadow } = panelView;
         shadow.getElementById('catalog-search').oninput = renderCourseCatalog;
         shadow.getElementById('catalog-refresh').onclick = refreshCourseSidebar;
+        shadow.getElementById('catalog-locate').onclick = locateCurrentCourseChapter;
         refreshCourseSidebar();
         window.addEventListener('pagehide', () => {
             panelView?.catalog?.observer?.disconnect();
             clearTimeout(panelView?.catalog?.timer);
+            clearTimeout(panelView?.catalog?.locateTimer);
         }, { once: true });
     }

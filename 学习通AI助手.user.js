@@ -4,7 +4,7 @@
 // @homepageURL  https://github.com/zhu-hailin/chaoxing-ai-assistant
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.29
+// @version      1.30
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2917,7 +2917,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.29';
+    const ASSISTANT_VERSION = '1.30';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2965,7 +2965,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.29', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.30', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -4074,7 +4074,7 @@ Typr["U"] = {
         credentialView.provider = cfg.provider; credentialView.baseURL = cfg.baseURL;
         credentialView.input.disabled = busy; credentialView.save.disabled = busy;
         credentialView.clear.disabled = busy || !readProviderSetting(cfg.provider, 'key', '');
-        credentialView.input.placeholder = cfg.key ? '输入新 Key 替换，留空保留已保存值' : '输入当前平台 API Key';
+        credentialView.input.placeholder = cfg.key ? '输入新 Key，留空保留当前值' : '输入当前平台 API Key';
         credentialView.input.setAttribute('aria-label', `${getModelProvider(cfg.provider).name} API Key`);
     }
     function refreshCredentialStatus(provider) {
@@ -4086,7 +4086,7 @@ Typr["U"] = {
     function initCredentialEditor(host) {
         if (credentialView) return;
         const shadow = host.attachShadow({mode:'closed'});
-        shadow.innerHTML = `<style>*{box-sizing:border-box}label,input,button{font:inherit}div{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}label{min-width:65px;font-size:13px;color:var(--muted,#6c7b90)}input{flex:1;min-width:120px;width:180px;padding:8px;border:1px solid #cbd5e3;border-radius:6px;background:#fff;color:var(--ink,#26354a)}button{padding:7px 11px;border:1px solid transparent;border-radius:6px;background:var(--accent,#315fbd);color:#fff;cursor:pointer}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
+        shadow.innerHTML = `<style>:host{display:block;container-type:inline-size}*{box-sizing:border-box}label,input,button{font:inherit;font-size:12px}div{display:grid;grid-template-columns:64px minmax(90px,1fr) auto auto;align-items:center;gap:6px;margin:4px 0}label{color:var(--muted,#6c7b90)}input{min-width:0;width:100%;height:30px;padding:5px 8px;border:1px solid #cbd5e3;border-radius:5px;background:#fff;color:#26354a}button{min-height:30px;line-height:1.4;padding:4px 9px;border:1px solid transparent;border-radius:5px;background:var(--accent,#315fbd);color:#fff;cursor:pointer;white-space:nowrap}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}@container(max-width:320px){div{grid-template-columns:minmax(0,1fr) auto auto}label{grid-column:1/-1;margin-bottom:1px}}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
         const input = shadow.getElementById('credential-key'), save = shadow.getElementById('credential-save'), clear = shadow.getElementById('credential-clear');
         credentialView = {host,shadow,input,save,clear,provider:null,baseURL:''};
         const current = () => {
@@ -6566,6 +6566,7 @@ Typr["U"] = {
         const doc = list.ownerDocument;
         const entries = catalog.context?.entries || [];
         const query = clean(shadow.getElementById('catalog-search').value).toLocaleLowerCase();
+        const located=entries.find(entry=>!entry.isGroup&&entry.active&&entry.id===catalog.locatedId&&catalog.locatedScope===catalog.context?.scopeKey&&Date.now()<catalog.locatedUntil);
         const byId = new Map(entries.map(entry => [entry.id, entry]));
         const included = new Set();
         for (const entry of entries) {
@@ -6596,11 +6597,12 @@ Typr["U"] = {
         const appendEntries = (parentId, container) => {
             for (const entry of children.get(parentId) || []) {
                 const item = make('li', 'catalog-item'); item.dataset.chapterId = entry.id;
-                const row = make('div', `catalog-row${entry.active ? ' is-active' : ''}${entry.isGroup ? ' is-group' : ''}`);
+                const row = make('div', `catalog-row${entry.active ? ' is-active' : ''}${entry.isGroup ? ' is-group' : ''}${located===entry?' is-located':''}`);
                 const nested = children.get(entry.id) || [];
+                if(entry.isGroup)item.classList.add('is-group-item');
                 const expanded = Boolean(query) || !catalog.collapsed.has(entry.id);
                 if (nested.length) {
-                    const fold = make('button', 'catalog-fold', expanded ? '▾' : '▸'); fold.type = 'button';
+                    const fold = make('button', 'catalog-fold'); fold.type = 'button';
                     fold.setAttribute('aria-label', `${expanded ? '收起' : '展开'} ${entry.title}`);
                     fold.setAttribute('aria-expanded', String(expanded));
                     fold.onclick = () => {
@@ -6616,15 +6618,30 @@ Typr["U"] = {
                     button.disabled = button.dataset.navigationAvailable!=='true' || controller.state.busy || courseRunActive();
                 }
                 if (entry.active) button.setAttribute('aria-current', 'page');
-                button.append(make('span', 'catalog-title', `${entry.number} ${entry.title}`.trim()));
+                button.title=`${entry.number} ${entry.title}`.trim();
+                const main=make('span','catalog-main');
+                if(entry.number)main.append(make('span','catalog-number',entry.number+' '));
+                main.append(make('span','catalog-title',entry.title));button.append(main);
                 const meta = make('span', 'catalog-meta');
                 if (entry.isGroup) {
                     const descendants = entries.filter(candidate => !candidate.isGroup && (() => {
                         for (let p = byId.get(candidate.parentId); p; p = byId.get(p.parentId)) if (p.id === entry.id) return true;
                         return false;
                     })());
-                    if (descendants.length) meta.append(make('span', 'catalog-state', `${descendants.filter(e => e.completed).length}/${descendants.length} 已完成`));
-                } else meta.append(make('span', `catalog-state${entry.completed ? ' is-complete' : ''}`, catalogStatus(entry)));
+                    if (descendants.length) {
+                        const completed=descendants.filter(e=>e.completed).length;
+                        const progress=make('progress','catalog-group-progress');progress.max=descendants.length;progress.value=completed;
+                        progress.setAttribute('aria-label',`${entry.title}：${completed}/${descendants.length} 已完成`);
+                        const state=make('span',`catalog-state is-group-count${completed===descendants.length?' is-complete':''}`,`${completed}/${descendants.length}`);
+                        state.title='已完成章节 / 章节总数';meta.append(progress,state);
+                    }
+                } else {
+                    if(entry.active)meta.append(make('span',`catalog-current${located===entry?' is-located-label':''}`,located===entry?'已定位':'当前'));
+                    const locked=!entry.active&&entry.navigation?.status==='sequence-locked';
+                    const unknown=!entry.active&&entry.navigation?.status==='unknown';
+                    const tone=locked?' is-locked':unknown?'':entry.completed?' is-complete':entry.pending>0?' is-pending':'';
+                    meta.append(make('span',`catalog-state${tone}`,catalogStatus(entry)));
+                }
                 for (const score of entry.scores) {
                     const badge = make('span', 'catalog-score', `测验 ${score.score} 分`);
                     badge.title = score.title || '已查看的测验成绩'; meta.append(badge);
@@ -6646,9 +6663,40 @@ Typr["U"] = {
         appendEntries(null, fragment);
         if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
         list.replaceChildren(fragment);
-        shadow.getElementById('catalog-status').textContent = entries.length ? catalog.context?.structure === 'legacy-h4'
+        shadow.getElementById('catalog-locate').textContent=located?'已定位':'定位当前';
+        shadow.getElementById('catalog-status').textContent = located ? `已定位：${located.number} ${located.title}`.trim() : entries.length ? catalog.context?.structure === 'legacy-h4'
             ? `共 ${entries.length} 个章节；旧版目录层级与完成状态未确认`
             : `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
+    }
+
+    function locateCurrentCourseChapter() {
+        if(!panelView?.catalog)return;
+        refreshCourseSidebar();
+        const {catalog,shadow}=panelView;
+        const entries=catalog.context?.entries||[],current=entries.filter(entry=>!entry.isGroup&&entry.active);
+        if(current.length!==1){
+            shadow.getElementById('catalog-status').textContent=current.length?'当前章节尚未明确，请刷新目录后重试':'暂未找到当前章节，请刷新目录后重试';return;
+        }
+        const entry=current[0],byId=new Map(entries.map(item=>[item.id,item])),seen=new Set([entry.id]);
+        shadow.getElementById('catalog-search').value='';
+        for(let parent=byId.get(entry.parentId);parent&&!seen.has(parent.id);parent=byId.get(parent.parentId)){
+            seen.add(parent.id);catalog.collapsed.delete(parent.id);
+        }
+        clearTimeout(catalog.locateTimer);
+        catalog.locatedId=entry.id;catalog.locatedScope=catalog.context.scopeKey;catalog.locatedUntil=Date.now()+1800;
+        renderCourseCatalog();
+        const list=shadow.getElementById('catalog-list');
+        const row=[...list.querySelectorAll('.catalog-row.is-active')].find(item=>item.parentElement.dataset.chapterId===entry.id);
+        if(row){
+            const bounds=list.getBoundingClientRect(),target=row.getBoundingClientRect();
+            const top=Math.max(0,Math.min(list.scrollHeight-list.clientHeight,list.scrollTop+target.top-bounds.top-(list.clientHeight-target.height)/2));
+            const reduced=list.ownerDocument.defaultView.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            list.scrollTo({top,behavior:reduced?'auto':'smooth'});
+        }
+        catalog.locateTimer=setTimeout(()=>{
+            catalog.locateTimer=null;catalog.locatedId=null;catalog.locatedUntil=0;
+            if(panelView?.catalog===catalog)renderCourseCatalog();
+        },1800);
     }
 
     function navigateCourseChapter(id) {
@@ -6685,10 +6733,12 @@ Typr["U"] = {
         const { shadow } = panelView;
         shadow.getElementById('catalog-search').oninput = renderCourseCatalog;
         shadow.getElementById('catalog-refresh').onclick = refreshCourseSidebar;
+        shadow.getElementById('catalog-locate').onclick = locateCurrentCourseChapter;
         refreshCourseSidebar();
         window.addEventListener('pagehide', () => {
             panelView?.catalog?.observer?.disconnect();
             clearTimeout(panelView?.catalog?.timer);
+            clearTimeout(panelView?.catalog?.locateTimer);
         }, { once: true });
     }
     // 仅控制已确认的超星 PPT 阅读器；不交换账户、资源地址、Key 或任务上报。
@@ -6830,7 +6880,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.29');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.30');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -8043,6 +8093,44 @@ Typr["U"] = {
     }
     const courseRunnerControllers = new WeakMap();
     function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
+    function courseForcePlaybackEnabled() {return get('cx_course_force_playback',true)!==false;}
+    const courseVideoPlaybackRequests=new WeakMap();
+    function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs) {
+        if(signal?.aborted)return Promise.reject(cancelledError());
+        const request=Symbol('playback');courseVideoPlaybackRequests.set(video,request);
+        if(!video.paused||video.ended)return Promise.resolve();
+        return new Promise((resolve,reject)=>{
+            let settled=false,abandoned=false,timer;
+            const finish=error=>{
+                if(settled)return;settled=true;clearTimeout(timer);
+                video.removeEventListener('playing',playing);video.removeEventListener('pause',paused);video.removeEventListener('ended',ended);video.removeEventListener('error',failed);signal?.removeEventListener('abort',cancel);
+                if(error)reject(error);else resolve();
+            };
+            const playing=()=>{if(!video.paused)finish();};
+            const paused=()=>finish(Object.assign(new Error('播放已暂停'),{name:'AbortError'}));
+            const ended=()=>finish();
+            const failed=()=>finish(new Error('视频播放失败'));
+            const cancel=()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(cancelledError());};
+            video.addEventListener('playing',playing);video.addEventListener('pause',paused);video.addEventListener('ended',ended);video.addEventListener('error',failed);signal?.addEventListener('abort',cancel,{once:true});
+            timer=setTimeout(()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(courseTimeoutError('视频播放请求超时'));},timeoutMs);
+            try {
+                const button=courseVideoStartButton(video);
+                if(button)button.click();
+                else Promise.resolve(video.play()).then(()=>{
+                    if((abandoned||signal?.aborted)&&courseVideoPlaybackRequests.get(video)===request)video.pause();
+                    finish();
+                },error=>finish(error));
+                if(!video.paused||video.ended)finish();
+            } catch(error){finish(error);}
+        });
+    }
+    function courseVideoDelaySettings(value={}) {
+        if(!value||typeof value!=='object')value={};
+        const seconds=(value,fallback)=>Number.isInteger(value)&&value>=0&&value<=60?value:fallback;
+        const min=seconds(value.minSeconds,5),max=seconds(value.maxSeconds,15);
+        return {enabled:value.enabled===true,mode:value.mode==='random'?'random':'fixed',fixedSeconds:seconds(value.fixedSeconds,10),minSeconds:Math.min(min,max),maxSeconds:Math.max(min,max)};
+    }
+    function readCourseVideoDelaySettings() {return courseVideoDelaySettings(get('cx_course_video_delay',{}));}
     function courseLearningSettings(value={}) {
         const minutes=(raw,min,max,fallback)=>{const n=Number(raw);return Number.isInteger(n)&&n>=min&&n<=max?n:fallback;};
         return {restEnabled:value.restEnabled===true,studyMinutes:minutes(value.studyMinutes,10,180,50),restMinutes:minutes(value.restMinutes,1,60,10)};
@@ -8312,7 +8400,7 @@ Typr["U"] = {
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10 } = {}) {
+            async start({ submit = false, skipLearned = true, fromCurrent = false, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings() } = {}) {
                 if (current || courseRunActive(owner)) return;
                 if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
@@ -8386,12 +8474,15 @@ Typr["U"] = {
                 if(retry)report.retryOf={startedAt:previous.report.startedAt,endedAt:previous.report.endedAt};
                 const learning=courseLearningSettings(resume?previous.learning||{}:{restEnabled,studyMinutes,restMinutes});
                 const savedPacing=resume?previous.pacing:null;
+                const delaySettings=courseVideoDelaySettings(resume?previous.videoDelay||{}:videoDelay);
+                const savedDelay=resume?previous.videoDelayUntil:null;
                 const protection=courseRunProtection(resume?previous:null,report.chapters,resume?previous.chapterIndex:0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
                 report.protection=protection;
                 const run = {id:crypto.randomUUID(),queue,report,settings,protection,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
                     previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? false : submit===true,
-                    learning,pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
+                    learning,videoDelay:delaySettings,videoDelayUntil:Number.isFinite(savedDelay)&&savedDelay>=0&&savedDelay<=now()+60000?savedDelay:null,
+                    pacing:{activeMs:Number.isFinite(savedPacing?.activeMs)?Math.max(0,savedPacing.activeMs):0,activeStartedAt:now(),restUntil:learning.restEnabled&&Number.isFinite(savedPacing?.restUntil)?savedPacing.restUntil:null},
                     skipLearned:resume ? previous.skipLearned!==false : skipLearned!==false,
                     continueOnTimeout:resume ? previous.continueOnTimeout!==false : continueOnTimeout!==false,
                     muteVideo:resume ? previous.muteVideo!==false : muteVideo!==false,
@@ -8425,7 +8516,7 @@ Typr["U"] = {
                     report.pacing={...run.pacing,restEnabled:run.learning.restEnabled};
                     set(key,{status:report.status,session,ownerId:run.id,handoff:run.handoff===true,heartbeat:now(),settings:modelConfigurationSignature(settings),submit:run.submit,skipLearned:run.skipLearned,fromCurrent:run.fromCurrent,startChapterId:run.startChapterId,continueOnTimeout:run.continueOnTimeout,muteVideo:run.muteVideo,skipUnanswerable:run.skipUnanswerable,videoQuizAuto:run.videoQuizAuto,speedEnabled:run.speedEnabled,
                         scope,retrying:run.retrying,protection:{...run.protection},originalQueue:run.originalQueue,previousReport:run.previousReport,
-                        learning:run.learning,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,tabProgress:run.tabProgress,report});
+                        learning:run.learning,videoDelay:run.videoDelay,videoDelayUntil:run.videoDelayUntil,pacing:{...run.pacing},rangeStart:run.rangeStart,queue,chapterIndex:run.chapterIndex,tabIndex:run.tabIndex,tabProgress:run.tabProgress,report});
                     run.claimed=true;
                     run.lastSaved = now();
                 };
@@ -8625,7 +8716,7 @@ Typr["U"] = {
                         let wakeMedia=null,pendingSeek=null,fatalError=null,replay=null,requiredReplay=null;
                         let excludedWaitMs=0,waitingStartedAt=null,foregroundWaitingStartedAt=null,manualWaitingStartedAt=null,quizWaitingStartedAt=null;
                         let foregroundPausePending=false,policyPauseExpected=false,playingEventCount=0;
-                        const pauseControl={manualIntentUntil:0,manualPaused:false,lastAttemptAt:-Infinity,recoveryBlocked:false};
+                        const pauseControl={manualIntentUntil:0,manualPaused:false,scriptPaused:false,resumeRequested:false,pausedAt:null,lastAttemptAt:-Infinity,recoveryBlocked:false};
                         let playRequestPending=false;
                         const speedAttempts=new WeakMap();
                         let speedGeneration=0;
@@ -8778,7 +8869,8 @@ Typr["U"] = {
                             if(['pause','seeking','loadstart','emptied'].includes(event.type))suspendSpeed();
                             if(['loadstart','emptied'].includes(event.type))speedGeneration++;
                             const state=snapshot(event.type);observe(state);
-                            if(state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(!courseForcePlaybackEnabled()&&state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(event.type==='playing'&&pauseControl.scriptPaused&&!video.paused){policyPauseExpected=true;video.pause();}
                             if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
                             // timeupdate 只维护可信采样，不占用最近 12 条关键事件日志。
@@ -8786,17 +8878,18 @@ Typr["U"] = {
                             task.playbackState=state;
                             if(event.type==='pause'){
                                 task.pauseCount++;task.lastPause=state;
-                                if(!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!courseForcePlaybackEnabled()&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!policyPauseExpected&&!pauseControl.scriptPaused)pauseControl.pausedAt??=now();
                                 policyPauseExpected=false;
                             }
-                            if(event.type==='playing'&&!video.paused){foregroundPausePending=false;playingEventCount++;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;}
+                            if(event.type==='playing'&&!video.paused){foregroundPausePending=false;playingEventCount++;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;pauseControl.pausedAt=null;}
                             task.playbackEvents.push(state);if(task.playbackEvents.length>12)task.playbackEvents.shift();
                             wakeMedia?.();
                         };
                         // 媒体事件唤醒当前轮询；避免暂停后只能等后台定时器恢复调度。
-                        const waitForMedia=async()=>{
+                        const waitForMedia=async(ms=limits.pollMs)=>{
                             let wake;const mediaEvent=new Promise(resolve=>{wake=resolve;wakeMedia=resolve;});
-                            try {await race(Promise.race([wait(limits.pollMs),mediaEvent]));}
+                            try {await race(Promise.race([wait(ms),mediaEvent]));}
                             finally {if(wakeMedia===wake)wakeMedia=null;}
                         };
                         const popupKey=`cx_video_quiz:${scope}:${entry.id}:${run.expectedTab || 'current'}:${task.number || 1}`;
@@ -8868,35 +8961,53 @@ Typr["U"] = {
                             suspendSpeed();
                             if(manualWaitingStartedAt===null){
                                 manualWaitingStartedAt=now();task.pauseState.waitCount++;task.pauseState.waiting=true;
-                                task.pauseState.reason=pauseControl.recoveryBlocked?'连续恢复无效，请返回课程页手动播放':'已手动暂停，请手动播放后继续';
+                                task.pauseState.reason=pauseControl.scriptPaused?'已通过脚本暂停，点击继续':pauseControl.recoveryBlocked?'连续恢复无效，请返回课程页手动播放':'已手动暂停，请手动播放后继续';
                                 task.backgroundState.category=pauseControl.recoveryBlocked?'recovery-blocked':'manual';task.backgroundState.reason=task.pauseState.reason;
                                 syncVideoWaitBudget();pausePacing();
                             }
                             try {
-                                while(video.paused&&!video.ended){
+                                while((video.paused||pauseControl.scriptPaused)&&!video.ended){
+                                    if(!pauseControl.scriptPaused&&(courseForcePlaybackEnabled()||pauseControl.resumeRequested))break;
                                     await handleVideoQuiz();guard();await waitForVideoForeground();
                                     if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
                                     if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                    emit('视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
+                                    emit(pauseControl.scriptPaused?'视频已暂停，点击脚本“继续”':'视频已暂停，等待你手动播放后继续','course-paused');await waitForMedia();
                                 }
                                 foregroundPausePending=false;pauseControl.manualPaused=false;pauseControl.manualIntentUntil=0;
                                 task.backgroundState.category='playing';task.backgroundState.reason=null;
                             } finally {
                                 if(manualWaitingStartedAt!==null)task.pauseState.waitMs+=Math.max(0,now()-manualWaitingStartedAt);
-                                manualWaitingStartedAt=null,quizWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
+                                manualWaitingStartedAt=null;task.pauseState.waiting=false;syncVideoWaitBudget();
                                 if(foregroundWaitingStartedAt===null&&quizWaitingStartedAt===null)resumePacing();
                             }
                         };
                         const onPlayerInput=event=>{
+                            if(courseForcePlaybackEnabled())return;
                             if(context.skipped||run.cancelled||video.paused||video.ended||!courseVideoPauseInput(event,video))return;
                             pauseControl.manualIntentUntil=now()+limits.videoManualPauseIntentMs;
                         };
                         const pauseDocuments=[...new Set([owner,video.ownerDocument])];
                         for(const doc of pauseDocuments)for(const type of ['pointerdown','click','keydown'])doc.addEventListener(type,onPlayerInput,true);
                         const releaseProtection=backgroundPlaybackGuard?.activate({video,
+                            isPaused:()=>pauseControl.scriptPaused||video.paused,
+                            canToggle:()=>!context.submitting&&quizWaitingStartedAt===null&&!courseVideoQuizCandidate(video),
+                            wake:()=>wakeMedia?.(),
+                            settingsChanged:()=>{
+                                if(courseForcePlaybackEnabled()&&!pauseControl.scriptPaused){pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;pauseControl.manualIntentUntil=0;}
+                                wakeMedia?.();
+                            },
+                            togglePause:()=>{
+                                guard();
+                                if(pauseControl.scriptPaused||video.paused){
+                                    pauseControl.scriptPaused=false;pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;
+                                    pauseControl.resumeRequested=true;pauseControl.manualIntentUntil=0;pauseControl.pausedAt=now()-500;
+                                    task.unstableResumes=0;
+                                } else {pauseControl.scriptPaused=true;policyPauseExpected=true;video.pause();}
+                                wakeMedia?.();
+                            },
                             canProtect:()=>{
                                 if(current!==run||run.cancelled||context!==run.chapter||context.skipped||context.submitting||run.resting
-                                    ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
+                                    ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.scriptPaused||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
                                     ||manualWaitingStartedAt!==null||foregroundWaitingStartedAt!==null||quizWaitingStartedAt!==null
                                     ||task.foregroundState.required||courseVideoForegroundPolicy(video).required||courseVideoQuizCandidate(video))return false;
                                 guard();return courseFrameTree(owner).documents.includes(video.ownerDocument);
@@ -8933,29 +9044,30 @@ Typr["U"] = {
                                             if(pendingSeek){await waitForMedia();continue;}
                                         }
                                         // 明确手动暂停交给人工等待；未知中断可有限重试，浏览器拒绝不能绕过。
-                                        if(pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
+                                        if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
+                                        if(!courseForcePlaybackEnabled()&&pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
                                         if(playError?.name==='AbortError'&&(task.foregroundState.waitCount>foregroundWaitCount
                                             ||!pauseControl.manualPaused))playError=null;
                                         if(playError)throw playError;
                                         // 已收到真正开始播放的事件，随后暂停交给人工暂停流程，不能抢播。
                                         if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)break;
-                                        if(recovery&&task.unstableResumes>=limits.maxResumes){pauseControl.recoveryBlocked=true;return;}
+                                        if(recovery&&task.unstableResumes>=limits.maxResumes){
+                                            if(courseForcePlaybackEnabled())throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
+                                            pauseControl.recoveryBlocked=true;return;
+                                        }
                                         if(videoBudgetNow()>=startDeadline)throw courseTimeoutError('视频启动超时，播放入口重试后仍未开始播放');
-                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?limits.resumeMs:limits.videoStartRetryMs)
-                                            &&(!recovery||now()-pauseControl.lastAttemptAt>=limits.resumeMs)) {
+                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
+                                            &&(!recovery||now()-pauseControl.lastAttemptAt>=(courseForcePlaybackEnabled()?500:limits.resumeMs))) {
                                             lastAttemptAt=videoBudgetNow();pauseControl.lastAttemptAt=now();foregroundWaitCount=task.foregroundState.waitCount;
                                             task.startAttempts=(task.startAttempts||0)+1;
                                             if(recovery){
                                                 if(task.unstableResumes===0)resumeProgress=0;
                                                 task.resumes++;task.unstableResumes++;task.backgroundState.recoveryAttempts++;task.backgroundState.category='recovering';
                                             }
-                                            const button=courseVideoStartButton(video);
-                                            if(button)button.click();
-                                            else {
-                                                playRequestPending=true;
-                                                Promise.resolve(video.play()).then(()=>{if(context.abort.signal.aborted||run.cancelled)video.pause();},error=>{playError=error;})
-                                                    .finally(()=>{playRequestPending=false;wakeMedia?.();});
-                                            }
+                                            playRequestPending=true;
+                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs).then(()=>{
+                                                if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                            },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
                                         }
                                         emit('视频尚未开始播放，等待启动重试…','course-video-start');
@@ -8967,6 +9079,27 @@ Typr["U"] = {
                                     throw Object.assign(new Error(error.name==='NotAllowedError'?'浏览器阻止自动播放，请手动启用播放后重新开始':`视频无法启动：${error.message}`),{code:error.code});
                                 }
                             };
+                            if(releaseProtection.settled)await race(releaseProtection.settled);
+                            if(run.videoDelay.enabled&&run.videoDelayUntil!==null){
+                                const deadline=run.videoDelayUntil;
+                                const manualStart=event=>{if(courseVideoPauseInput(event,video))pauseControl.resumeRequested=true;};
+                                video.ownerDocument.addEventListener('pointerdown',manualStart,true);video.ownerDocument.addEventListener('keydown',manualStart,true);
+                                pausePacing();
+                                try {
+                                    while(now()<deadline&&!pauseControl.resumeRequested){
+                                        guard();await waitForVideoForeground();
+                                        if(!video.isConnected||!courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
+                                        if(!video.paused){policyPauseExpected=true;video.pause();}
+                                        emit(`下一段视频将在 ${Math.ceil(Math.max(0,deadline-now())/1000)} 秒后播放`,'course-video-delay');
+                                        await waitForMedia(Math.min(limits.pollMs,Math.max(1,deadline-now())));
+                                    }
+                                    run.videoDelayUntil=null;save();
+                                } finally {
+                                    video.ownerDocument.removeEventListener('pointerdown',manualStart,true);video.ownerDocument.removeEventListener('keydown',manualStart,true);resumePacing();
+                                }
+                            }
+                            if(pauseControl.scriptPaused)await waitForManualPlayback();
+                            pauseControl.resumeRequested=false;
                             if(video.paused)await startPlayback();
                             if(video.paused&&!video.ended&&pauseControl.manualPaused)await waitForManualPlayback();
                             emit('已启动视频，正在读取时长…','course-video');
@@ -8977,17 +9110,18 @@ Typr["U"] = {
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
                                 await waitForVideoForeground();
                                 await handleVideoQuiz();
+                                if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
                                 collectVideoInfo();
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if(video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!courseForcePlaybackEnabled()&&video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){
                                     if(video.paused){pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;}
-                                    if(video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
+                                    if(!courseForcePlaybackEnabled()&&video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
                                     else await waitForMedia();
                                     continue;
                                 }
@@ -9004,12 +9138,18 @@ Typr["U"] = {
                                 if(replay&&currentSample.budgetAt>=replayDeadline(currentSample.budgetAt)){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
                                 if(!video.ended&&video.paused){
                                     // 未收到 pause 事件时也回读可信输入意图；不能因后台事件排队而抢播。
-                                    if(pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
+                                    if(!courseForcePlaybackEnabled()&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
                                     pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;
-                                    if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
+                                    if(courseForcePlaybackEnabled()){
+                                        pauseControl.manualPaused=false;
+                                        if(pauseControl.recoveryBlocked)throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
+                                    } else if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
                                     if(videoBudgetNow()-lastMotionAt>=limits.stallMs)throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
-                                    task.backgroundState.category='unknown';task.backgroundState.reason='暂停来源未确认，按旧版规则有限恢复';
-                                    if(video.readyState>=2&&now()-pauseControl.lastAttemptAt>=limits.resumeMs){
+                                    task.backgroundState.category='unknown';task.backgroundState.reason=courseForcePlaybackEnabled()?'强制连续播放：暂停后有限恢复':'暂停来源未确认，按旧版规则有限恢复';
+                                    pauseControl.pausedAt??=now();
+                                    const retryDelay=courseForcePlaybackEnabled()?500:limits.resumeMs;
+                                    if(video.readyState>=2&&now()-pauseControl.pausedAt>=(courseForcePlaybackEnabled()?500:0)&&now()-pauseControl.lastAttemptAt>=retryDelay){
+                                        pauseControl.resumeRequested=false;
                                         emit('视频暂停，正在尝试恢复播放','course-video');await startPlayback(true);
                                     }else await waitForMedia();
                                     continue;
@@ -9039,6 +9179,10 @@ Typr["U"] = {
                                 emit('视频已结束，正在整理已采样的画面信息…','course-video');await race(videoInfo.flush());guard();
                             }
                             task.status='done';task.endedAt=now();report.videos++;
+                            if(run.videoDelay.enabled){
+                                const cfg=run.videoDelay,seconds=cfg.mode==='random'?cfg.minSeconds+Math.floor(Math.random()*(cfg.maxSeconds-cfg.minSeconds+1)):cfg.fixedSeconds;
+                                run.videoDelayUntil=now()+seconds*1000;save();
+                            }
                         } finally {
                             suspendSpeed();
                             releaseProtection();if(run.releaseVideoProtection===releaseProtection)run.releaseVideoProtection=null;
@@ -9670,6 +9814,40 @@ Typr["U"] = {
         };
         const skipLearned=s.getElementById('course-skip-learned'),fromCurrent=s.getElementById('course-from-current'),timeoutNext=s.getElementById('course-timeout-next'),muteVideo=s.getElementById('course-mute-video'),skipUnanswerable=s.getElementById('course-skip-unanswerable'),videoQuizAuto=s.getElementById('course-video-quiz-auto'),speedEnabled=s.getElementById('course-speed-enabled');
         const autoSubmit=s.getElementById('course-auto-submit');
+        const forcePlayback=s.getElementById('course-force-playback'),videoPause=s.getElementById('course-video-pause');
+        forcePlayback.checked=courseForcePlaybackEnabled();
+        forcePlayback.onchange=event=>{
+            if(!trustedAssistantActivation(event,forcePlayback,'change')){forcePlayback.checked=courseForcePlaybackEnabled();return;}
+            set('cx_course_force_playback',forcePlayback.checked);backgroundPlaybackGuard?.refresh();render();
+        };
+        videoPause.onclick=event=>{
+            if(!trustedAssistantActivation(event,videoPause))return;
+            try {backgroundPlaybackGuard?.togglePause();}catch(error){ctl.report(error.message,'error');}
+            render();
+        };
+        const delayEnabled=s.getElementById('course-video-delay-enabled'),delayMode=s.getElementById('course-video-delay-mode'),
+            delayFixed=s.getElementById('course-video-delay-fixed'),delayMin=s.getElementById('course-video-delay-min'),delayMax=s.getElementById('course-video-delay-max');
+        const renderDelay=()=>{
+            const cfg=readCourseVideoDelaySettings(),random=cfg.mode==='random';
+            delayEnabled.checked=cfg.enabled;delayMode.value=cfg.mode;delayFixed.value=cfg.fixedSeconds;delayMin.value=cfg.minSeconds;delayMax.value=cfg.maxSeconds;
+            s.getElementById('course-video-delay-fields').hidden=!cfg.enabled;
+            delayFixed.hidden=random;s.getElementById('course-video-delay-random').hidden=!random;
+            s.getElementById('course-video-delay-value').textContent=random?`${cfg.minSeconds}–${cfg.maxSeconds} 秒`:`${cfg.fixedSeconds} 秒`;
+            s.getElementById('course-video-delay-random').style.setProperty('--delay-min',`${cfg.minSeconds/60*100}%`);
+            s.getElementById('course-video-delay-random').style.setProperty('--delay-max',`${cfg.maxSeconds/60*100}%`);
+            delayMin.style.zIndex=cfg.minSeconds===60?'3':'';
+            for(const control of [delayEnabled,delayMode,delayFixed,delayMin,delayMax])control.disabled=courseRunActive(doc)||ctl.state.busy;
+        };
+        for(const [control,field,type] of [[delayEnabled,'enabled','change'],[delayMode,'mode','change'],[delayFixed,'fixedSeconds','input'],[delayMin,'minSeconds','input'],[delayMax,'maxSeconds','input']]) {
+            control.addEventListener(type,event=>{
+                if(!trustedAssistantActivation(event,control,type)||courseRunActive(doc)||ctl.state.busy){renderDelay();return;}
+                const cfg=readCourseVideoDelaySettings();
+                cfg[field]=field==='enabled'?control.checked:field==='mode'?control.value:Number(control.value);
+                if(field==='minSeconds')cfg.minSeconds=Math.min(cfg.minSeconds,cfg.maxSeconds);
+                if(field==='maxSeconds')cfg.maxSeconds=Math.max(cfg.maxSeconds,cfg.minSeconds);
+                set('cx_course_video_delay',courseVideoDelaySettings(cfg));renderDelay();
+            });
+        }
         const failureProtection=s.getElementById('course-failure-protection');
         failureProtection.checked=get('cx_course_failure_protection_enabled',false)===true;
         failureProtection.onchange=event=>{
@@ -9756,6 +9934,11 @@ Typr["U"] = {
         };
         const render=()=>{
             const running=courseRunActive(doc),report=latestReport();
+            forcePlayback.checked=courseForcePlaybackEnabled();
+            forcePlayback.disabled=!backgroundPlaybackGuard;
+            const playback=backgroundPlaybackGuard?.controls;
+            videoPause.disabled=!playback?.available;videoPause.textContent=playback?.paused?'继续':'暂停';
+            renderDelay();
             renderPending(report);
             const lease=owner?.getElementById('cx-ai-course-lease');
             if(stopRunId && (!running || lease?.getAttribute('data-run-id')!==stopRunId || Date.now()>=stopUntil))clearStopConfirmation();
@@ -9973,7 +10156,13 @@ Typr["U"] = {
         button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-expanded', 'false');
         button.setAttribute('aria-controls', `${id}-listbox`);
         const value = doc.createElement('span'); value.id = `${id}-picker-value`; value.className = 'model-picker-value';
-        const arrow = doc.createElement('span'); arrow.textContent = '⌄'; arrow.setAttribute('aria-hidden', 'true');
+        const arrow = doc.createElementNS('http://www.w3.org/2000/svg','svg');
+        arrow.classList.add('model-picker-arrow');arrow.setAttribute('viewBox','0 0 16 16');
+        arrow.setAttribute('width','14');arrow.setAttribute('height','14');arrow.setAttribute('fill','none');
+        arrow.setAttribute('stroke','currentColor');arrow.setAttribute('stroke-width','1.6');
+        arrow.setAttribute('stroke-linecap','round');arrow.setAttribute('stroke-linejoin','round');
+        arrow.setAttribute('aria-hidden','true');arrow.setAttribute('focusable','false');
+        const chevron=doc.createElementNS('http://www.w3.org/2000/svg','path');chevron.setAttribute('d','m4 6 4 4 4-4');arrow.append(chevron);
         button.append(value, arrow);
         if (label) {
             label.id ||= `${id}-picker-label`; label.htmlFor = button.id;
@@ -10087,10 +10276,108 @@ Typr["U"] = {
     function initBackgroundPlayback() {
         if (window.top !== window.self || !isCourseStudyURL(location)) return null;
         if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
-        let active = null, closed = false;
+        let active = null, closed = false, lastScan = -Infinity;
+        const videos = new Map(), documents = new Map();
+        const notify = () => document.dispatchEvent(new window.Event('cx-ai-course-update'));
+        const standalone = () => [...videos.values()].find(record => record.video.isConnected && !record.video.paused && !record.video.ended)
+            || [...videos.values()].find(record => record.video.isConnected && record.armed && !record.video.ended)
+            || [...videos.values()].find(record => record.video.isConnected && !record.video.ended);
+        const allowed = record => {
+            const video=record.video;
+            if(closed || active || courseRunActive(document) || !record.identity
+                || courseScoreKey(document)!==record.identity || !video.isConnected || video.ended || video.error || video.seeking)return false;
+            const tree=courseFrameTree(document);
+            if(tree.inaccessible.length || !tree.documents.includes(video.ownerDocument) || courseBlocker(tree.documents)
+                || courseVideoQuizCandidate(video))return false;
+            const foreground=courseOwnerForegroundState(document);
+            return !courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
+        };
+        const recover = async (record, explicit=false) => {
+            const video=record.video;
+            if(record.pending || record.manual || !allowed(record) || !explicit&&(!courseForcePlaybackEnabled() || !record.armed || record.blocked)
+                || !video.paused || video.readyState<2)return;
+            if(explicit){record.attempts=0;record.blocked=false;record.requireUserStart=false;}
+            if(record.attempts>=COURSE_RUN_LIMITS.maxResumes){record.blocked=true;controller?.report('视频连续恢复无效，可点击“继续”重试','course-paused');notify();return;}
+            record.pending=true;record.attempts++;record.lastAttempt=Date.now();
+            record.abort=new AbortController();
+            try {
+                await requestCourseVideoPlayback(video,record.abort.signal);
+                if(closed || record.manual || record.requireUserStart || active || courseRunActive(document) || !allowed(record)) {
+                    // Runner 接管后由它决定播放状态，旧恢复回调不再碰播放器。
+                    if(!active && !courseRunActive(document))video.pause();
+                }
+            } catch(error) {
+                if(error.name!=='AbortError'&&error.code!=='ABORTED'&&!active&&!closed){record.blocked=true;controller?.report('视频恢复未成功，可点击“继续”重试','course-paused');}
+            } finally {record.pending=false;notify();}
+        };
+        const scan = () => {
+            let changedNodes=false;
+            const tree=courseFrameTree(document);
+            for(const [doc,close] of documents)if(!tree.documents.includes(doc)){close();documents.delete(doc);}
+            for(const doc of tree.documents)if(!documents.has(doc)) {
+                const discover=event=>{
+                    if(event.type==='playing'&&event.target?.tagName==='VIDEO'&&!videos.has(event.target) || event.type==='load'&&event.target?.tagName==='IFRAME') {
+                        try {scan();}catch{}
+                    }
+                };
+                doc.addEventListener('playing',discover,true);doc.addEventListener('load',discover,true);
+                documents.set(doc,()=>{doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);});
+            }
+            const found=new Set(tree.documents.slice(1).flatMap(doc=>[...doc.querySelectorAll('video')].filter(courseElementVisible)));
+            for(const [video,record] of videos)if(!found.has(video)) {record.close();videos.delete(video);changedNodes=true;}
+            for(const video of found)if(!videos.has(video)) {
+                const record={video,identity:courseScoreKey(document),armed:!video.paused&&!video.ended,manual:false,blocked:false,pending:false,
+                    attempts:0,lastAttempt:-Infinity,pausedAt:video.paused?Date.now():null,progress:Number(video.currentTime),requireUserStart:false,userStartUntil:0};
+                const changed=event=>{
+                    if(event.type==='playing') {
+                        clearTimeout(record.resumeTimer);
+                        if(record.manual){video.pause();return;}
+                        if(!record.requireUserStart || Date.now()<=record.userStartUntil){record.armed=true;record.requireUserStart=false;}
+                        record.pausedAt=null;
+                    } else if(event.type==='pause') {
+                        record.pausedAt??=Date.now();clearTimeout(record.resumeTimer);
+                        record.resumeTimer=setTimeout(()=>{if(!record.pending)record.promise=recover(record);},500);
+                    }
+                    else {record.armed=false;record.manual=false;}
+                    notify();
+                };
+                const input=event=>{if(courseVideoPauseInput(event,video))record.userStartUntil=Date.now()+2000;};
+                for(const type of ['playing','pause','ended','emptied'])video.addEventListener(type,changed);
+                for(const type of ['pointerdown','keydown'])video.ownerDocument.addEventListener(type,input,true);
+                record.close=()=>{
+                    record.armed=false;record.requireUserStart=true;clearTimeout(record.resumeTimer);record.abort?.abort();
+                    for(const type of ['playing','pause','ended','emptied'])video.removeEventListener(type,changed);
+                    for(const type of ['pointerdown','keydown'])video.ownerDocument.removeEventListener(type,input,true);
+                };
+                videos.set(video,record);
+                changedNodes=true;
+            }
+            if(changedNodes)notify();
+        };
+        const tick = () => {
+            if(closed)return;
+            try {
+                if(Date.now()-lastScan>=2000){lastScan=Date.now();scan();}
+                if(active || courseRunActive(document))return;
+                for(const record of videos.values()) {
+                    const video=record.video;
+                    if(video.ended)continue;
+                    if(!video.paused) {
+                        record.pausedAt=null;
+                        record.identity ||= courseScoreKey(document);
+                        if(Number(video.currentTime)-record.progress>=COURSE_RUN_LIMITS.resumeProgressSeconds){record.attempts=0;record.blocked=false;record.progress=Number(video.currentTime);}
+                    } else {
+                        record.pausedAt??=Date.now();
+                        if(!record.pending&&Date.now()-record.pausedAt>=500 && Date.now()-record.lastAttempt>=500)record.promise=recover(record);
+                    }
+                }
+            } catch { /* 页面切换时等待下次重新识别，不执行播放。 */ }
+        };
         const onMouseExit = event => {
-            if (closed || event.relatedTarget !== null || !active) return;
-            const context = active;
+            if (closed || event.relatedTarget !== null) return;
+            const record=!active&&standalone();
+            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual&&!courseVideoForegroundPolicy(record.video).required,onSuppressed:()=>{}};
+            if(!context)return;
             try {
                 if (!context.video.isConnected || context.video.paused || context.video.ended
                     || !context.canProtect()) return;
@@ -10101,20 +10388,57 @@ Typr["U"] = {
         };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
+            get controls() {
+                if(active)return {available:active.video.isConnected&&!active.video.ended&&(active.canToggle?.() ?? true),paused:active.isPaused?.() ?? active.video.paused};
+                const record=standalone();
+                return {available:Boolean(record&&!courseRunActive(document)),paused:Boolean(record&&(record.manual||record.video.paused))};
+            },
+            togglePause() {
+                if(active){if(active.canToggle?.()!==false)active.togglePause?.();notify();return;}
+                const record=standalone();if(!record || courseRunActive(document))return;
+                if(record.manual || record.video.paused) {
+                    record.manual=false;record.armed=true;if(!record.pending)record.promise=recover(record,true);
+                } else {record.manual=true;record.video.pause();}
+                notify();
+            },
+            refresh() {active?.settingsChanged?.();tick();notify();},
             activate(context) {
                 if (closed || !context?.video || typeof context.canProtect !== 'function'
                     || typeof context.onSuppressed !== 'function') return () => {};
                 active = context;
-                return () => { if (active === context) active = null; };
+                courseVideoPlaybackRequests.delete(context.video);
+                const record=videos.get(context.video);
+                if(record){record.armed=false;record.manual=false;record.requireUserStart=true;record.userStartUntil=0;clearTimeout(record.resumeTimer);if(record.pending){context.video.pause();record.abort?.abort();}}
+                notify();
+                const release = () => {
+                    if (active !== context)return;
+                    active=null;
+                    const current=videos.get(context.video);
+                    if(current){current.armed=false;current.manual=false;current.requireUserStart=true;current.userStartUntil=0;}
+                    notify();
+                };
+                release.settled=record?.pending?record.promise:null;
+                return release;
             },
             close() {
                 if (closed) return;
                 closed = true; active = null;
+                window.clearInterval(timer);
+                for(const record of videos.values())record.close();videos.clear();
+                for(const close of documents.values())close();documents.clear();
                 window.removeEventListener('mouseout', onMouseExit, true);
+                document.removeEventListener('visibilitychange',onForeground);
+                window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
+                document.removeEventListener('DOMContentLoaded',tick);
             }
         };
         window.addEventListener('mouseout', onMouseExit, true);
+        const onForeground=()=>{active?.wake?.();tick();};
+        const timer=window.setInterval(tick,500);
+        document.addEventListener('DOMContentLoaded',tick,{once:true});
+        document.addEventListener('visibilitychange',onForeground);
+        window.addEventListener('focus',onForeground);
         window.addEventListener('pagehide', manager.close, { once: true });
         initBackgroundPlayback.instance = manager;
         return manager;
@@ -10784,8 +11108,7 @@ Typr["U"] = {
         }
         shadow.getElementById('course-nav').hidden = view !== 'chapters';
         shadow.getElementById('panel').dataset.activeView = view;
-        shadow.getElementById('about').hidden = true;
-        shadow.getElementById('about-toggle').setAttribute('aria-expanded','false');
+        closeProjectIntro();
         panelView.activeView = view;
         if (view === 'chapters') refreshCourseSidebar();
         if (focus) shadow.getElementById(`nav-${view}`).focus();
@@ -10800,6 +11123,8 @@ Typr["U"] = {
             shadow.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
         }
         shadow.getElementById('catalog-refresh').hidden = view !== 'catalog';
+        shadow.getElementById('catalog-locate').hidden = view !== 'catalog';
+        shadow.getElementById('catalog-heading-actions').hidden = view !== 'catalog';
         shadow.getElementById('course-nav').dataset.activeView = view;
         // 只改变显示与目录读取，不启动/停止 runner，不重置搜索、报告或配置。
         if (view === 'catalog') refreshCourseSidebar();
@@ -10880,7 +11205,7 @@ Typr["U"] = {
                 switchSettingsView(settingsButtons[next].dataset.settingsView,{focus:true});
             });
         });
-        switchSettingsView('model');
+        switchSettingsView('learning');
         switchChapterView('run');
         switchPanelView('questions');
     }
@@ -10993,24 +11318,26 @@ Typr["U"] = {
           .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
-          #view-chapters{overflow:hidden}#course-nav{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}.catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}.catalog-heading h2{font-size:17px;margin:0;line-height:1.4}#catalog-refresh{font-size:12px;padding:5px 9px}#catalog-search{flex:none;width:100%;min-width:0;font-size:13px;padding:8px 10px}#catalog-status{flex:none;font-size:12px;color:var(--muted);margin:10px 0}#catalog-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}#catalog-list,.catalog-children{list-style:none;margin:0;padding:0}.catalog-children{margin-left:10px;padding-left:9px;border-left:1px solid #e0e7f0}.catalog-row{display:flex;align-items:flex-start;gap:4px;border-radius:6px}.catalog-row.is-active{background:#edf3fc}.catalog-row.is-group{margin-top:8px}.catalog-link{min-width:0;flex:1;text-align:left;background:transparent;color:#263951;border-radius:6px;padding:8px 5px;font-size:13px;line-height:1.6}.catalog-link:hover{background:#f3f6fb}.catalog-link[aria-current=page] .catalog-title{color:var(--accent);font-weight:700}.is-group .catalog-title{font-weight:700}.catalog-title{display:block;overflow-wrap:anywhere}.catalog-meta{display:flex;gap:4px 9px;flex-wrap:wrap;margin-top:3px;font-size:11px;color:#758197}.catalog-state.is-complete{color:#268459}.catalog-score{color:#aa5725}.catalog-fold{flex:none;width:18px;height:25px;padding:0;margin-top:6px;background:transparent;color:#71809a}.catalog-fold-space{width:18px;flex:none}.catalog-empty{padding:14px 2px;font-size:13px;color:var(--muted)}
+          #view-chapters{overflow:hidden}#course-nav{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}.catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}.catalog-heading h2{font-size:17px;margin:0;line-height:1.4}#catalog-refresh{font-size:12px;padding:5px 9px}#catalog-search{flex:none;width:100%;min-width:0;font-size:13px;padding:8px 10px}#catalog-status{flex:none;font-size:12px;color:var(--muted);margin:10px 0 12px}#catalog-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#c8d2e0 transparent}#catalog-list,.catalog-children{list-style:none;margin:0;padding:0}#catalog-list{padding-right:7px;padding-bottom:4px}#catalog-list::-webkit-scrollbar{width:5px}#catalog-list::-webkit-scrollbar-thumb{background:#c8d2e0;border-radius:8px}#catalog-list::-webkit-scrollbar-track{background:transparent}#catalog-list>.catalog-item.is-group-item{margin:0 0 10px;border:1px solid #e2e8f1;border-radius:9px;overflow:hidden;background:#fff}.catalog-row{position:relative;display:flex;align-items:center;gap:0;min-width:0;border-radius:6px}.catalog-row.is-group{padding:2px 5px;background:#f6f8fc}.catalog-row.is-active{background:#edf3ff;box-shadow:inset 3px 0 0 var(--accent)}.catalog-children{margin:0;padding:3px 5px 5px}.catalog-children .catalog-children{margin:0 0 2px 14px;padding-left:7px;border-left:1px solid #e5ebf4}.catalog-children>.catalog-item+.catalog-item>.catalog-row:not(.is-group){border-top:1px solid #f0f3f7}.catalog-link{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px;min-width:0;flex:1;text-align:left;background:transparent;color:var(--ink);border-radius:6px;padding:10px 11px;font-size:13px;line-height:1.5}.catalog-link:hover:not(:disabled){background:#f2f5fb;filter:none}.catalog-row.is-active .catalog-link:hover:not(:disabled){background:#e7efff}.catalog-link:disabled{opacity:1;cursor:default}.catalog-link[data-navigation-available=false] .catalog-main{color:#8794a8}.catalog-link[aria-current=page] .catalog-title{color:var(--accent);font-weight:600}.catalog-main{display:flex;align-items:baseline;gap:10px;min-width:0}.catalog-number{flex:none;min-width:32px;font-size:12px;font-weight:500;color:#8592a7;font-variant-numeric:tabular-nums;white-space:nowrap}.catalog-title{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;line-height:1.55}.catalog-row.is-group>.catalog-link{padding:9px 8px}.catalog-row.is-group>.catalog-link .catalog-main{gap:9px}.catalog-row.is-group>.catalog-link .catalog-title{font-weight:600;color:#35445d}.catalog-row.is-group>.catalog-link .catalog-number{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 5px;border:1px solid #e1e7f1;border-radius:6px;background:#fff;color:#64748d;font-size:11px}.catalog-link[aria-current=page] .catalog-number{color:var(--accent)}.catalog-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;max-width:176px;font-size:11px;color:#8190a4}.catalog-state,.catalog-current,.catalog-score{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:2px 6px;border-radius:4px;background:#f0f3f7;color:#7b879b;white-space:nowrap;line-height:1.5;font-weight:400}.catalog-state.is-complete{background:#edf7f1;color:#39805e}.catalog-state.is-complete:not(.is-group-count)::before{content:'✓';font-size:10px;font-weight:700}.catalog-state.is-pending{background:#fff6e8;color:#99713a}.catalog-state.is-locked{background:#f0f2f6;color:#8c96a7}.catalog-current{background:#e4ebff;color:var(--accent)}.catalog-score{background:#f6f0e8;color:#9a7047}.catalog-state.is-group-count{padding:0;background:transparent;color:#8693a7;font-variant-numeric:tabular-nums;font-size:11px}.catalog-state.is-group-count.is-complete{color:#39805e}.catalog-group-progress{appearance:none;flex:none;width:42px;height:4px;border:0;border-radius:4px;overflow:hidden;background:#e2e9f0;accent-color:#6a9a80}.catalog-group-progress::-webkit-progress-bar{background:#e2e9f0;border-radius:4px}.catalog-group-progress::-webkit-progress-value{background:#6a9a80;border-radius:4px}.catalog-group-progress::-moz-progress-bar{background:#6a9a80;border-radius:4px}.catalog-fold{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:28px;padding:0;margin:0;background:transparent;color:#8b98ac;border-radius:5px}.catalog-fold::before{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}.catalog-fold[aria-expanded=true]::before{transform:rotate(45deg) translate(-1px,-1px)}.catalog-fold:hover:not(:disabled){color:var(--accent);background:#eaf0fa;filter:none}.catalog-fold-space{display:none}.catalog-empty{padding:24px 12px;text-align:center;font-size:12px;color:var(--muted)}@media(max-width:480px){.catalog-link{column-gap:7px;padding:9px 8px}.catalog-main{gap:6px}.catalog-number{min-width:27px;font-size:11px}.catalog-meta{max-width:112px;gap:4px}.catalog-state,.catalog-current,.catalog-score{padding:2px 5px;font-size:10px}.catalog-group-progress{width:28px}.catalog-row.is-group>.catalog-link{padding:9px 5px}.catalog-row.is-group>.catalog-link .catalog-main{gap:6px}}
           .chapter-switch{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:8px;background:#f5f7fb;min-width:0}.chapter-switch button{background:transparent;color:var(--muted);font-size:13px;padding:5px 12px;white-space:nowrap}.chapter-switch button[aria-selected=true]{background:#fff;color:var(--accent);box-shadow:0 1px 3px #24395714;font-weight:600}.chapter-page{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain}#chapter-catalog-page{display:flex;flex-direction:column;overflow:hidden}#chapter-run-page{display:flex;flex-direction:column}#chapter-run-page .course-run-controls{flex:none;min-height:0;display:flex;flex-direction:column;margin:0}#chapter-run-page .course-run-actions,#chapter-run-page .check-label,#chapter-run-page .note{flex:none}.chapter-switch button:focus-visible{outline-offset:-2px}
           .course-run-controls{flex:none;border:1px solid var(--line);background:#f7f9fc;border-radius:7px;padding:9px 10px;margin-top:10px;font-size:12px}.course-run-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px}.course-run-actions button{font-size:12px;padding:5px 9px}.course-run-options{display:flex;flex-wrap:wrap;gap:6px 14px;flex:none}.course-run-controls p{margin:5px 0}#course-pending{margin:8px 0}#course-pending summary{cursor:pointer}#course-pending-list{max-height:160px;overflow:auto;overflow-wrap:anywhere;padding-left:20px}#course-retry-confirm{margin-top:7px}#course-protection-status:empty{display:none}#custom-model-block input[type=url],#custom-model-block input[type=text]{width:100%;min-width:0}#custom-model-block .row{margin:8px 0}#provider,#model{max-width:100%}#model-capability{margin:0 0 12px}#view-model{display:flex;flex-direction:column;overflow:hidden}.settings-switch{flex:none;align-self:flex-start;margin-bottom:16px}.settings-page{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}#settings-developer-page{display:flex;flex-direction:column}#course-report{flex:1;min-height:0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;border:1px solid var(--line);border-radius:7px;padding:12px}#course-report:focus-visible{outline:2px solid #729adc;outline-offset:-2px}
           .panel-status{flex:none;display:flex;align-items:flex-start;gap:8px;min-height:34px;max-height:88px;overflow:auto;padding:8px 14px 8px 68px;border-top:1px solid var(--line);background:#fbfcfe;font-size:12px;color:#617187}#status{flex:1;min-width:0;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}#status-spinner{flex:none;width:12px;height:12px;margin-top:3px;border:2px solid #d9e4f6;border-top-color:var(--accent);border-radius:50%;animation:panel-spin .8s linear infinite}@keyframes panel-spin{to{transform:rotate(360deg)}}#panel[data-phase=error] #status{color:#a44932}
-          #about{position:absolute;inset:48px 0 34px 54px;z-index:2;background:#fff;padding:18px;overflow:auto;overscroll-behavior:contain;font-size:13px;overflow-wrap:anywhere}#about>strong{font-size:15px}#about p{margin:12px 0}.free{color:#23734a}
-          @media(max-width:480px){.head{padding-left:12px}.head strong{font-size:12px}.head-actions button{padding:5px 7px}.panel-body{grid-template-columns:46px minmax(0,1fr)}.nav-button{width:32px;height:34px}.nav-button[aria-selected=true]::before{left:-7px}.view-page{padding:12px}.view-heading{margin-bottom:14px}.view-heading h2,.catalog-heading h2{font-size:15px}.view-tag{display:none}.panel-status{padding-left:58px}#about{left:46px}.actions{gap:6px}.actions button{font-size:12px;padding:7px 8px}.question-heading{font-size:11px}#output{padding:10px}.row>label{min-width:55px}}
+          #about{position:fixed;width:min(480px,calc(100vw - 32px));max-height:calc(100vh - 40px);margin:auto;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font:inherit;font-size:13px;overflow:hidden;box-shadow:0 20px 64px #172b4a40;overflow-wrap:anywhere}#about[open]{display:flex;flex-direction:column}#about::backdrop{background:transparent}.about-heading{cursor:grab;touch-action:none;user-select:none;flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:#fbfcfe}.about-heading:active{cursor:grabbing}.about-heading strong{font-size:15px}.about-heading button{padding:4px 9px;font-size:12px}.about-content{min-height:0;padding:16px;overflow:auto;overscroll-behavior:contain}.about-content>strong{font-size:14px}#about p{margin:12px 0}.free{color:#23734a}
+          @media(max-width:480px){.head{padding-left:12px}.head strong{font-size:12px}.head-actions button{padding:5px 7px}.panel-body{grid-template-columns:46px minmax(0,1fr)}.nav-button{width:32px;height:34px}.nav-button[aria-selected=true]::before{left:-7px}.view-page{padding:12px}.view-heading{margin-bottom:14px}.view-heading h2,.catalog-heading h2{font-size:15px}.view-tag{display:none}.panel-status{padding-left:58px}.actions{gap:6px}.actions button{font-size:12px;padding:7px 8px}.question-heading{font-size:11px}#output{padding:10px}.row>label{min-width:55px}}
           .video-progress{flex:0 1 180px;min-width:100px;display:flex;align-items:center;gap:6px;margin-top:3px}.video-progress progress{appearance:none;flex:1;min-width:0;width:100%;height:6px;border:0;border-radius:4px;overflow:hidden;background:#e2e9f4;accent-color:var(--accent)}.video-progress progress::-webkit-progress-bar{background:#e2e9f4;border-radius:4px}.video-progress progress::-webkit-progress-value{background:var(--accent);border-radius:4px}.video-progress progress::-moz-progress-bar{background:var(--accent);border-radius:4px}#video-progress-text{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
           .resize-handle{position:absolute;touch-action:none;z-index:5}.resize-right{right:0;top:48px;bottom:16px;width:6px;cursor:ew-resize}.resize-bottom{bottom:0;left:12px;right:16px;height:6px;cursor:ns-resize}.resize-corner{right:0;bottom:0;width:16px;height:16px;padding:0;background:transparent;border:0;border-radius:0;cursor:nwse-resize}.resize-corner::after{content:"";position:absolute;right:4px;bottom:4px;width:7px;height:7px;border-right:2px solid #8493a9;border-bottom:2px solid #8493a9}.resize-corner:focus-visible{outline-offset:-3px}
           @media(max-width:560px){.panel-status{flex-wrap:wrap}.video-progress{flex-basis:100%;margin-left:20px}}
           .result-tools,.result-cache-actions,.question-card-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px}.result-tools{flex:none;margin:0 0 8px;font-size:12px}.result-tools label{display:flex;align-items:center;gap:5px}.result-tools input,.result-tools select{padding:4px 6px;font-size:12px}#result-jump-number{width:62px}.result-tools button,.result-cache-actions button,.question-card-actions button{font-size:12px;padding:4px 7px}.result-cache-controls{flex:none;margin:0 0 9px;font-size:12px;color:var(--muted)}.result-cache-controls>summary,.request-usage>summary{cursor:pointer}.result-cache-actions{margin-top:7px}.question-card-actions{margin:6px 0 9px}.question-card:focus-visible{outline:2px solid #729adc;outline-offset:3px}.question-image-open{display:block;max-width:100%;padding:0;border:0;background:transparent;cursor:zoom-in}.question-image-open:hover{filter:none!important}.request-usage{margin:9px 0 0;color:var(--muted);font-size:12px}.request-usage-text{margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.result-image-dialog{position:fixed;inset:0;width:min(1000px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);margin:auto;padding:12px;border:1px solid #cbd5e3;border-radius:9px;background:#fff;color:var(--ink);box-shadow:0 18px 60px #172b4a50}.result-image-dialog::backdrop{background:#172b4a99}.result-image-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:13px}.result-image-heading button{font-size:12px;padding:5px 9px}.result-image-scroll{max-height:calc(100vh - 110px);overflow:auto;overscroll-behavior:contain}.result-image-scroll img{display:block;max-width:none;height:auto}
           @media(prefers-reduced-motion:reduce){#status-spinner{animation:none}}
           #floating-launcher{position:fixed;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:0;padding:8px;border:1px solid #c53e3e;border-radius:50%;background:#d94a4a;color:#fff;box-shadow:0 6px 24px #b8333333;cursor:pointer;touch-action:none;user-select:none}#floating-launcher:hover{background:#c93d3d;border-color:#b93232}#floating-launcher:active{cursor:grabbing}#floating-launcher svg{width:26px;height:26px;pointer-events:none}.floating-dot{position:absolute;right:3px;top:3px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#92a1b6;pointer-events:none}#floating-launcher[data-busy=true] .floating-dot{background:#315fbd}#floating-launcher[data-phase=error] .floating-dot{background:#bd6848}
+          .course-video-delay{font-size:12px;margin:9px 0}.course-video-delay>label{font-size:13px}#course-video-delay-fields{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px}#course-video-delay-fields select{font-size:12px;padding:3px 6px}#course-video-delay-value{min-width:62px;color:var(--muted)}#course-video-delay-fixed,.course-delay-range{width:190px;max-width:100%}#course-video-delay-fields input[type=range]{height:24px;padding:0;border:0;accent-color:var(--accent)}.course-delay-range{position:relative;height:24px;background:linear-gradient(to right,#dce3ed var(--delay-min,8.33%),var(--accent) var(--delay-min,8.33%),var(--accent) var(--delay-max,25%),#dce3ed var(--delay-max,25%)) center/100% 4px no-repeat}.course-delay-range input{position:absolute;inset:0;width:100%;margin:0;background:transparent;appearance:none;pointer-events:none}.course-delay-range input:focus-visible{z-index:2}.course-delay-range input::-webkit-slider-runnable-track{background:transparent;height:4px}.course-delay-range input::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;margin-top:-5px;background:var(--accent);pointer-events:auto;cursor:ew-resize}.course-delay-range input::-moz-range-track{background:transparent;height:4px}.course-delay-range input::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--accent);pointer-events:auto;cursor:ew-resize}.course-delay-range input:disabled::-webkit-slider-thumb{pointer-events:none;opacity:.5}          #view-model{container-type:inline-size}#view-model .view-heading{margin-bottom:12px}#view-model .view-heading h2{font-size:16px}#view-model .settings-switch{align-self:stretch;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;margin-bottom:12px;border-color:#dde5f1;background:#f5f7fb;border-radius:7px}#view-model .settings-switch button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:6px 8px;font-size:12px;line-height:1.5;border-radius:5px}#view-model .settings-switch button[aria-selected=true]{background:#eaf0ff;color:var(--accent);box-shadow:inset 0 0 0 1px #d9e3fa;font-weight:600}#view-model .settings-switch svg{width:14px;height:14px;flex:none}#view-model .settings-page{padding-right:6px;scrollbar-width:thin;scrollbar-color:#c8d2e0 transparent}#view-model .settings-page::-webkit-scrollbar{width:5px}#view-model .settings-page::-webkit-scrollbar-thumb{background:#c8d2e0;border-radius:8px}#view-model .settings-block{padding:0 0 11px;margin:0 0 12px}#view-model .settings-block:last-child{margin-bottom:0;padding-bottom:2px;border:0}#view-model .settings-section-title{font-size:12px;line-height:1.5;font-weight:600;color:#5f708b;margin:0 0 8px}#view-model .row{gap:7px;margin:5px 0;font-size:12px}#view-model .row>label{min-width:64px;font-size:12px}#view-model .row>label.check-label{min-width:0}#view-model .check-label{gap:6px;font-size:12px}#view-model .settings-field{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:7px}#view-model input:not([type=checkbox]),#view-model select{font-size:12px;padding:5px 8px;min-height:30px;border-radius:5px}#view-model .settings-page button{font-size:12px;line-height:1.4;padding:5px 9px;border-radius:5px}#view-model .model-picker{width:auto;max-width:100%;flex:1;min-width:0}#view-model .model-picker-trigger{min-height:30px;padding:5px 8px!important}#view-model .model-picker-value{gap:7px}#view-model .provider-logo{width:20px;height:20px}#view-model .model-picker-list{max-height:160px;font-size:12px}#view-model .model-picker-option{padding:6px 7px}#view-model .note,#view-model #update-status{font-size:11px;line-height:1.55;margin:4px 0;color:var(--muted)}#view-model .note:empty{display:none}#view-model #model-test-status[data-state=ok]{color:#226342}#view-model #model-test-status[data-state=error]{color:#b13b32}#view-model .settings-inline-status{padding-left:71px}#view-model .field-caption{font-size:11px;margin:9px 0 4px}#view-model .settings-options-row{column-gap:9px}#view-model .settings-options-row>label[for=analysis-concurrency]{margin-left:auto;min-width:0}#view-model #custom-model-block{margin:7px 0 0;padding:9px;background:#f7f9fc;border:1px solid var(--line);border-radius:6px}#view-model #custom-model-block .row{margin:5px 0}#view-model .settings-report-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}#view-model .settings-report-heading h3{margin:0}#view-model .settings-report-heading .course-run-actions{margin:0;gap:5px}#settings-developer-page>.settings-diagnostics{flex:none;margin-bottom:10px}#view-model #course-report{margin-top:7px;padding:9px;font-size:11px;line-height:1.65;background:#f8fafc;border-color:#e3e9f2;border-radius:6px}#course-report:empty::before{content:'暂无运行记录';color:#8a97a9}@container(max-width:340px){#view-model .settings-switch button{padding:6px 4px;font-size:11px;gap:0}#view-model .settings-switch svg{display:none}#view-model .settings-field{grid-template-columns:minmax(0,1fr) auto}#view-model .settings-field>label{grid-column:1/-1;margin-bottom:1px}#view-model .settings-inline-status{padding-left:0}#view-model .settings-options-row{row-gap:6px}#view-model .settings-report-heading{align-items:flex-start}}
+          .catalog-heading{flex-wrap:wrap;row-gap:8px}.catalog-heading-actions{display:flex;align-items:center;gap:6px;margin-left:auto;flex:none}#catalog-locate{font-size:12px;padding:5px 9px}.catalog-row.is-located{background:#e3edff;outline:2px solid #9eb6eb;outline-offset:-2px}.catalog-current.is-located-label{color:#fff;background:var(--accent)}.model-picker-arrow{display:block;flex:none;align-self:center;color:#7c8aa0;transform-origin:center}.model-picker-trigger[aria-expanded=true] .model-picker-arrow{transform:rotate(180deg);color:var(--accent)}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><strong>学习通AI助手 v1.29</strong><div class="head-actions">
+          <header class="head"><strong>学习通AI助手 v1.30</strong><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
-            <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-expanded="false" title="项目介绍">?</button>
+            <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-haspopup="dialog" aria-controls="about" aria-expanded="false" title="项目介绍">?</button>
             <button type="button" id="minimize" class="secondary" aria-label="最小化为悬浮窗" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 17h14"/></svg></button>
             <button type="button" id="close" class="secondary" aria-label="关闭助手" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           </div></header>
@@ -11024,46 +11351,57 @@ Typr["U"] = {
             <main class="assistant-main">
               <section id="view-model" class="view-page" role="tabpanel" aria-labelledby="nav-model" hidden>
                 <div class="view-heading"><h2>设置</h2></div>
-                <div class="chapter-switch settings-switch" role="tablist" aria-label="设置页面" aria-orientation="horizontal">
-                  <button type="button" id="settings-tab-model" data-settings-view="model" role="tab" aria-selected="true" aria-controls="settings-model-page" tabindex="0">模型设置</button>
-                  <button type="button" id="settings-tab-learning" data-settings-view="learning" role="tab" aria-selected="false" aria-controls="settings-learning-page" tabindex="-1">学习设置</button>
-                  <button type="button" id="settings-tab-developer" data-settings-view="developer" role="tab" aria-selected="false" aria-controls="settings-developer-page" tabindex="-1">开发者模式</button>
+                <div class="chapter-switch settings-switch" role="tablist" aria-label="设置分类" aria-orientation="horizontal">
+                  <button type="button" id="settings-tab-learning" data-settings-view="learning" role="tab" aria-selected="true" aria-controls="settings-learning-page" tabindex="0"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 3v14m6-14v14m6-14v14M1 7h6m0 6h6m0-8h6"/></svg>工具设置</button>
+                  <button type="button" id="settings-tab-model" data-settings-view="model" role="tab" aria-selected="false" aria-controls="settings-model-page" tabindex="-1"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2"/><path d="M7 1v4m6-4v4M7 15v4m6-4v4M1 7h4m-4 6h4m10-6h4m-4 6h4"/></svg>模型设置</button>
+                  <button type="button" id="settings-tab-developer" data-settings-view="developer" role="tab" aria-selected="false" aria-controls="settings-developer-page" tabindex="-1"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m6 5-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></svg>开发者模式</button>
                 </div>
-                <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model">
-                <div class="settings-block"><div class="row"><label for="provider">平台</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="kimi">Kimi</option><option value="glm">智谱</option><option value="custom">自定义</option></select></div></div>
-                <div class="settings-block" id="preset-model-block"><div class="row"><label for="model">模型</label><select id="model"><option value="" disabled>请先获取模型列表</option></select><button type="button" id="models" class="secondary">获取模型列表</button></div></div>
-                <div class="settings-block" id="custom-model-block" hidden>
-                  <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
-                  <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
-                  <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
-                  <p class="note">自定义模型需要配置 AI 请求地址白名单：打开篡改猴管理面板 → 本脚本 → 设置 → 用户域名白名单，添加接口的主机名（例如 api.example.com）。首次请求时仅授权该域名。地址填写到 API 前缀；图片选项请按接口文档确认。网络失败也可能有其他原因，请结合错误码排查。</p>
-                </div>
-                <div class="settings-block"><div id="api-key-editor"></div><p id="api-key-status" class="note" role="status"></p></div>
-                <div class="row"><button type="button" id="detect-model" class="secondary">检测</button><button type="button" id="cancel-model-test" class="secondary" hidden>取消检测</button><span class="note">向当前模型发送 Hi，消耗一次调用。</span></div>
-                <p id="model-test-status" class="note" role="status" aria-live="polite">尚未检测</p>
-                <p id="model-capability" class="note" role="status"></p>
-                <div class="row"><button type="button" id="detect-images" class="secondary">检测图片能力</button><button type="button" id="cancel-images" class="secondary" hidden>取消检测</button><span class="note">使用当前模型识别测试图片，消耗一次调用；通过后保存能力。</span></div>
-                <div class="settings-block">
-                  <div class="row"><label class="check-label"><input id="auto-context" type="checkbox" checked /> 自动识别信息</label></div>
-                  <div class="row"><label for="info-model">识别模型</label><select id="info-model"></select></div>
-                  <div class="row"><label for="info-interval">抽帧间隔</label><input id="info-interval" type="number" min="5" max="300" value="30" style="width:90px;flex:none" /><span class="note">秒</span></div>
-                  <p id="info-note" class="note">自动读取字幕与讲义，空笔记跳过；视频画面每 4 帧识别一次，额外消耗模型额度。抽帧资料可能不完整。</p>
-                </div>
-                <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="thinking" /> 深度思考</label><label for="effort" class="setting-label">强度</label><select id="effort"><option value="low">Low</option><option value="high">High</option><option value="max">Max</option></select></div></div>
-                <div class="settings-block"><div class="row"><label class="check-label"><input type="checkbox" id="search" /> 网络检索</label></div></div>
-                <div class="settings-block"><div class="row"><label for="analysis-concurrency">AI 分析并发数</label><select id="analysis-concurrency"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select></div></div>
-                <div class="settings-block"><div class="row"><button type="button" id="check-update" class="secondary">检查更新</button><span id="update-status" role="status" aria-live="polite"></span></div><button type="button" id="install-update" hidden>下载更新</button></div>
+                <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model" hidden>
+                  <div class="settings-block">
+                    <h3 class="settings-section-title">模型连接</h3>
+                    <div class="row settings-field"><label for="provider">服务商</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="kimi">Kimi</option><option value="glm">智谱</option><option value="custom">自定义</option></select></div>
+                    <div id="preset-model-block"><div class="row settings-field"><label for="model">模型</label><select id="model"><option value="" disabled>请先获取模型列表</option></select><button type="button" id="models" class="secondary">获取模型</button></div></div>
+                    <div id="custom-model-block" hidden>
+                      <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
+                      <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
+                      <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
+                      <p class="note">接口主机名需加入篡改猴用户域名白名单；地址填写到 API 前缀。</p>
+                    </div>
+                    <p id="model-capability" class="note settings-inline-status" role="status"></p>
+                  </div>
+                  <div class="settings-block"><h3 class="settings-section-title">访问凭据</h3><div id="api-key-editor"></div><p id="api-key-status" class="note settings-inline-status" role="status"></p></div>
+                  <div class="settings-block settings-diagnostics">
+                    <h3 class="settings-section-title">模型检测</h3>
+                    <div class="row"><button type="button" id="detect-model" class="secondary">测试连接</button><button type="button" id="cancel-model-test" class="secondary" hidden>取消检测</button><span class="note">发送 Hi，消耗一次调用。</span></div>
+                    <p id="model-test-status" class="note" role="status" aria-live="polite">尚未检测</p>
+                    <div class="row"><button type="button" id="detect-images" class="secondary">检测图片能力</button><button type="button" id="cancel-images" class="secondary" hidden>取消检测</button><span class="note">发送测试图片，消耗一次调用。</span></div>
+                  </div>
+                  <div class="settings-block">
+                    <h3 class="settings-section-title">分析选项</h3>
+                    <div class="row"><label class="check-label"><input type="checkbox" id="thinking" /> 深度思考</label><label for="effort" class="setting-label">强度</label><select id="effort"><option value="low">Low</option><option value="high">High</option><option value="max">Max</option></select></div>
+                    <div class="row settings-options-row"><label class="check-label"><input type="checkbox" id="search" /> 网络检索</label><label for="analysis-concurrency">分析并发</label><select id="analysis-concurrency"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select></div>
+                  </div>
                 </section>
-                <section id="settings-learning-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-learning" hidden>
-                  <div class="settings-block"><label class="check-label"><input id="course-rest-enabled" type="checkbox" /> 启用学习休息</label></div>
-                  <div class="settings-block"><div class="row"><label for="course-study-minutes">连续学习</label><input id="course-study-minutes" type="number" min="10" max="180" step="1" value="50" style="width:90px;flex:none" /><span class="note">分钟（10–180）</span></div></div>
-                  <div class="settings-block"><div class="row"><label for="course-rest-minutes">休息时长</label><input id="course-rest-minutes" type="number" min="1" max="60" step="1" value="10" style="width:90px;flex:none" /><span class="note">分钟（1–60）</span></div></div>
-                  <p class="note">达到时长后，在当前章节结束时休息；运行期间不能修改。</p>
-                  <p id="course-learning-message" class="note" role="status"></p>
+                <section id="settings-learning-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-learning">
+                  <div class="settings-block">
+                    <h3 class="settings-section-title">学习与休息</h3>
+                    <div class="row"><label class="check-label"><input id="course-rest-enabled" type="checkbox" /> 启用学习休息</label></div>
+                    <div class="row"><label for="course-study-minutes">连续学习</label><input id="course-study-minutes" type="number" min="10" max="180" step="1" value="50" style="width:76px;flex:none" /><span class="note">分钟 · 10–180</span></div>
+                    <div class="row"><label for="course-rest-minutes">休息时长</label><input id="course-rest-minutes" type="number" min="1" max="60" step="1" value="10" style="width:76px;flex:none" /><span class="note">分钟 · 1–60</span></div>
+                    <p class="note">达到时长后，在当前章节结束时休息。</p><p id="course-learning-message" class="note" role="status"></p>
+                  </div>
+                  <div class="settings-block">
+                    <h3 class="settings-section-title">视频信息识别</h3>
+                    <div class="row"><label class="check-label"><input id="auto-context" type="checkbox" checked /> 自动识别信息</label></div>
+                    <div class="row settings-field"><label for="info-model">识别模型</label><select id="info-model"></select></div>
+                    <div class="row"><label for="info-interval">抽帧间隔</label><input id="info-interval" type="number" min="5" max="300" value="30" style="width:76px;flex:none" /><span class="note">秒</span></div>
+                    <p id="info-note" class="note">读取字幕、讲义及视频画面；每 4 帧识别一次，使用模型额度。</p>
+                  </div>
+                  <div class="settings-block"><h3 class="settings-section-title">版本更新</h3><div class="row"><button type="button" id="check-update" class="secondary">检查更新</button><span id="update-status" role="status" aria-live="polite"></span><button type="button" id="install-update" hidden>下载更新</button></div></div>
                 </section>
                 <section id="settings-developer-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-developer" hidden>
-                  <div class="course-run-actions"><button type="button" id="course-copy-report" class="secondary">复制运行摘要</button><button type="button" id="copy-error-report" class="secondary">复制错误报告</button><span id="last-error-code" class="note" role="status"></span></div>
-                  <p class="note">本页运行详情用于本地查看；复制仅包含安全摘要及当前页面最近 100 条诊断，刷新清除。</p>
+                  <div class="settings-report-heading"><h3 class="settings-section-title">运行诊断</h3><div class="course-run-actions"><button type="button" id="course-copy-report" class="secondary">复制运行摘要</button><button type="button" id="copy-error-report" class="secondary">复制错误报告</button></div></div>
+                  <span id="last-error-code" class="note" role="status"></span>
                   <div id="course-report" role="region" aria-label="详细运行报告" tabindex="0"></div>
                 </section>
               </section>
@@ -11095,10 +11433,10 @@ Typr["U"] = {
                       <button type="button" id="chapter-tab-run" data-chapter-view="run" role="tab" aria-selected="true" aria-controls="chapter-run-page" tabindex="0">自动刷课</button>
                       <button type="button" id="chapter-tab-catalog" data-chapter-view="catalog" role="tab" aria-selected="false" aria-controls="chapter-catalog-page" tabindex="-1">章节目录</button>
                     </div>
-                    <button type="button" id="catalog-refresh" class="secondary" hidden>刷新</button>
+                    <div id="catalog-heading-actions" class="catalog-heading-actions" hidden><button type="button" id="catalog-locate" class="secondary" title="定位当前章节" hidden>定位当前</button><button type="button" id="catalog-refresh" class="secondary" hidden>刷新</button></div>
                   </div>
                   <section id="chapter-run-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-run">
-                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label" title="开启后连续三个章节超时将停止本轮；关闭时沿用单章超时处理"><input type="checkbox" id="course-failure-protection" /> 连续失败保护性停止</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><label class="check-label" title="仅选择原生最高不超过 2x 的档位；开启视频信息识别时本次学习不用倍速"><input type="checkbox" id="course-speed-enabled" /> 开启倍速</label><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><p id="course-run-note" class="note"></p><p id="course-protection-status" role="status"></p><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
+                    <div class="course-run-controls"><div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button><button type="button" id="course-video-pause" class="secondary" disabled>暂停</button></div><div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-force-playback" checked /> 强制连续播放</label><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label" title="开启后连续三个章节超时将停止本轮；关闭时沿用单章超时处理"><input type="checkbox" id="course-failure-protection" /> 连续失败保护性停止</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><label class="check-label" title="仅选择原生最高不超过 2x 的档位；开启视频信息识别时本次学习不用倍速"><input type="checkbox" id="course-speed-enabled" /> 开启倍速</label><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><div class="course-video-delay"><label class="check-label"><input type="checkbox" id="course-video-delay-enabled" /> 视频间隔</label><div id="course-video-delay-fields" hidden><select id="course-video-delay-mode" aria-label="视频间隔方式"><option value="fixed">固定</option><option value="random">随机</option></select><output id="course-video-delay-value" aria-live="polite">10 秒</output><input id="course-video-delay-fixed" type="range" min="0" max="60" step="1" value="10" aria-label="固定间隔秒数" /><div id="course-video-delay-random" class="course-delay-range" hidden><input id="course-video-delay-min" type="range" min="0" max="60" step="1" value="5" aria-label="随机间隔最小秒数" /><input id="course-video-delay-max" type="range" min="0" max="60" step="1" value="15" aria-label="随机间隔最大秒数" /></div></div></div><p id="course-run-note" class="note"></p><p id="course-protection-status" role="status"></p><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
                   </section>
                   <section id="chapter-catalog-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-catalog" hidden>
                     <input id="catalog-search" type="search" placeholder="搜索章节" aria-label="搜索课程目录" />
@@ -11110,7 +11448,9 @@ Typr["U"] = {
           </div>
           <footer class="panel-status"><span id="status-spinner" hidden aria-hidden="true"></span><div id="status" role="status" aria-live="polite"></div><div id="video-progress-wrap" class="video-progress" hidden><progress id="video-progress" max="1" value="0" aria-label="当前视频播放进度"></progress><span id="video-progress-text" aria-hidden="true"></span></div></footer>
           <div class="resize-handle resize-right" data-resize="right" aria-hidden="true"></div><div class="resize-handle resize-bottom" data-resize="bottom" aria-hidden="true"></div><button class="resize-handle resize-corner" data-resize="corner" type="button" aria-label="调整窗口大小" title="拖拽调整大小；方向键微调"></button>
-                    <section id="about" hidden aria-label="项目介绍">
+                    <dialog id="about" aria-labelledby="about-title">
+            <div class="about-heading"><strong id="about-title">项目介绍</strong><button type="button" id="about-close" class="secondary" aria-label="关闭项目介绍" autofocus>关闭</button></div>
+            <div class="about-content">
             <strong>学习通AI助手 · Chaoxing AI Assistant</strong>
             <p>这是一个学习通辅助工具，支持：</p>
             <ol style="padding-left:28px;margin:12px 0;display:grid;gap:10px">
@@ -11121,9 +11461,8 @@ Typr["U"] = {
             <p>本项目是第三方工具，与超星、学习通及 DeepSeek 官方无隶属关系。字体解密基于 wyn665817 的「超星字体解密」脚本。</p>
             <p>如果你喜欢这个脚本，可以帮我去GitHub点点小🌟吗？非常感谢您！</p>
             <p id="github-note">项目主页：<a href="https://github.com/zhu-hailin/chaoxing-ai-assistant" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">https://github.com/zhu-hailin/chaoxing-ai-assistant</a></p>
-            <p style="text-align:right">Hailin</p>
-            <button type="button" id="about-close" class="secondary">收起介绍</button>
-          </section>
+            </div>
+          </dialog>
 
         </div>
         <button type="button" id="floating-launcher" hidden aria-label="恢复学习通AI助手" title="恢复学习通AI助手；拖动调整位置" aria-controls="panel" aria-expanded="false"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="3" y="4" width="26" height="24" rx="8" fill="currentColor" opacity=".14"/><path d="M16 11c-3-2-6-2-9-1v13c3-1 6-1 9 1 3-2 6-2 9-1V10c-3-1-6-1-9 1Zm0 0v13M10 14h3m-3 4h3m6-4h3m-3 4h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m23 3 1.1 2.9L27 7l-2.9 1.1L23 11l-1.1-2.9L19 7l2.9-1.1L23 3Z" fill="currentColor"/></svg><span class="floating-dot" aria-hidden="true"></span></button>
@@ -11175,17 +11514,28 @@ Typr["U"] = {
             switchPanelView('model');
             el('provider-picker').focus();
         };
-        const setAboutVisible = visible => {
-            el('about').hidden = !visible;
-            el('about-toggle').setAttribute('aria-expanded', String(visible));
+        const about = el('about');
+        initProjectIntroDragging();
+        const showProjectIntro = () => {
+            if (!about.open) about.showModal();
+            panelView.repositionProjectIntro();
+            el('about-toggle').setAttribute('aria-expanded', 'true');
+            el('about-close').focus();
         };
-        el('about-toggle').onclick = () => setAboutVisible(el('about').hidden);
-        el('about-close').onclick = () => { setAboutVisible(false); el('about-toggle').focus(); };
+        el('about-toggle').onclick = showProjectIntro;
+        el('about-close').onclick = closeProjectIntro;
+        about.addEventListener('click', event => { if (event.target === about) closeProjectIntro(); });
+        about.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
+        about.addEventListener('close', () => {
+            panelView.cancelProjectIntroDrag();
+            el('about-toggle').setAttribute('aria-expanded', String(about.open));
+            if (!about.open && panelView.windowMode === 'open') el('about-toggle').focus();
+        });
         el('github').onclick = () => {
             if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(PROJECT_GITHUB_URL)) {
                 window.open(PROJECT_GITHUB_URL, '_blank', 'noopener,noreferrer');
             } else {
-                setAboutVisible(true);
+                showProjectIntro();
                 el('github-note').textContent = 'GitHub 仓库尚未创建，项目暂未发布；当前没有可访问的项目链接。';
             }
         };
@@ -11340,9 +11690,56 @@ Typr["U"] = {
         doc.addEventListener('cx-ai-assistant-window-activate', listener);
     }
 
+    function initProjectIntroDragging() {
+        const { shadow, host } = panelView, view = host.ownerDocument.defaultView;
+        const dialog = shadow.getElementById('about'), heading = dialog.querySelector('.about-heading');
+        let drag = null, positioned = false;
+        const position = (left, top) => {
+            const rect = dialog.getBoundingClientRect();
+            left = Math.max(0, Math.min(left, view.innerWidth - rect.width));
+            top = Math.max(0, Math.min(top, view.innerHeight - rect.height));
+            Object.assign(dialog.style, { inset: 'auto', margin: '0', left: `${left}px`, top: `${top}px` });
+            positioned = true;
+        };
+        const cancel = () => {
+            const id = drag?.id;
+            drag = null;
+            if (id !== undefined && heading.hasPointerCapture(id)) heading.releasePointerCapture(id);
+        };
+        const reposition = () => {
+            cancel();
+            if (!dialog.open || !positioned) return;
+            const rect = dialog.getBoundingClientRect();
+            position(rect.left, rect.top);
+        };
+        heading.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.target.closest('button,a')) return;
+            const rect = dialog.getBoundingClientRect();
+            drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+            heading.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+        heading.addEventListener('pointermove', event => {
+            if (drag?.id === event.pointerId) position(drag.left + event.clientX - drag.x, drag.top + event.clientY - drag.y);
+        });
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) heading.addEventListener(type, cancel);
+        panelView.cancelProjectIntroDrag = cancel;
+        panelView.repositionProjectIntro = reposition;
+        view.addEventListener('resize', reposition);
+        view.addEventListener('pagehide', () => { cancel(); view.removeEventListener('resize', reposition); }, { once: true });
+    }
+
+    function closeProjectIntro() {
+        panelView?.cancelProjectIntroDrag?.();
+        const dialog = panelView?.shadow.getElementById('about');
+        if (dialog?.open) dialog.close();
+        panelView?.shadow.getElementById('about-toggle').setAttribute('aria-expanded', 'false');
+    }
+
     function setAssistantWindowMode(mode) {
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
+        if(mode!=='open')closeProjectIntro();
         if(mode!=='open')closeResultImage();
         if(mode!=='open')panelView.clearRetryConfirmation?.();
         if(mode==='closed')clearCredentialInput();
@@ -11805,7 +12202,7 @@ Typr["U"] = {
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.29',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.30',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
