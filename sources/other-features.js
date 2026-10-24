@@ -71,6 +71,7 @@
     function initOtherFeatures(doc=document) {
         const existing=otherFeatureManagers.get(doc);if(existing)return existing;
         const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
+        const courseMenus=createCourseMenuManager(doc),defaultCourse=createPersonalCourseDefault(doc,{restored:otherFeaturePageShows.has(doc)});
         const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location);
         const render=()=>{
             for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
@@ -78,6 +79,7 @@
                 shadow.getElementById('other-keep-video-playing').checked=settings.keepVideoPlaying;
                 shadow.getElementById('other-video-status').textContent=settings.keepVideoPlaying?(protection?.status||'在课程页面播放视频后生效'):'按需开启';
             }
+            courseMenus?.render();defaultCourse?.render();
         };
         const tick=()=>{protection?.tick();render();};
         const apply=()=>{
@@ -92,20 +94,24 @@
         };
         const listener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener(OTHER_FEATURES_KEY,apply):null;
         const close=()=>{if(closed)return;closed=true;if(timer!==null)view.clearInterval(timer);protection?.close();
+            courseMenus?.close();defaultCourse?.close();
             if(listener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(listener);
             doc.removeEventListener('cx-ai-course-update',tick);view.removeEventListener('pagehide',close);panels.clear();otherFeatureManagers.delete(doc);};
-        const manager={apply,close,bind(shadow){panels.add(shadow);render();}};
+        const manager={apply,close,render,bind(shadow){panels.add(shadow);courseMenus?.bind(shadow);defaultCourse?.bind(shadow);render();}};
         otherFeatureManagers.set(doc,manager);doc.addEventListener('cx-ai-course-update',tick);view.addEventListener('pagehide',close,{once:true});
-        if(doc===document&&!otherFeaturePageShows.has(doc)){otherFeaturePageShows.add(doc);view.addEventListener('pageshow',()=>initOtherFeatures(doc));}
+        if(doc===document&&!otherFeaturePageShows.has(doc)){otherFeaturePageShows.add(doc);view.addEventListener('pageshow',()=>{
+            const current=initOtherFeatures(doc);if(panelView?.sourceDoc===doc&&panelView.host.isConnected)current.bind(panelView.shadow);
+        });}
         apply();return manager;
     }
     function initOtherFeatureControls(shadow,doc) {
         const manager=initOtherFeatures(doc);manager.bind(shadow);
+        if(panelView?.shadow===shadow)panelView.renderOtherFeatureControls=()=>otherFeatureManagers.get(doc)?.render();
         for(const [id,field] of [['other-hide-platform-ai','hidePlatformAi'],['other-keep-video-playing','keepVideoPlaying']]) {
             const control=shadow.getElementById(id);
             control.addEventListener('change',event=>{
-                if(!trustedAssistantActivation(event,control,'change')){manager.apply();return;}
-                set(OTHER_FEATURES_KEY,{...otherFeatureSettings(),[field]:control.checked});manager.apply();
+                if(!trustedAssistantActivation(event,control,'change')){initOtherFeatures(doc).apply();return;}
+                set(OTHER_FEATURES_KEY,{...otherFeatureSettings(),[field]:control.checked});initOtherFeatures(doc).apply();
             });
         }
     }

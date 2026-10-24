@@ -91,20 +91,21 @@
         function refresh(currentProvider = provider) {
             provider = currentProvider;
             entries = [...select.options].filter(option => !option.hidden).map(option => ({
-                value:option.value, label:option.label || option.textContent, disabled:option.disabled
+                value:option.value, label:option.label || option.textContent, disabled:option.disabled, reason:option.dataset.disabledReason || '此项为说明，请选择其他可用项'
             }));
             list.replaceChildren();
             for (const [index, entry] of entries.entries()) {
                 const row = doc.createElement('div'); row.id = `${id}-option-${index}`;
                 row.className = 'model-picker-option'; row.setAttribute('role', 'option');
                 row.setAttribute('aria-disabled', String(entry.disabled)); content(row,entry);
+                if(entry.disabled){row.dataset.disabledReason=entry.reason;row.setAttribute('aria-description',entry.reason);}
                 row.addEventListener('pointerdown', event => event.preventDefault());
                 row.addEventListener('pointermove', () => {if (!entry.disabled) {active = index; paintActive();}});
                 row.addEventListener('click', () => {active = index; commit();}); list.append(row);
             }
             content(value, entries.find(entry => entry.value === select.value) || {value:'',label:'请选择模型'});
-            button.disabled = select.disabled;
-            if (select.disabled) close();
+            setAssistantControlDisabled(button,select.disabled || !available().length,select.disabled ? select.dataset.disabledReason : entries[0]?.reason || '暂无可选项，请先获取模型列表');
+            if (button.disabled) close();
             if (active >= entries.length) active = entries.length - 1;
             paintActive();
         }
@@ -133,7 +134,7 @@
         const outside = event => {if (!event.composedPath().includes(wrapper)) close();};
         doc.addEventListener('pointerdown', outside);
         const observer = new doc.defaultView.MutationObserver(() => refresh(getModelProvider(shadow.getElementById('provider').value)));
-        observer.observe(select, {childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','label','hidden']});
+        observer.observe(select, {childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','label','hidden','data-disabled-reason']});
         doc.defaultView.addEventListener('pagehide', () => {observer.disconnect(); doc.removeEventListener('pointerdown',outside);}, {once:true});
         return {refresh};
     }

@@ -53,7 +53,7 @@
         download.title = newer ? `下载更新 v${cache.version}` : '下载更新';
         download.setAttribute('aria-label', download.title);
         install.textContent = newer ? `下载更新 v${cache.version}` : '下载更新';
-        s.getElementById('check-update').disabled = Boolean(assistantUpdatePending);
+        setAssistantControlDisabled(s.getElementById('check-update'),Boolean(assistantUpdatePending),'正在检查更新，请稍候');
         s.getElementById('check-update').textContent = assistantUpdatePending ? '正在检查…' : '检查更新';
         let status = newer ? `此前已核验 v${cache.version}，尚未核对最新发行版` : '尚未核对正式发行版';
         if (cache.source === ASSISTANT_UPDATE_CACHE_SOURCE) {

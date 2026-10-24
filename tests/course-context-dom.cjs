@@ -3,7 +3,7 @@ const path=require('node:path');
 const assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../sources/course-context.js'),'utf8');
-const implementation=fs.readFileSync(path.join(__dirname,'../implementation.js'),'utf8');
+const implementation=fs.readFileSync(path.join(__dirname,'../sources/course-context-collector.js'),'utf8');
 const logs=[],failures=[];
 async function test(name,run){try{await run();logs.push(`PASS ${name}`);}catch(error){failures.push(`${name}: ${error.stack}`);}}
 function fixture(body=''){
@@ -14,7 +14,7 @@ function fixture(body=''){
 const plain=value=>JSON.parse(JSON.stringify(value));
 function integration(f){
  const start=implementation.indexOf('    const chapterContextCache = new WeakMap();');
- const end=implementation.indexOf('    function readModelConfiguration()',start);
+ const end=implementation.length;
  assert(start>=0&&end>start,'课程资料接入函数未找到');
  let documents=[f.d],scope='course:c1';
  f.w.studyOwnerDocument=()=>f.d;f.w.courseScoreKey=()=>scope;

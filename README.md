@@ -6,23 +6,26 @@
 >
 > ⚠️本工具将继续长期维护。
 
-# 学习通AI助手
+# <img src="assets/logo.png" alt="" width="40" height="40" /> 学习通AI助手
 
 免费的学习通网页辅助脚本，配合篡改猴（Tampermonkey）使用。
 
 - **AI 答题**：章节测验与作业识别、逐题图文分析、答案与解析、原生预填。
 - **自动刷课**：视频、PPT 与章节测验处理，提供章节目录和视频进度。
-- **自定义设置**：配置模型、API Key 和学习开关。
+- **课程队列**：在个人空间勾选课程，按列表顺序逐门学习；从具体课程开始时只处理本课程。
+- **待刷列表**：滚轮查看当前及后续章节，集中操作开始、停止、跳过和暂停。
+- **课程首页启动**：同步章节目录、搜索及定位未完成任务，通过原生入口进入学习页。
+- **自定义设置**：配置模型、API Key、学习休息和视频间隔，管理课程菜单与默认课程入口。
+
+功能介绍与使用指南见 **[官网](https://xxtpilot.github.io/)**。
 
 ## 程序预览
 
-| 题目与答案 | 题目图片 |
+| 课程选择 | 待刷列表 |
 | :---: | :---: |
-| <img src="assets/screenshots/questions-panel-v1.04.png" alt="题目与答案面板" width="420" /> | <img src="assets/screenshots/question-images-v1.04.png" alt="题干图片与共享材料" width="420" /> |
-| **AI 答案与解析** | **自动刷课** |
-| <img src="assets/screenshots/ai-generated-answer-v1.04.png" alt="AI 生成答案与解析" width="420" /> | <img src="assets/screenshots/study-controls-v1.04.png" alt="自动刷课与学习开关" width="420" /> |
-| **视频进度** | **章节测验入口** |
-| <img src="assets/screenshots/video-progress-v1.04.png" alt="视频播放进度" width="420" /> | <img src="assets/screenshots/quiz-page-v1.04.png" alt="章节测验助手入口" width="420" /> |
+| <img src="assets/screenshots/course-selection.png" alt="课程选择与任务进度" width="420" /> | <img src="assets/screenshots/study-queue.png" alt="待刷滚轮与当前章节" width="420" /> |
+
+更多截图请访问 **[官网程序预览](https://xxtpilot.github.io/features/#程序预览)**。
 
 ## 安装与使用
 
@@ -32,7 +35,8 @@
 
 1. 安装并启用 [篡改猴（Tampermonkey）](https://www.tampermonkey.net/)，点击上方链接确认安装或更新，然后刷新学习通页面。
 2. 打开「学习通AI助手」，在「设置 → 模型设置」配置模型和自己的 API Key；图片题请选择支持图片的模型。
-3. 测验或作业使用「一键生成答案」，核对结果后保存或提交；课程学习页面进入「自动刷课」，按需调整开关后开始。
+3. 测验或作业使用「一键生成答案」，核对结果后保存或提交。
+4. 课程页面在「刷课设置」调整选项，再到「待刷列表」开始；多门课程从个人空间课程列表勾选后开始。
 
 题目列表支持题号定位、未完成筛选、单题复制和原图查看。
 

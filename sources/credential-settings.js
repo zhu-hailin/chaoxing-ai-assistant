@@ -20,8 +20,9 @@
         const cfg = configuration || readModelConfiguration();
         if (cfg.provider !== credentialView.provider || cfg.baseURL !== credentialView.baseURL || busy) clearCredentialInput();
         credentialView.provider = cfg.provider; credentialView.baseURL = cfg.baseURL;
-        credentialView.input.disabled = busy; credentialView.save.disabled = busy;
-        credentialView.clear.disabled = busy || !readProviderSetting(cfg.provider, 'key', '');
+        const busyReason = '任务运行中，请结束后再修改 API Key';
+        setAssistantControlDisabled(credentialView.input,busy,busyReason); setAssistantControlDisabled(credentialView.save,busy,busyReason);
+        setAssistantControlDisabled(credentialView.clear,busy || !readProviderSetting(cfg.provider, 'key', ''),busy ? busyReason : '当前服务商尚未保存 API Key');
         credentialView.input.placeholder = cfg.key ? '输入新 Key，留空保留当前值' : '输入当前平台 API Key';
         credentialView.input.setAttribute('aria-label', `${getModelProvider(cfg.provider).name} API Key`);
     }
@@ -37,6 +38,7 @@
         shadow.innerHTML = `<style>:host{display:block;container-type:inline-size}*{box-sizing:border-box}label,input,button{font:inherit;font-size:12px}div{display:grid;grid-template-columns:64px minmax(90px,1fr) auto auto;align-items:center;gap:6px;margin:4px 0}label{color:var(--muted,#6c7b90)}input{min-width:0;width:100%;height:30px;padding:5px 8px;border:1px solid #cbd5e3;border-radius:5px;background:#fff;color:#26354a}button{min-height:30px;line-height:1.4;padding:4px 9px;border:1px solid transparent;border-radius:5px;background:var(--accent,#315fbd);color:#fff;cursor:pointer;white-space:nowrap}button.secondary{background:#f0f3f7;color:var(--ink,#26354a)}button:disabled,input:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:2px solid #729adc;outline-offset:2px}@container(max-width:320px){div{grid-template-columns:minmax(0,1fr) auto auto}label{grid-column:1/-1;margin-bottom:1px}}</style><div><label for="credential-key">API Key</label><input id="credential-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><button type="button" id="credential-save">保存</button><button type="button" id="credential-clear" class="secondary">清除</button></div>`;
         const input = shadow.getElementById('credential-key'), save = shadow.getElementById('credential-save'), clear = shadow.getElementById('credential-clear');
         credentialView = {host,shadow,input,save,clear,provider:null,baseURL:''};
+        initAssistantControlFeedback(shadow);
         const current = () => {
             if (credentialSettingsBusy()) { reportCredentialSettings('正在运行，请停止任务后再修改 API Key'); return null; }
             const cfg = readModelConfiguration();

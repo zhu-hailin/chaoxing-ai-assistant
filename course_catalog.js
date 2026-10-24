@@ -18,6 +18,7 @@
                 const sourceDoc = view.document;
                 const root = sourceDoc.querySelector(COURSE_CATALOG_SELECTOR);
                 if (root) return { sourceDoc, root };
+                if(isCourseHomeURL(pageURL(sourceDoc))||isCourseHomeURL(pageURL(sourceDoc),true))return resolveCourseHomeCatalog(sourceDoc);
             } catch { /* 跨域祖先不可读时继续检查更上层，不绕过浏览器同源规则。 */ }
             try { if (view.parent === view) break; view = view.parent; }
             catch { break; }
@@ -136,6 +137,8 @@
     function readCourseCatalog(doc = document) {
         const context = resolveCourseCatalog(doc);
         if (!context) return null;
+        if(context.remote)return context;
+        if(context.structure==='course-home')return readCourseHomeCatalog(context);
         const { sourceDoc, root } = context;
         const entries = [];
         const seenIds = new Set();
@@ -217,7 +220,8 @@
         const doc = list.ownerDocument;
         const entries = catalog.context?.entries || [];
         const query = clean(shadow.getElementById('catalog-search').value).toLocaleLowerCase();
-        const located=entries.find(entry=>!entry.isGroup&&entry.active&&entry.id===catalog.locatedId&&catalog.locatedScope===catalog.context?.scopeKey&&Date.now()<catalog.locatedUntil);
+        const home=isCourseHomeURL(pageURL(panelView.sourceDoc));
+        const located=entries.find(entry=>!entry.isGroup&&(home||entry.active)&&entry.id===catalog.locatedId&&catalog.locatedScope===catalog.context?.scopeKey&&Date.now()<catalog.locatedUntil);
         const byId = new Map(entries.map(entry => [entry.id, entry]));
         const included = new Set();
         for (const entry of entries) {
@@ -265,8 +269,9 @@
                 const button = make('button', 'catalog-link'); button.type = 'button';
                 if (!entry.isGroup) {
                     button.dataset.chapterButton = entry.id;
-                    button.dataset.navigationAvailable=String(Boolean(entry.target?.isConnected));
-                    button.disabled = button.dataset.navigationAvailable!=='true' || controller.state.busy || courseRunActive();
+                    button.dataset.navigationAvailable=String(Boolean(catalog.context?.remote?entry.navigation?.status==='available':entry.target?.isConnected));
+                    button.dataset.navigationReason=entry.navigation?.status==='sequence-locked'?'本章尚未解锁，请先完成前置章节':'章节原生入口尚未就绪，请刷新目录';
+                    setAssistantControlDisabled(button,button.dataset.navigationAvailable!=='true' || controller.state.busy || courseRunActive(),controller.state.busy || courseRunActive()?'任务运行中，请结束后手动切换章节':button.dataset.navigationReason);
                 }
                 if (entry.active) button.setAttribute('aria-current', 'page');
                 button.title=`${entry.number} ${entry.title}`.trim();
@@ -288,17 +293,22 @@
                     }
                 } else {
                     if(entry.active)meta.append(make('span',`catalog-current${located===entry?' is-located-label':''}`,located===entry?'已定位':'当前'));
+                    else if(located===entry)meta.append(make('span','catalog-current is-located-label','已定位'));
                     const locked=!entry.active&&entry.navigation?.status==='sequence-locked';
                     const unknown=!entry.active&&entry.navigation?.status==='unknown';
                     const tone=locked?' is-locked':unknown?'':entry.completed?' is-complete':entry.pending>0?' is-pending':'';
                     meta.append(make('span',`catalog-state${tone}`,catalogStatus(entry)));
+                    if(home&&(locked||unknown)&&(entry.completed===true||entry.pending!==null)) {
+                        meta.append(make('span',`catalog-state${entry.completed?' is-complete':entry.pending>0?' is-pending':''}`,entry.completed?'已完成':entry.pending>0?`待完成 · ${entry.pending}项`:'无任务点'));
+                    }
                 }
                 for (const score of entry.scores) {
                     const badge = make('span', 'catalog-score', `测验 ${score.score} 分`);
                     badge.title = score.title || '已查看的测验成绩'; meta.append(badge);
                 }
                 button.append(meta);
-                button.onclick = () => {
+                button.onclick = event => {
+                    if(catalog.context?.remote&&!trustedAssistantActivation(event,button))return;
                     if (entry.isGroup) row.querySelector('.catalog-fold')?.click();
                     else navigateCourseChapter(entry.id);
                 };
@@ -312,9 +322,10 @@
         };
         const fragment = doc.createDocumentFragment();
         appendEntries(null, fragment);
-        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
+        if (!fragment.childNodes.length) fragment.append(make('li', 'catalog-empty', entries.length ? '没有匹配的章节' : catalog.context?.empty ? '暂无章节，无需刷课' : home ? '章节目录加载中，请稍候或刷新' : catalog.context ? '已找到目录容器，尚未识别章节；若加载后仍为空，请提供章节项 HTML 以适配。' : '未读取到课程目录，请在课程学习页面打开。'));
         list.replaceChildren(fragment);
-        shadow.getElementById('catalog-locate').textContent=located?'已定位':'定位当前';
+        shadow.getElementById('catalog-locate').textContent=located?'已定位':home?'定位未完成':'定位当前';
+        shadow.getElementById('catalog-locate').title=home?'定位目录中首个未完成或需核对的章节':'定位当前章节';
         shadow.getElementById('catalog-status').textContent = located ? `已定位：${located.number} ${located.title}`.trim() : entries.length ? catalog.context?.structure === 'legacy-h4'
             ? `共 ${entries.length} 个章节；旧版目录层级与完成状态未确认`
             : `共 ${entries.filter(e => e.isGroup).length} 个目录分组，${entries.filter(e => !e.isGroup).length} 个章节` : '';
@@ -324,7 +335,10 @@
         if(!panelView?.catalog)return;
         refreshCourseSidebar();
         const {catalog,shadow}=panelView;
-        const entries=catalog.context?.entries||[],current=entries.filter(entry=>!entry.isGroup&&entry.active);
+        const entries=catalog.context?.entries||[],home=isCourseHomeURL(pageURL(panelView.sourceDoc));
+        const selection=home?courseHomeSelection(catalog.context,true):null;
+        if(home&&selection.status!=='target'){shadow.getElementById('catalog-status').textContent=selection.message;return;}
+        const current=home?[selection.entry]:entries.filter(entry=>!entry.isGroup&&entry.active);
         if(current.length!==1){
             shadow.getElementById('catalog-status').textContent=current.length?'当前章节尚未明确，请刷新目录后重试':'暂未找到当前章节，请刷新目录后重试';return;
         }
@@ -336,8 +350,9 @@
         clearTimeout(catalog.locateTimer);
         catalog.locatedId=entry.id;catalog.locatedScope=catalog.context.scopeKey;catalog.locatedUntil=Date.now()+1800;
         renderCourseCatalog();
+        panelView.renderCoursePreview?.();
         const list=shadow.getElementById('catalog-list');
-        const row=[...list.querySelectorAll('.catalog-row.is-active')].find(item=>item.parentElement.dataset.chapterId===entry.id);
+        const row=[...list.querySelectorAll(home?'.catalog-row.is-located':'.catalog-row.is-active')].find(item=>item.parentElement.dataset.chapterId===entry.id);
         if(row){
             const bounds=list.getBoundingClientRect(),target=row.getBoundingClientRect();
             const top=Math.max(0,Math.min(list.scrollHeight-list.clientHeight,list.scrollTop+target.top-bounds.top-(list.clientHeight-target.height)/2));
@@ -352,7 +367,14 @@
 
     function navigateCourseChapter(id) {
         if (controller.state.busy || courseRunActive()) return controller.report('请等待本次操作完成后切换章节');
-        const catalog=readCourseCatalog(),access=courseChapterAccess(catalog?.sourceDoc,{id},catalog),entry=access.entry;
+        const catalog=readCourseCatalog();
+        if(catalog?.remote) {
+            const entry=catalog.entries.find(item=>item.id===id&&!item.isGroup);
+            if(!entry)return controller.report('章节入口已变化，请刷新课程目录');
+            controller.report(`正在切换至：${entry.title}`);
+            navigateCourseHomeRemoteChapter(catalog,id).catch(error=>{if(!courseHomeClosed)controller.report(error.message);});return;
+        }
+        const access=courseChapterAccess(catalog?.sourceDoc,{id},catalog),entry=access.entry;
         if (!entry) return controller.report('章节入口已变化，请刷新课程目录');
         if (entry.active) return controller.report(`当前章节：${entry.title}`);
         if(!access.allowed)return controller.report(access.status==='sequence-locked'?'该章节尚未解锁，请先完成前置任务':'该章节原生入口尚未确认，请刷新课程目录');
@@ -363,9 +385,12 @@
 
     function refreshCourseSidebar() {
         if (!panelView?.catalog) return;
+        if(isCourseHomeURL(pageURL(panelView.sourceDoc)))mountCourseHomeChapterEntry(panelView.sourceDoc);
         const catalog = panelView.catalog;
+        const previousScope=catalog.context?.scopeKey;
         catalog.context = readCourseCatalog(panelView.sourceDoc || panelView.host.ownerDocument);
-        const source = catalog.context?.sourceDoc.querySelector('#content1');
+        if(previousScope!==catalog.context?.scopeKey){catalog.collapsed.clear();catalog.locatedId=null;catalog.locatedUntil=0;}
+        const source = catalog.context?.structure==='course-home'?catalog.context.root:catalog.context?.sourceDoc.querySelector('#content1');
         if (source !== catalog.observedRoot) {
             catalog.observer?.disconnect(); catalog.observedRoot = source;
             if (source) {
@@ -373,20 +398,41 @@
                     if (catalog.timer) return;
                     catalog.timer = setTimeout(() => { catalog.timer = null; refreshCourseSidebar(); }, 100);
                 });
-                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'title', 'id', 'onclick', 'href', 'disabled', 'aria-disabled'], characterData: true });
+                const attributes=['class','title','id','onclick','href','disabled','aria-disabled'];
+                if(catalog.context?.structure==='course-home')attributes.push('data-locked','aria-label','hidden','aria-hidden','style','inert');
+                catalog.observer.observe(source, { childList: true, subtree: true, attributes: true, attributeFilter:attributes, characterData: true });
             }
         }
         renderCourseCatalog();
+        panelView.renderCoursePreview?.();
     }
 
     function initCourseSidebar() {
         panelView.catalog = { context: null, collapsed: new Set(), observer: null, observedRoot: null, timer: null };
         const { shadow } = panelView;
         shadow.getElementById('catalog-search').oninput = renderCourseCatalog;
-        shadow.getElementById('catalog-refresh').onclick = refreshCourseSidebar;
+        shadow.getElementById('catalog-refresh').onclick = ()=>{
+            if(isCourseHomeURL(pageURL(panelView.sourceDoc)))resetCourseHomeFrameBridge();
+            refreshCourseSidebar();
+        };
         shadow.getElementById('catalog-locate').onclick = locateCurrentCourseChapter;
         refreshCourseSidebar();
+        const doc=panelView.sourceDoc;
+        let frameObserver=null;
+        const frameChanged=()=>{
+            if(!isCourseHomeURL(pageURL(doc)))return;
+            const context=panelView?.catalog?.context,frame=doc.getElementById('frame_content-zj');
+            let loaded=null,source='';try{loaded=frame?.contentDocument;const url=new URL(frame.getAttribute('src'),doc.baseURI);url.hash='';source=url.href;}catch{}
+            if(frame!==context?.frame||source!==context?.frameSource||loaded!==context?.sourceDoc||!sameCourseHomeIdentity(context?.identity,courseHomeIdentity(doc)))refreshCourseSidebar();
+        };
+        const frameLoaded=event=>{if(event.target?.id==='frame_content-zj')refreshCourseSidebar();};
+        if(isCourseHomeURL(pageURL(doc))) {
+            frameObserver=new doc.defaultView.MutationObserver(frameChanged);
+            frameObserver.observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src','id']});
+            doc.addEventListener('load',frameLoaded,true);doc.defaultView.addEventListener('popstate',frameChanged);
+        }
         window.addEventListener('pagehide', () => {
+            frameObserver?.disconnect();doc.removeEventListener('load',frameLoaded,true);doc.defaultView?.removeEventListener('popstate',frameChanged);
             panelView?.catalog?.observer?.disconnect();
             clearTimeout(panelView?.catalog?.timer);
             clearTimeout(panelView?.catalog?.locateTimer);
