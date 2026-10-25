@@ -4,7 +4,7 @@
 
 > 感谢各位的真实使用与测评，推动工具不断优化！如果遇到题目未适配或其他 Bug，请及时[联系作者](https://github.com/zhu-hailin)或提交 [Issue](https://github.com/zhu-hailin/chaoxing-ai-assistant/issues)。
 >
-> ⚠️本工具将继续长期维护。
+> ⚠️本工具将继续长期维护。⚠️本工具不提供考试答题功能，仅提供作业答题。
 
 # <img src="assets/logo.png" alt="" width="40" height="40" /> 学习通AI助手
 
