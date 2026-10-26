@@ -1,12 +1,13 @@
 {
   "total": 17,
-  "failures": [],
+  "failures": [
+    "Only unique explicit label references produce multi-slot request units: AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(p.questions.every(q=>q.answerPolicy.status==='needs-classification'))\n\n    at D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:26:488\n    at test (D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:7:31)\n    at Object.<anonymous> (D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:25:1)\n    at Module._compile (node:internal/modules/cjs/loader:1761:14)\n    at Object..js (node:internal/modules/cjs/loader:1893:10)\n    at Module.load (node:internal/modules/cjs/loader:1481:32)\n    at Module._load (node:internal/modules/cjs/loader:1300:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+    "Human handwriting rule remains independent of confirmed writable controls: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'auto' !== 'manual'\n\n    at D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:33:150\n    at test (D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:7:31)\n    at Object.<anonymous> (D:\\Project\\xuexitong\\tests\\question-graph-dom.cjs:32:1)\n    at Module._compile (node:internal/modules/cjs/loader:1761:14)\n    at Object..js (node:internal/modules/cjs/loader:1893:10)\n    at Module.load (node:internal/modules/cjs/loader:1481:32)\n    at Module._load (node:internal/modules/cjs/loader:1300:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)"
+  ],
   "logs": [
     "PASS Schema2 compatibility and Schema3 confirmed native option relations",
     "PASS Content blocks retain reading order, images, readable formulas, tables and code",
-    "PASS Only unique explicit label references produce multi-slot request units",
     "PASS Unlabelled multi-inputs and repeated label references do not receive writable mapping",
-    "PASS Human handwriting rule remains independent of confirmed writable controls",
     "PASS Shared instructions require proven mark_item group boundary",
     "PASS Input values and selected state are excluded from content identity",
     "PASS Identical markup control replacement invalidates existing snapshot",

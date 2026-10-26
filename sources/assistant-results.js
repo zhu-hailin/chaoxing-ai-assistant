@@ -37,7 +37,10 @@
             : question.capabilities?.prefill===false ? ueditorReason
             : ['manual','uncertain'].includes(prefillPolicy.status) ? prefillPolicy.reason
             : question.supportLevel==='Partial Support' ? '仅支持已确认的作答区域' : entry?.answer?.length ? '可预填，等待操作' : '等待分析结果';
-        return {analysis,prefill};
+        const prefillWarning=question.capabilities?.prefill===false||['manual','uncertain'].includes(prefillPolicy.status)
+            ||['skipped','unverified'].includes(written?.status)
+            ? ueditorReason||written?.reason||(written?.status==='unverified'?'写入状态待核对，请手动检查答案':written?.status==='skipped'?'本题已跳过，请手动填写':prefillPolicy.reason)||'当前作答区域暂不支持自动填写，请手动填写' : '';
+        return {analysis,prefill,prefillWarning};
     }
     function resultImageCaption(image, question) {
         if (image.location === 'shared' || question?.contextImageIds?.includes(image.id) || image.sourceMaterialId && image.sourceQuestionNumber == null) return '共用材料';
@@ -236,9 +239,8 @@
             let item = view.cards.get(question.id);
             if (!item) {
                 const card = node('li', 'question-card'); card.dataset.questionId = question.id; card.tabIndex = -1;
-                item = { card, body: node('div','question-body'), statuses: node('div','question-statuses'), actions: node('div','question-card-actions'), materials: node('div','question-materials'), answer: node('div','question-result'), usage: node('details','request-usage'), mediaNodes: [] };
-                item.usage.append(node('summary','', '请求详情'), node('p','request-usage-text'));
-                card.append(item.body, item.statuses, item.actions, item.materials, item.answer, item.usage); view.cards.set(question.id, item);
+                item = { card, body: node('div','question-body'), statuses: node('div','question-statuses'), actions: node('div','question-card-actions'), materials: node('div','question-materials'), answer: node('div','question-result'), mediaNodes: [] };
+                card.append(item.body, item.materials, item.answer, item.statuses, item.actions); view.cards.set(question.id, item);
             }
             const images = questionImageIds(question).map(id => {
                 const image = data.media?.find(media => media.id === id);
@@ -254,6 +256,7 @@
                 const optionImages = new Set();
                 if (question.options.length) {
                     const options = node('ul', 'option-list');
+                    options.classList.toggle('is-judge',question.type==='judge');
                     for (const option of question.options) {
                         const optionNode = node('li','option-item'); optionNode.dataset.optionKey = option.key;
                         const content = node('div','option-content'); content.append(node('span','option-text',option.text));
@@ -262,6 +265,7 @@
                         const rendered = renderImages(question, ids, item.mediaNodes); if (rendered) content.append(rendered);
                         optionNode.append(node('span','option-key',question.type === 'judge' ? '·' : option.key),content); options.append(optionNode);
                     }
+                    if (question.options.every(option => String(option.text ?? '').length <= 24) && !options.querySelector('.media-list')) options.classList.add('is-compact');
                     item.materials.append(options);
                 }
                 const rendered = renderImages(question, questionImageIds(question).filter(id => !optionImages.has(id)), item.mediaNodes);
@@ -285,11 +289,10 @@
                 }
                 media.details.replaceChildren(fragment);
             }
-            const states = questionResultStatuses(data,question,entry), skipped = data.skippedQuestions?.find(record => record.id === question.id);
-            const statusText = [states.analysis && `AI 分析：${states.analysis}`,states.prefill && `自动预填：${states.prefill}`,
-                question.capabilities?.analyze===false && question.diagnostics?.length ? question.diagnostics.join('；') : '',skipped?.reason].filter(Boolean);
+            const states = questionResultStatuses(data,question,entry);
+            const statusText = states.prefillWarning ? [`不可预填：${states.prefillWarning}`] : [];
             const statusKey = JSON.stringify(statusText);
-            if (item.statusKey !== statusKey) { item.statusKey = statusKey; item.statuses.replaceChildren(...statusText.map(text => node('p','note',text))); }
+            if (item.statusKey !== statusKey) { item.statusKey = statusKey; item.statuses.hidden=!statusText.length; item.statuses.replaceChildren(...statusText.map(text => node('p','note prefill-warning',text))); }
             const canRetry = Boolean((question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id])
                 .some(id => ['failed','cancelled'].includes(data.analysisStates?.[id]?.status)) && controller?.task?.snapshot?.questions.includes(question));
             const retryCurrent=Boolean(controller?.task?.configurationChanged);
@@ -317,12 +320,6 @@
                 }
                 if (sources.childElementCount) fragment.append(sources); item.answer.replaceChildren(fragment);
             }
-            const ids = question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id];
-            const usage = ids.map(id => data.requestUsageByQuestion?.[id]).filter(Boolean);
-            const usageText = usage.map((record,unit) => [usage.length > 1 ? `作答区域 ${unit+1}` : '',record.model && `模型 ${record.model}`,
-                record.attempts > 0 ? `请求 ${record.attempts} 次` : '',
-                ...[['promptTokens','返回输入'],['completionTokens','返回输出'],['reasoningTokens','返回推理'],['totalTokens','返回合计']].map(([key,label]) => Number.isFinite(record[key]) ? `${label} ${record[key]} tokens` : '')].filter(Boolean).join(' · ')).filter(Boolean).join('\n');
-            item.usage.hidden = !usageText; setText(item.usage.lastElementChild, usageText);
             item.card.hidden = view.filter === 'incomplete' && !resultQuestionIncomplete(data,question,entry);
             if (!item.card.hidden) visible++;
             if (view.list.children[index] !== item.card) view.list.insertBefore(item.card,view.list.children[index] || null);

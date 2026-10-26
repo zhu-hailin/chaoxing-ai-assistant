@@ -3,7 +3,7 @@
     const otherFeaturePageShows = new WeakSet();
     function otherFeatureSettings() {
         const saved=get(OTHER_FEATURES_KEY,{});
-        return {hidePlatformAi:saved?.hidePlatformAi===true,keepVideoPlaying:saved?.keepVideoPlaying===true};
+        return {hidePlatformAi:saved?.hidePlatformAi===true,keepVideoPlaying:saved?.keepVideoPlaying===true,hideVideoWatermark:saved?.hideVideoWatermark===true,hideEndedCourses:saved?.hideEndedCourses===true};
     }
     function createManualVideoProtection(owner, options={}) {
         const clock=options.now||Date.now;
@@ -68,14 +68,55 @@
         };
         return {tick,get status(){return status;},get activeVideo(){return state?.video||null;},close(){if(closed)return;closed=true;release();}};
     }
+    function createEndedCourseFilter(doc) {
+        if(!isCourseListFrameURL(pageURL(doc)))return null;
+        const attribute='data-cx-ai-ended-course-hidden',managed=new Map();
+        let observer=null,enabled=false;
+        const restore=card=>{
+            if(card.getAttribute(attribute)==='true') {
+                const previous=managed.get(card);
+                if(previous===null)card.removeAttribute(attribute);else card.setAttribute(attribute,previous);
+            }
+            managed.delete(card);
+        };
+        const refresh=()=>{
+            const desired=new Set(),root=doc.getElementById('courselistArea');
+            if(enabled&&isCourseListFrameURL(pageURL(doc))&&root) {
+                // Ended cards may lack usable course links or the learnCourse class.
+                for(const marker of root.querySelectorAll('.not-open-tip')) {
+                    if(clean(marker.textContent).replace(/\s/g,'')!=='课程已结束'||marker.closest('template,[hidden],[aria-hidden="true"]'))continue;
+                    const card=marker.closest('.course');
+                    if(card&&root.contains(card))desired.add(card);
+                }
+            }
+            for(const card of [...managed.keys()])if(!desired.has(card))restore(card);
+            for(const card of desired) {
+                if(!managed.has(card))managed.set(card,card.getAttribute(attribute));
+                if(card.getAttribute(attribute)!=='true')card.setAttribute(attribute,'true');
+            }
+        };
+        const apply=value=>{
+            enabled=value===true;
+            let style=doc.getElementById('cx-ai-ended-courses-style');
+            if(enabled) {
+                if(!style){style=doc.createElement('style');style.id='cx-ai-ended-courses-style';style.textContent=`#courselistArea .course[${attribute}="true"]{display:none!important}`;(doc.head||doc.documentElement).append(style);}
+                if(!observer){observer=new doc.defaultView.MutationObserver(refresh);observer.observe(doc.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','id','href','hidden','aria-hidden']});}
+            }else {observer?.disconnect();observer=null;style?.remove();}
+            refresh();
+        };
+        return {apply,close(){apply(false);}};
+    }
     function initOtherFeatures(doc=document) {
         const existing=otherFeatureManagers.get(doc);if(existing)return existing;
         const view=doc.defaultView,panels=new Set();let settings=otherFeatureSettings(),timer=null,protection=null,closed=false;
         const courseMenus=createCourseMenuManager(doc),defaultCourse=createPersonalCourseDefault(doc,{restored:otherFeaturePageShows.has(doc)});
+        const endedCourses=createEndedCourseFilter(doc);
         const controlsPlayback=doc===document&&view.top===view.self&&isCourseStudyURL(view.location);
         const render=()=>{
             for(const shadow of panels){if(!shadow.host.isConnected){panels.delete(shadow);continue;}
                 shadow.getElementById('other-hide-platform-ai').checked=settings.hidePlatformAi;
+                shadow.getElementById('other-hide-video-watermark').checked=settings.hideVideoWatermark;
+                shadow.getElementById('other-hide-ended-courses').checked=settings.hideEndedCourses;
                 shadow.getElementById('other-keep-video-playing').checked=settings.keepVideoPlaying;
                 shadow.getElementById('other-video-status').textContent=settings.keepVideoPlaying?(protection?.status||'在课程页面播放视频后生效'):'按需开启';
             }
@@ -84,17 +125,26 @@
         const tick=()=>{protection?.tick();render();};
         const apply=()=>{
             if(closed)return;settings=otherFeatureSettings();
+            endedCourses?.apply(settings.hideEndedCourses);
             let style=doc.getElementById('cx-ai-platform-widgets-style');
             if(!style){style=doc.createElement('style');style.id='cx-ai-platform-widgets-style';(doc.head||doc.documentElement)?.append(style);}
             // Confirmed CxRobotSdkJs roots; never hide a generic .resizer or our assistant host.
             style.textContent=settings.hidePlatformAi?'.cx-robot-wrapper,.cx-robot-side,.cx-robot-side-tips{display:none!important}':'';
+            let videoPage=false;
+            try {const url=new URL(doc.URL);videoPage=isCourseStudyOrigin(url.origin)&&url.pathname==='/ananas/modules/video/index.html';}catch{}
+            let watermarkStyle=doc.getElementById('cx-ai-video-watermark-style');
+            if(settings.hideVideoWatermark&&videoPage) {
+                if(!watermarkStyle){watermarkStyle=doc.createElement('style');watermarkStyle.id='cx-ai-video-watermark-style';(doc.head||doc.documentElement)?.append(watermarkStyle);}
+                // Only the observed video text overlay; keep player controls, subtitles and verification layers.
+                watermarkStyle.textContent='#video.video-js > div.mask_div[id^="mask_div"]{display:none!important}';
+            }else watermarkStyle?.remove();
             if(controlsPlayback&&settings.keepVideoPlaying&&!protection){protection=createManualVideoProtection(doc);timer=view.setInterval(tick,500);}
             if(!settings.keepVideoPlaying){if(timer!==null)view.clearInterval(timer);timer=null;protection?.close();protection=null;}
             tick();
         };
         const listener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener(OTHER_FEATURES_KEY,apply):null;
         const close=()=>{if(closed)return;closed=true;if(timer!==null)view.clearInterval(timer);protection?.close();
-            courseMenus?.close();defaultCourse?.close();
+            courseMenus?.close();defaultCourse?.close();endedCourses?.close();
             if(listener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(listener);
             doc.removeEventListener('cx-ai-course-update',tick);view.removeEventListener('pagehide',close);panels.clear();otherFeatureManagers.delete(doc);};
         const manager={apply,close,render,bind(shadow){panels.add(shadow);courseMenus?.bind(shadow);defaultCourse?.bind(shadow);render();}};
@@ -107,7 +157,7 @@
     function initOtherFeatureControls(shadow,doc) {
         const manager=initOtherFeatures(doc);manager.bind(shadow);
         if(panelView?.shadow===shadow)panelView.renderOtherFeatureControls=()=>otherFeatureManagers.get(doc)?.render();
-        for(const [id,field] of [['other-hide-platform-ai','hidePlatformAi'],['other-keep-video-playing','keepVideoPlaying']]) {
+        for(const [id,field] of [['other-hide-platform-ai','hidePlatformAi'],['other-keep-video-playing','keepVideoPlaying'],['other-hide-video-watermark','hideVideoWatermark'],['other-hide-ended-courses','hideEndedCourses']]) {
             const control=shadow.getElementById(id);
             control.addEventListener('change',event=>{
                 if(!trustedAssistantActivation(event,control,'change')){initOtherFeatures(doc).apply();return;}

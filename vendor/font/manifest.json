@@ -35,8 +35,18 @@
       "version": "2.19.0",
       "license": "MIT",
       "sha256": "ce2ef2581ac80c09ea7025ce0eca7995b1cdc631cd0daaffce3a1353bc2143f8"
+    },
+    {
+      "file": "table.json",
+      "source": "https://www.forestpolice.org/ttf/2.0/table.json",
+      "retrievedAt": "2026-10-25",
+      "license": "upstream-not-specified",
+      "bytes": 355427,
+      "entries": 20906,
+      "sha256": "fbc6ae3c795a46ca2bd0994e68e7cb90ca4d9a046f335512657760d9a4fdf875"
     }
   ],
+  "table": "table.json",
   "scripts": [
     "Typr.js",
     "Typr.U.js",

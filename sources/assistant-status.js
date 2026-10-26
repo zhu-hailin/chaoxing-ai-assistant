@@ -72,6 +72,7 @@
             for (const button of s.querySelectorAll('[data-chapter-button]')) setAssistantControlDisabled(button,busy || button.dataset.navigationAvailable!=='true',busy ? busyReason : button.dataset.navigationReason);
             panelView.renderCourseRunControls?.();
             panelView.renderOtherFeatureControls?.();
+            refreshQuestionPresentation();
         }
     }
 

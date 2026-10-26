@@ -3,12 +3,30 @@ import re
 import json
 import hashlib
 import base64
+import tempfile
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.31'
+VERSION = '1.32'
+
+def bundled_logo_icons():
+    directory = ROOT / 'assets'
+    manifest = json.loads((directory / 'runtime-logo-manifest.json').read_text(encoding='utf-8'))
+    if hashlib.sha256((directory / manifest['source']).read_bytes()).hexdigest() != manifest['sourceSha256']:
+        raise ValueError('Original logo differs from the pinned derivatives')
+    icons = {}
+    for kind, entry in manifest['files'].items():
+        name = entry['file']
+        if Path(name).name != name:
+            raise ValueError('Invalid logo dependency filename')
+        raw = (directory / name).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != entry['sha256']:
+            raise ValueError(f'Logo dependency checksum mismatch: {name}')
+        icons[kind] = 'data:image/png;base64,' + base64.b64encode(raw).decode('ascii')
+    return icons
+
 def bundled_font_dependencies():
-    # Offline and pinned: never download JavaScript during build or execution.
+    # Offline and pinned: never download dependencies during build or execution.
     directory = ROOT / 'vendor/font'
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
     contents = {}
@@ -22,6 +40,9 @@ def bundled_font_dependencies():
         contents[name] = raw.decode('utf-8')
     notices = '\n'.join(contents[name] for name in manifest['notices'])
     sources = '\n;\n'.join(contents[name] for name in manifest['scripts'])
+    table = contents[manifest['table']]
+    if not isinstance(json.loads(table), dict):
+        raise ValueError('Font table must be a JSON object')
     # The upstream scripts expect a classic-script this and optional UMD exports.
     # A private receiver + masked AMD/CommonJS exports keeps globals untouched;
     # the assistant itself remains in its separate strict closure.
@@ -29,7 +50,7 @@ def bundled_font_dependencies():
             + notices + '\n*/\n'
             + 'const bundledFontDependencies = (function (define, module) {\n'
             + sources + '\n;return { Typr: Typr, md5: this.md5 };\n'
-            + '}).call(Object.create(null), undefined, undefined);\n')
+            + '}).call(Object.create(null), undefined, undefined);\n', table)
 
 # Declarations still share the original userscript closure. Keep the bootstrap last:
 # the document-start playback guard depends on hoisted function declarations.
@@ -39,6 +60,7 @@ IMPLEMENTATION_FILES = (
     'sources/question-workflow.js',
     'sources/assistant-window-context.js',
     'sources/assistant-results.js',
+    'sources/account-profile.js',
     'sources/assistant-navigation.js',
     'sources/course-context-collector.js',
     'sources/model-settings.js',
@@ -86,10 +108,22 @@ core = modules['sources/assistant-core.js']
 font_marker = '/* BUNDLED_FONT_DEPENDENCIES */'
 if core.count(font_marker) != 1 or re.search(r'^// @require\b', core, re.M):
     raise ValueError('Missing font bundle marker or unexpected remote JavaScript dependency')
-core = core.replace(font_marker, bundled_font_dependencies())
+font_dependencies, font_table = bundled_font_dependencies()
+core = core.replace(font_marker, font_dependencies)
+table_source = 'sources/font-decoder.js'
+table_marker = '/* BUNDLED_FONT_TABLE */'
+if modules[table_source].count(table_marker) != 1:
+    raise ValueError('Missing or duplicate font table marker')
+modules[table_source] = modules[table_source].replace(table_marker, json.dumps(font_table, ensure_ascii=True))
 template = (ROOT / 'sources/panel-template.html').read_text(encoding='utf-8')
-launcher_icon = base64.b64encode((ROOT / 'assets/logo.png').read_bytes()).decode('ascii')
-template = template.replace('__FLOATING_LAUNCHER_ICON__', 'data:image/png;base64,' + launcher_icon)
+icons = bundled_logo_icons()
+if core.count('__ASSISTANT_ICON__') != 1 or template.count('__FLOATING_LAUNCHER_ICON__') != 1:
+    raise ValueError('Missing or duplicate logo marker')
+core = core.replace('__ASSISTANT_ICON__', icons['metadata'])
+template = template.replace('__FLOATING_LAUNCHER_ICON__', icons['floating'])
+if template.count('__PANEL_LOGO_ICON__') != 1:
+    raise ValueError('Missing or duplicate panel logo marker')
+template = template.replace('__PANEL_LOGO_ICON__', icons['metadata'])
 intro = (ROOT / 'sources/project-intro.html').read_text(encoding='utf-8')
 
 core = re.sub(r'(?m)^// @version\s+[^\r\n]+', f'// @version      {VERSION}', core)
@@ -109,4 +143,16 @@ for name in IMPLEMENTATION_FILES:
     modules[name] = content.replace(panel_marker, '        shadow.innerHTML = `' + template + '`;')
 output = ''.join(modules[name] for name in SOURCE_FILES) + '\n})();\n})();\n'
 output = '\n'.join(line.rstrip() for line in output.splitlines()) + '\n'
-(ROOT / '学习通AI助手.user.js').write_text(output, encoding='utf-8', newline='\n')
+header = re.match(r'\A// ==UserScript==\n([\s\S]*?)^// ==/UserScript==', output, re.M)
+if header is None or not 1 <= len(header.group(1)) <= 16000:
+    raise ValueError('Userscript metadata exceeds the existing updater limit')
+temporary = None
+try:
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', newline='\n', dir=ROOT,
+                                     prefix='cx-assistant-', suffix='.tmp', delete=False) as handle:
+        temporary = Path(handle.name)
+        handle.write(output)
+    temporary.replace(ROOT / '学习通AI助手.user.js')
+finally:
+    if temporary is not None:
+        temporary.unlink(missing_ok=True)

@@ -32,7 +32,8 @@ paths += ['tests/model-fixture.cjs', 'tests/ui-model-fixes-dom.cjs', 'tests/ui-m
 paths += ['tests/answer-policy-dom.cjs', 'tests/answer-policy-mock.cjs', 'tests/answer-policy-results.json']
 paths += [str(p.relative_to(root)) for p in (root / 'assets').rglob('*') if p.is_file()]
 paths += [str(p.relative_to(root)) for p in (root / 'vendor/font').rglob('*') if p.is_file()]
-paths += ['tests/font-dependencies-dom.cjs']
+paths += ['tests/font-dependencies-dom.cjs', 'tests/font-build-integrity.py',
+          'tests/logo-assets.cjs', 'tests/parser-index-dom.cjs', 'tests/parser-ueditor-dom.cjs']
 paths += ['tests/fixtures/video-quiz-tktopic.html']
 paths += ['tests/fixtures/video-speed-chaoxing-menu.html', 'docs/倍速菜单兼容回归结果.json']
 paths += ['tests/errors-dom.cjs', 'tests/question-context-dom.cjs',
@@ -45,6 +46,14 @@ paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'pa
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]
 if args.skip_readme:
     paths.remove("README.md")
+# Paused candidate notes and unused screenshot working sets stay local.
+paths = [path for path in paths
+         if path.replace('\\', '/') not in {
+             'docs/脚本接口与扩展控制台候选版-20261023.md',
+             'docs/架构瘦身与浏览器扩展可行性研究-20261023.md'}
+         and not path.replace('\\', '/').startswith((
+             'assets/screenshots/核心功能-20261024/',
+             'assets/screenshots/用户截图裁剪-20261024/'))]
 for relative in paths:
     original, target = root / relative, publish / relative
     target.parent.mkdir(parents=True, exist_ok=True)

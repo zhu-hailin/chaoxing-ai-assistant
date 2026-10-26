@@ -1,4 +1,4 @@
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:30, loadMs:30000, videoLoadMs:60000, completionMs:30000,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:30, loadMs:30000, videoLoadMs:60000, completionMs:30000, emptyTailWaitMs:2500,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
         slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
@@ -1405,6 +1405,70 @@
                         run.tabProgress={chapterId:chapter.id,currentId:currentTabId,completed:[...visitedTabs],identities:[...identities]};
                         save();
                     };
+                    const waitForTailConfirmation=async state=>{
+                        const started=now(),fullDeadline=started+limits.completionMs;
+                        const shortDeadline=Math.min(fullDeadline,started+limits.emptyTailWaitMs);
+                        const initialSignature=tabSignature;
+                        const recordedEmpty=()=>{
+                            for(let index=chapter.tasks.length-1;index>=0;index--) {
+                                const task=chapter.tasks[index];
+                                if(task.tab===currentTabId)return task.type==='non-task'&&task.status==='not-required';
+                            }
+                            return false;
+                        };
+                        const inspect=()=>{
+                            const fingerprint=courseContentFingerprint(owner),tree=courseFrameTree(owner),docs=tree.documents.slice(1);
+                            const pages=docs.map(doc=>({doc,body:doc.body,url:doc.URL}));
+                            if(docs.some(doc=>doc.querySelector('.fanyaMarking_left')))throw new Error('检测到作业页面，无法自动刷课');
+                            let ready=Boolean(fingerprint.root?.isConnected&&fingerprint.doc&&docs.length&&!tree.inaccessible.length
+                                &&docs.every(doc=>doc.body&&(doc.body.children.length||clean(doc.body.textContent))&&doc.readyState!=='loading'
+                                    &&!doc.querySelector('[aria-busy="true"],.ans-loading,[data-loading]')));
+                            if(ready) {
+                                try {
+                                    const expected=new URL(fingerprint.src,pageURL(owner)),actual=new URL(fingerprint.doc.URL);
+                                    ready=expected.origin===actual.origin&&expected.pathname===actual.pathname
+                                        &&['courseid','clazzid','knowledgeid','num'].every(key=>expected.searchParams.get(key)===actual.searchParams.get(key));
+                                }catch{ready=false;}
+                            }
+                            if(!ready)return {fingerprint,pages,ready:false,hasTask:false,empty:false};
+                            const tasks=coursePageTasks(tree);
+                            return {fingerprint,pages,ready:true,hasTask:tasks.some(task=>courseTaskRequired(task.node)!==false)||coursePageHasTaskPoints(tree),
+                                empty:coursePageWithoutTasks(tree,tasks)};
+                        };
+                        const emptyTail=live=>live.ready&&live.empty&&recordedEmpty()&&currentTabId!=='current'
+                            &&currentTabId===tabIds[tabIds.length-1]&&tabs.every(tab=>visitedTabs.has(tab.id))
+                            &&tabs.some(tab=>tab.id===currentTabId&&tab.active)&&!context.submitting
+                            &&!chapter.tasks.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed)&&task.status!=='done');
+                        const initial=inspect();
+                        let shortWait=emptyTail(initial);
+                        while(true) {
+                            guard();
+                            if(refreshTabs()) {
+                                const progress=state();
+                                if(nextTab())return;
+                                const live=inspect();
+                                if(live.ready&&live.hasTask&&recordedEmpty()) {
+                                    // Reopen only a page last recorded as task-free; completed real tasks never loop back here.
+                                    visitedTabs.delete(currentTabId);
+                                    courseInvalidateTaskProbe(owner,entry.id);probe=null;initialProbeTab=null;
+                                    run.tabProgress={chapterId:chapter.id,currentId:currentTabId,completed:[...visitedTabs],identities:[...identities]};
+                                    save();return;
+                                }
+                                if(progress?.completed||progress?.pending===0)return;
+                                // Once uncertain, use the original deadline without granting another full waiting window.
+                                if(!emptyTail(live)||tabSignature!==initialSignature||courseContentChanged(initial.fingerprint,live.fingerprint)
+                                    ||initial.pages.length!==live.pages.length||initial.pages.some((page,index)=>page.doc!==live.pages[index].doc
+                                        ||page.body!==live.pages[index].body||page.url!==live.pages[index].url)
+                                    ||!(progress?.pending>0))shortWait=false;
+                            }else shortWait=false;
+                            const deadline=shortWait?shortDeadline:fullDeadline;
+                            if(now()>=deadline) {
+                                const message='栏目已核对，本章仍有未完成任务或平台未确认';
+                                throw context.submitting?new Error(message):courseTimeoutError(message);
+                            }
+                            await wait(Math.min(limits.pollMs,Math.max(0,deadline-now())));
+                        }
+                    };
                     let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     tabLoop:for(;;) {
                         await until(refreshTabs,limits.loadMs,'栏目列表或 active 状态持续无法确认');
@@ -1417,7 +1481,7 @@
                                 const state=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
                                 if(state()?.pending>0&&!state()?.completed) {
                                     emit('正在核对新增栏目或平台完成确认…','course-running');
-                                    await until(()=>refreshTabs()&&(nextTab()||state()?.completed||state()?.pending===0),limits.completionMs,'栏目已核对，本章仍有未完成任务或平台未确认');
+                                    await waitForTailConfirmation(state);
                                     tab=nextTab();
                                 }
                             }

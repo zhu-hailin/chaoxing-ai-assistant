@@ -9,10 +9,10 @@ const classificationRequests=[];
 const {JSDOM, VirtualConsole} = createRequire(path.join(__dirname, '../package.json'))('jsdom');
 
 // Exercise the generated script rather than rebuilding an imitation of the window state.
-const source = fs.readFileSync(path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace(/\r\n/g, '\n').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
+const source = fs.readFileSync(process.env.CX_WINDOW_SOURCE || path.join(__dirname, '../学习通AI助手.user.js'), 'utf8').replace(/\r\n/g, '\n').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
 const entry = "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });\n    else startQuizObserver();";
 assert(source.includes(entry), '候选脚本入口定位失败');
-const instrumented = source.replace(entry, `globalThis.windowTestAPI={initQuizAssistant,runAnswerFlow,initAssistantVisibility,registerAssistantUiHost,setAssistantUiHidden,get controller(){return controller}};`);
+const instrumented = source.replace(entry, `globalThis.windowTestAPI={initQuizAssistant,runAnswerFlow,initAssistantVisibility,registerAssistantUiHost,setAssistantUiHidden,createEndedCourseFilter,assistantAccountIdentifiers,assistantAccountProfile,get controller(){return controller}};`);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const logs = [], failures = [];
 async function check(name, fn) {
@@ -30,6 +30,7 @@ function fixture(opts={}) {
     url:'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:console
   });
   const w=dom.window, requests=[], storage=opts.hub?.storage || new Map([['deepseek_api_key','mock-window-key'],['cx_model','deepseek-flash'],...(opts.storage||[])]);
+  installElementScrolling(w);
   const hub=opts.hub || {storage,listeners:new Map(),writes:0,nextId:0},menus=new Map();
   let aborts=0;
   w.GM_getValue=withModelFixture((key,fallback)=>storage.has(key)?storage.get(key):fallback);
@@ -51,6 +52,7 @@ function fixture(opts={}) {
   let minimizeRect={left:760,top:260,width:28,height:28};
   s.getElementById('minimize').getBoundingClientRect=()=>typeof minimizeRect==='function'?minimizeRect():minimizeRect;
   return {w,d,s,host,panel,launcher,api,requests,errors,storage,hub,menus,get aborts(){return aborts;},
+    setURL(url){dom.reconfigure({url});},
     setMinimizeRect(rect){minimizeRect=rect;},
     open(view){api.controller.openPanel(view);},
     close(){w.dispatchEvent(new w.Event('pagehide'));w.close();}};
@@ -72,16 +74,33 @@ function reply(request) {
   request.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({answers:input.questions.map(question=>({id:question.id,answer:['悬浮状态完成的模拟答案'],reason:'模拟验证'}))})}}]})});
 }
 function assertNoErrors(f) {assert.deepEqual(f.errors,[]);}
+function installElementScrolling(w) {
+  // jsdom has no element scrolling API; only mirror coordinates used by the read-only queue wheel.
+  w.HTMLElement.prototype.scrollTo=function(options){if(Number.isFinite(options?.top))this.scrollTop=options.top;if(Number.isFinite(options?.left))this.scrollLeft=options.left;};
+}
+function courseFixtureDOM(url, errors) {
+  const console=new VirtualConsole();console.on('jsdomError',error=>errors.push(error.message));
+  // Reuse the existing synthetic course, but exercise this build rather than its archived embedded script.
+  const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace(/\r\n/g,'\n');
+  const start=html.indexOf('<script>const code='),end=html.indexOf(';\nclass JSDOM',start);
+  assert(start>=0&&end>start,'离线课程脚本定位失败');
+  const code=source.replace(entry,'globalThis.courseAPI={initStudyAssistant,createCourseRunner,courseTabs,courseFrameTree,courseDocumentReader,courseSubmitButton,courseQuizComplete,courseReportText,courseRunActive,get controller(){return controller},replaceRunner(r){courseRunner=r}};')
+    .replace('function pageURL(doc) {',"function pageURL(doc) { if(doc === window.top.document) return new URL('https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-demo-course&clazzid=mock-demo-class&cpi=mock-demo-account');");
+  const current=html.slice(0,start)+'<script>const code='+JSON.stringify(code).replace(/<\//g,'<\\/')+html.slice(end);
+  return new JSDOM(current,{url,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console,beforeParse:installElementScrolling});
+}
 async function nestedFixture() {
-  const console=new VirtualConsole(),errors=[];console.on('jsdomError',error=>errors.push(error.message));
-  const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
+  const errors=[];
   // The preview embeds a pageURL override. Real child IIFEs deliberately do not;
   // use the real route shape with mock identifiers so parent discovery is exercised.
-  const dom=new JSDOM(html,{url:'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account&scene=no-task',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
-  await until(()=>dom.window.courseDemo,'离线课程未初始化');const f=dom.window.courseDemo;
+  const dom=courseFixtureDOM('https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account&scene=no-task',errors);
+  try {await until(()=>dom.window.courseDemo,`离线课程未初始化：${errors.join('；')}`);}
+  catch(error){try{dom.window.courseDemo?.close();dom.window.dispatchEvent(new dom.window.Event('pagehide'));}finally{dom.window.close();}throw error;}
+  const f=dom.window.courseDemo;
   const parent=f.d.getElementById('cx-ai-study-root').shadowRoot;
   const initializeChild=()=>{
     const doc=f.doc,w=doc.defaultView,node=doc.createElement('div');node.className='TiMu';node.setAttribute('questionid','nested-window-q1');
+    installElementScrolling(w);
     node.innerHTML='<h3 class="stem">【简答题】解释嵌套测验的数据库概念</h3><textarea></textarea>';doc.body.append(node);
     const requests=[];let aborts=0;
     w.GM_getValue=withModelFixture((key,fallback)=>f.storage.has(key)?f.storage.get(key):fallback);
@@ -95,16 +114,51 @@ async function nestedFixture() {
   const active=()=>[...f.d.querySelectorAll('*')].filter(host=>host.shadowRoot?.getElementById('panel')).flatMap(host=>{
     const s=host.shadowRoot,result=[];if(!s.getElementById('panel').hidden)result.push({host,kind:'panel'});if(!s.getElementById('floating-launcher').hidden)result.push({host,kind:'floating'});return result;
   });
-  return {dom,f,parent,initializeChild,active,errors,async close(){f.close();await until(()=>!f.runner.busy,'模拟 runner 停止收尾超时');await delay(20);f.w.dispatchEvent(new f.w.Event('pagehide'));f.w.close();dom.window.close();}};
+  return {dom,f,parent,initializeChild,active,errors,async close(){try{f.close();await until(()=>!f.runner.busy,'模拟 runner 停止收尾超时');await delay(20);}finally{f.w.dispatchEvent(new f.w.Event('pagehide'));dom.window.close();}}};
 }
 function assertSingleWindow(n,host,kind) {
   const active=n.active();assert.equal(active.length,1,'同一课程页只能显示一个助手窗口或悬浮入口');assert.equal(active[0].host,host);assert.equal(active[0].kind,kind);
 }
 
 async function main() {
+  await check('设置位于主导航第四位，底部账号对应独立内容页',async()=>{
+    const f=fixture();try{
+      const tabs=f.s.querySelector('.nav-tabs'),settings=f.s.getElementById('nav-model'),account=f.s.getElementById('nav-account');
+      assert.equal(tabs.lastElementChild,settings);assert.equal(tabs.nextElementSibling,account);assert(account.classList.contains('nav-account-bottom'));assert(!settings.classList.contains('nav-model-bottom'));assert.equal(account.dataset.panelView,'account');assert.equal(account.getAttribute('aria-controls'),'view-account');assert(!f.s.getElementById('account-dialog'));assert.equal(f.requests.length,0);assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('账号资料仅读取数字标识和原生资料，令牌不进入展示对象',async()=>{
+    const f=fixture();try{
+      for(const [name,value] of [['UID','100001'],['_uid','100001'],['fid','2001'],['spaceRoleId','3'],['cx_p_token','fake-secret-token'],['JSESSIONID','fake-session']])f.d.cookie=`${name}=${value}`;
+      const ids=f.api.assistantAccountIdentifiers(f.d);assert.equal(ids.uid,'100001');assert.equal(ids.fid,'2001');assert.equal(ids.roleId,'3');assert(!JSON.stringify(ids).includes('secret'));assert(!JSON.stringify(ids).includes('session'));
+      const source=new f.w.DOMParser().parseFromString('<div class="user-block"><img class="head-img" src="https://photo.chaoxing.com/p/100001_80?temp=123&unrelated=drop"><p class="user-name">示例用户</p></div><h3 id="siteName">示例大学(学生)</h3>','text/html');
+      const profile=f.api.assistantAccountProfile(source,ids,'https://i.chaoxing.com/base');assert.equal(profile.name,'示例用户');assert.equal(profile.school,'示例大学');assert.equal(profile.role,'学生');assert.equal(profile.avatar,'https://photo.chaoxing.com/p/100001_80?temp=123');assert.equal(f.api.assistantAccountProfile(source,ids,'https://example.invalid/base').name,'');
+      source.querySelector('img').setAttribute('src','https://photo.chaoxing.com/p/100002_80');assert.throws(()=>f.api.assistantAccountProfile(source,ids,'https://i.chaoxing.com/base'),/账号已变化/);assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('账号页展示本页资料，支持导航切换与全隐藏且没有弹窗',async()=>{
+    const f=fixture();try{
+      f.open('other');f.setURL('https://i.chaoxing.com/base');f.d.cookie='UID=100001';f.d.cookie='fid=2001';
+      f.d.body.insertAdjacentHTML('beforeend','<div class="user-block"><img class="head-img" src="https://photo.chaoxing.com/p/100001_80"><p class="user-name">示例用户</p></div><h3 id="siteName">示例大学(学生)</h3>');
+      const page=f.s.getElementById('view-account'),trigger=f.s.getElementById('nav-account');
+      trigger.click();assert.equal(f.panel.dataset.activeView,'account');assert(!page.hidden);assert.equal(trigger.getAttribute('aria-selected'),'true');assert.equal(f.s.getElementById('account-name').textContent,'示例用户');assert(f.s.getElementById('account-details').textContent.includes('100001'));assert.equal(f.requests.length,0);assert(!f.s.getElementById('account-dialog'));
+      f.open('other');assert(page.hidden);assert(!f.panel.hidden);assert.equal(trigger.getAttribute('aria-selected'),'false');
+      trigger.click();arrow(f,trigger,'ArrowUp');assert.equal(f.panel.dataset.activeView,'model');assert(page.hidden);
+      trigger.click();f.menus.get('隐藏助手全部界面')();assert(!f.s.querySelector('dialog[open]'));assert.equal(f.host.style.display,'none');assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('隐藏头像默认关闭，通用图标不会被资料刷新或图片错误覆盖且设置同步',async()=>{
+    const a=fixture(),b=fixture({hub:a.hub});try{
+      a.setURL('https://i.chaoxing.com/base');a.d.cookie='UID=100001';a.d.body.insertAdjacentHTML('beforeend','<div class="user-block"><img class="head-img" src="https://photo.chaoxing.com/p/100001_80"><p class="user-name">示例用户</p></div><h3 id="siteName">示例大学(学生)</h3>');a.s.getElementById('nav-account').click();
+      const control=a.s.getElementById('account-hide-avatar'),nav=a.s.getElementById('nav-account'),generic=a.s.getElementById('account-nav-generic'),image=a.s.getElementById('account-nav-image');assert(!control.checked);assert.equal(a.w.getComputedStyle(generic).display,'none');
+      control.checked=true;control.dispatchEvent(new a.w.Event('change'));assert.equal(a.storage.get('cx_account_hide_avatar'),true);assert(b.s.getElementById('account-hide-avatar').checked);assert.equal(a.w.getComputedStyle(generic).display,'flex');assert.equal(a.w.getComputedStyle(image).display,'none');assert.equal(nav.title,'账号信息');assert.equal(a.s.getElementById('account-name').textContent,'示例用户');assert.notEqual(a.w.getComputedStyle(a.s.getElementById('account-image')).display,'none');
+      image.dispatchEvent(new a.w.Event('error'));a.w.dispatchEvent(new a.w.Event('focus'));assert.equal(a.w.getComputedStyle(generic).display,'flex');assert.equal(a.w.getComputedStyle(image.nextElementSibling).display,'none');
+      control.checked=false;control.dispatchEvent(new a.w.Event('change'));assert.equal(a.w.getComputedStyle(generic).display,'none');assert(!b.s.getElementById('account-hide-avatar').checked);assert(nav.title.includes('示例用户'));assertNoErrors(a);assertNoErrors(b);
+    }finally{b.close();a.close();}
+  });
   await check('其他功能导航位于章节下方，两个开关默认关闭并支持键盘切换',async()=>{
     const f=fixture();try{
-      assert.deepEqual([...f.s.querySelectorAll('[data-panel-view]')].map(x=>x.dataset.panelView),['questions','chapters','other','model']);f.open('other');assert(!f.s.getElementById('view-other').hidden);assert.equal(f.s.getElementById('nav-other').getAttribute('aria-selected'),'true');assert(!f.s.getElementById('other-hide-platform-ai').checked);assert(!f.s.getElementById('other-keep-video-playing').checked);
+      assert.deepEqual([...f.s.querySelectorAll('[data-panel-view]')].map(x=>x.dataset.panelView),['questions','chapters','other','model','account']);f.open('other');assert(!f.s.getElementById('view-other').hidden);assert.equal(f.s.getElementById('nav-other').getAttribute('aria-selected'),'true');assert(!f.s.getElementById('other-hide-platform-ai').checked);assert(!f.s.getElementById('other-keep-video-playing').checked);
       arrow(f,f.s.getElementById('nav-other'),'ArrowUp');assert.equal(f.panel.dataset.activeView,'chapters');arrow(f,f.s.getElementById('nav-chapters'),'ArrowDown');assert.equal(f.panel.dataset.activeView,'other');assertNoErrors(f);
     }finally{f.close();}
   });
@@ -115,6 +169,37 @@ async function main() {
       for(const node of roots)assert.equal(f.w.getComputedStyle(node).display,'none');assert.notEqual(f.w.getComputedStyle(f.d.getElementById('unrelated-resizer')).display,'none');assert.notEqual(f.w.getComputedStyle(f.d.querySelector('[data-face-verification]')).display,'none');assert.notEqual(f.host.style.display,'none');
       const late=f.d.createElement('div');late.className='cx-robot-wrapper';f.d.body.append(late);assert.equal(f.w.getComputedStyle(late).display,'none');control.checked=false;control.dispatchEvent(new f.w.Event('change'));assert.notEqual(f.w.getComputedStyle(late).display,'none');assert.deepEqual(roots.map(n=>n.getAttribute('style')),styles);assertNoErrors(f);
     }finally{f.close();}
+  });
+  await check('视频文字水印默认保留，开启后仅隐藏精确覆盖层，关闭恢复原样',async()=>{
+    const f=fixture();try{
+      const control=f.s.getElementById('other-hide-video-watermark');assert(!control.checked);
+      Object.defineProperty(f.d,'URL',{configurable:true,value:'https://mooc1.chaoxing.com/ananas/modules/video/index.html'});
+      f.d.body.insertAdjacentHTML('beforeend','<div id="video" class="video-js"><div id="mask_div00" class="mask_div" style="display:block">fixture watermark</div><button class="vjs-play-control">play</button><div class="vjs-text-track-display">subtitle</div><div data-face-verification>verification</div></div><div class="mask_div" id="unrelated-mask">other</div>');
+      const mask=f.d.getElementById('mask_div00'),original=mask.getAttribute('style');assert.notEqual(f.w.getComputedStyle(mask).display,'none');
+      control.checked=true;control.dispatchEvent(new f.w.Event('change'));assert.equal(f.w.getComputedStyle(mask).display,'none');
+      for(const selector of ['.vjs-play-control','.vjs-text-track-display','[data-face-verification]','#unrelated-mask'])assert.notEqual(f.w.getComputedStyle(f.d.querySelector(selector)).display,'none');
+      const late=f.d.createElement('div');late.id='mask_div01';late.className='mask_div';mask.parentElement.append(late);assert.equal(f.w.getComputedStyle(late).display,'none');
+      control.checked=false;control.dispatchEvent(new f.w.Event('change'));assert.notEqual(f.w.getComputedStyle(mask).display,'none');assert.notEqual(f.w.getComputedStyle(late).display,'none');assert.equal(mask.getAttribute('style'),original);
+      Object.defineProperty(f.d,'URL',{configurable:true,value:'https://mooc1.chaoxing.com/work/doHomeWorkNew'});control.checked=true;control.dispatchEvent(new f.w.Event('change'));assert(!f.d.getElementById('cx-ai-video-watermark-style'));assertNoErrors(f);
+    }finally{f.close();}
+  });
+  await check('已结课筛选只认封面标记，无入口卡片、动态更新和关闭恢复均保持',async()=>{
+    const f=fixture(),list=new JSDOM('<div id="courseList"><div id="courselistArea"><div class="course learnCourse" id="active">任务点进度：15/15，课程已结束说明</div><div class="course" id="ended" style="display:block"><span class="not-open-tip">课程已结束</span></div><div class="course" id="template"><span class="not-open-tip" hidden>课程已结束</span></div></div></div><div class="course" id="outside"><span class="not-open-tip">课程已结束</span></div>',{url:'https://mooc2-ans.chaoxing.com/visit/interaction',pretendToBeVisual:true});
+    const d=list.window.document,style=n=>list.window.getComputedStyle(d.getElementById(n)).display;
+    let filter;try{
+      assert.equal(f.api.createEndedCourseFilter(f.d),null);filter=f.api.createEndedCourseFilter(d);filter.apply(false);assert.notEqual(style('ended'),'none');
+      filter.apply(true);assert.equal(style('ended'),'none');for(const id of ['active','template','outside'])assert.notEqual(style(id),'none');
+      d.getElementById('courselistArea').insertAdjacentHTML('beforeend','<div class="course" id="late"><span class="not-open-tip">课程已结束</span></div>');await delay(0);assert.equal(style('late'),'none');
+      d.querySelector('#ended .not-open-tip').firstChild.data='进行中';await delay(0);assert.notEqual(style('ended'),'none');assert.equal(d.getElementById('ended').getAttribute('style'),'display:block');
+      const old=d.getElementById('courselistArea'),replacement=d.createElement('div');replacement.id='courselistArea';replacement.innerHTML='<div class="course" id="replacement"><span class="not-open-tip">课程已结束</span></div>';old.replaceWith(replacement);await delay(0);assert.equal(style('replacement'),'none');assert(!old.querySelector('#late').hasAttribute('data-cx-ai-ended-course-hidden'));
+      filter.apply(false);assert.notEqual(style('replacement'),'none');assert(!d.getElementById('cx-ai-ended-courses-style'));assert(!d.getElementById('replacement').hasAttribute('data-cx-ai-ended-course-hidden'));assertNoErrors(f);
+    }finally{filter?.close();list.window.close();f.close();}
+  });
+  await check('结课隐藏开关默认关闭，保存后跨面板及新实例同步',async()=>{
+    const a=fixture(),b=fixture({hub:a.hub});let c;try{
+      const control=a.s.getElementById('other-hide-ended-courses');assert(!control.checked);control.checked=true;control.dispatchEvent(new a.w.Event('change'));assert.equal(a.storage.get('cx_other_features').hideEndedCourses,true);assert(b.s.getElementById('other-hide-ended-courses').checked);
+      c=fixture({hub:a.hub});assert(c.s.getElementById('other-hide-ended-courses').checked);control.checked=false;control.dispatchEvent(new a.w.Event('change'));assert(!b.s.getElementById('other-hide-ended-courses').checked);assert(!c.s.getElementById('other-hide-ended-courses').checked);assertNoErrors(a);assertNoErrors(b);assertNoErrors(c);
+    }finally{c?.close();b.close();a.close();}
   });
   await check('其他功能持久化与跨实例同步无写入循环，全隐藏不取消功能配置',async()=>{
     const a=fixture(),b=fixture({hub:a.hub});let c;try{
@@ -159,16 +244,20 @@ async function main() {
       f.menus.get('显示助手界面')();visible(f,true,false);assert.match(f.s.getElementById('output').textContent,/悬浮状态完成/);assertNoErrors(f);
     }finally{f.close();}
   });
-  await check('最小化按钮位于关闭左侧，使用 SVG 图标和可访问名称；悬浮入口初始隐藏',async()=>{
+  await check('最小化按钮保留 SVG 和可访问名称，透明 PNG 悬浮入口初始隐藏',async()=>{
     const f=fixture();try {
       const minimize=f.s.getElementById('minimize'),close=f.s.getElementById('close');
       assert.equal(minimize.nextElementSibling,close);assert(minimize.querySelector('svg'));assert(!minimize.textContent.includes('_'));
       assert.match(minimize.getAttribute('aria-label')||minimize.title,/最小化|缩小/);
       assert.equal(f.launcher.tagName,'BUTTON');assert.equal(f.launcher.type,'button');assert(f.launcher.getAttribute('aria-label')||f.launcher.title);
       const css=[...f.s.querySelectorAll('style')].map(node=>node.textContent).join('\n'),launcherRule=css.match(/#floating-launcher\s*\{([^}]+)\}/)?.[1];
-      assert(launcherRule,'交付脚本中缺少悬浮样式');assert.match(launcherRule,/border-radius:\s*50%/);assert.match(launcherRule,/background:\s*#d94a4a\b/i);assert.match(launcherRule,/color:\s*#fff\b/i);
+      assert(launcherRule,'交付脚本中缺少悬浮样式');assert.match(launcherRule,/border:\s*0(?:;|$)/);assert.match(launcherRule,/border-radius:\s*0(?:;|$)/);assert.match(launcherRule,/background:\s*transparent(?:;|$)/);assert.match(launcherRule,/box-shadow:\s*none(?:;|$)/);
       assert.match(launcherRule,/width:44px;height:44px/);assert.match(css,/width:min\(640px/);assert.match(css,/height:min\(540px/);
-      assert(f.launcher.querySelector('svg path[stroke="currentColor"]'));assert(f.launcher.querySelector('svg path[fill="currentColor"]'));
+      const icon=f.launcher.querySelector('img.launcher-icon'),iconRule=css.match(/#floating-launcher \.launcher-icon\s*\{([^}]+)\}/)?.[1];
+      assert(icon,'缺少透明书本 PNG');assert.match(icon.src,/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
+      assert.deepEqual(Buffer.from(icon.src.split(',')[1],'base64').subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]));
+      assert.equal(icon.alt,'');assert.equal(icon.getAttribute('aria-hidden'),'true');assert.equal(icon.draggable,false);
+      assert.match(iconRule,/width:44px;height:44px/);assert.match(iconRule,/object-fit:\s*contain/);assert.match(iconRule,/pointer-events:\s*none/);
       assert(f.launcher.hidden);assert.equal(f.requests.length,0);assertNoErrors(f);
     }finally{f.close();}
   });
@@ -345,9 +434,7 @@ async function main() {
     }finally{f.close();}
   });
   for(const action of ['launcher','toolbar'])await check(`自动学习运行中最小化后由${action==='launcher'?'悬浮按钮':'课程工具栏'}恢复，不停止或重复启动视频`,async()=>{
-    const console=new VirtualConsole(),errors=[];console.on('jsdomError',error=>errors.push(error.message));
-    const html=fs.readFileSync(path.join(__dirname,'自动课程模拟.html'),'utf8').replace('/* TRUSTED_ASSISTANT_ACTIVATION */','return true; /* test harness only: jsdom cannot generate user activation */');
-    const dom=new JSDOM(html,{url:'https://offline-demo.invalid/course-demo.html?scene=no-task',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console});
+    const errors=[],dom=courseFixtureDOM('https://offline-demo.invalid/course-demo.html?scene=no-task',errors);
     let f;try {
       await until(()=>dom.window.courseDemo,'离线课程未初始化');f=dom.window.courseDemo;
       const s=f.d.getElementById('cx-ai-study-root').shadowRoot,panel=s.getElementById('panel'),launcher=s.getElementById('floating-launcher');assert(launcher,'离线课程模拟仍是旧脚本，请重建');

@@ -94,6 +94,7 @@
             panelView?.cancelFloatingDrag?.();
             panelView?.clearStopConfirmation?.();
             panelView?.clearRetryConfirmation?.();
+            panelView?.cancelAccountProfile?.();
         }
         for (const [host, state] of assistantUiHosts) {
             if (assistantUiHidden) {

@@ -6,4 +6,6 @@ TyprMd5 2.0 的元数据指定 Typr.js `15aa12ffa6cf39e8788562ea4af65b42317375fb
 
 构建为第三方代码创建独立的普通函数闭包和私有 this 对象，屏蔽 AMD/CommonJS 分支，仅向助手内层严格闭包提供 Typr、md5；不会向 window 或页面模块加载器导出。Typr.U 中未使用的 initHB 是上游可选入口，助手字体解析只使用 parse/codeToGlyph/glyphToPath，不调用它、不下载 HarfBuzz。
 
-仍保留原有 Table 映射资源和页面 Base64 字体获取方式。本次解决 Greasy Fork JavaScript 依赖，不改变映射规则，也不宣称整套解密完全离线。
+Table 映射表固定为本目录 `table.json`，来源、获取日期、字节数和 SHA-256 记于 `manifest.json`。构建校验后将原始 JSON 字符串内置到完整脚本，首次需要解码时解析；不再使用外部 `@resource`。原始键值及数字／字符串类型、页面 Base64 字体读取和字形映射规则保持原样。
+
+Table 上游响应未单列许可声明，因此清单单独标注 `upstream-not-specified`；上方 MIT 声明对应 Typr 与 MD5 源码及其许可文件。

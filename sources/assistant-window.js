@@ -36,6 +36,8 @@
         initOtherFeatureControls(shadow,doc);
         initCourseRunControls(doc, ctl, panelView);
         initResultControls(ctl);
+        initQuestionPresentation();
+        initAccountProfile(doc,shadow);
         const el = id => shadow.getElementById(id);
         el('analysis-cache-enabled').checked=get(KEY_ANALYSIS_CACHE_ENABLED,false)===true;
         el('analysis-cache-enabled').onchange=()=>{
@@ -282,7 +284,7 @@
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
         clearAssistantControlFeedback();
-        if(mode!=='open')closeProjectIntro();
+        if(mode!=='open'){closeProjectIntro();panelView.cancelAccountProfile?.();}
         if(mode!=='open')closeResultImage();
         if(mode!=='open')panelView.clearRetryConfirmation?.();
         if(mode==='closed')clearCredentialInput();

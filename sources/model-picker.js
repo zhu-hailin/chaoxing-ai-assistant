@@ -27,7 +27,7 @@
         arrow.setAttribute('stroke','currentColor');arrow.setAttribute('stroke-width','1.6');
         arrow.setAttribute('stroke-linecap','round');arrow.setAttribute('stroke-linejoin','round');
         arrow.setAttribute('aria-hidden','true');arrow.setAttribute('focusable','false');
-        const chevron=doc.createElementNS('http://www.w3.org/2000/svg','path');chevron.setAttribute('d','m4 6 4 4 4-4');arrow.append(chevron);
+        const more=doc.createElementNS('http://www.w3.org/2000/svg','path');more.setAttribute('d','M4 8h.01M8 8h.01M12 8h.01');arrow.append(more);
         button.append(value, arrow);
         if (label) {
             label.id ||= `${id}-picker-label`; label.htmlFor = button.id;

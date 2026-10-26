@@ -554,12 +554,35 @@
         if (typeof createCxError === 'function') return createCxError(code, {module:'question-parser',operation:'parse-document'});
         const error = new Error(message); error.code = code; error.cxCode = code; return error;
     }
+    function createQuestionParseLookup(media) {
+        const documents = new WeakMap();
+        return {
+            mediaById:new Map((media || []).map(item => [item.id,item])),
+            documentIndex(doc) {
+                if (!documents.has(doc)) {
+                    const nodesById = new Map(), labelsByControl = new WeakMap();
+                    for (const node of doc.querySelectorAll('[id]')) {
+                        const matches = nodesById.get(node.id) || [];
+                        matches.push(node); nodesById.set(node.id,matches);
+                    }
+                    for (const label of doc.querySelectorAll('label')) {
+                        const control = label.control;
+                        if (!control) continue;
+                        const labels = labelsByControl.get(control) || [];
+                        labels.push(label); labelsByControl.set(control,labels);
+                    }
+                    documents.set(doc,{nodesById,labelsByControl});
+                }
+                return documents.get(doc);
+            }
+        };
+    }
     function parseQuestionContent(node, context = {}, adapterHints = {}) {
         const question = context.question || {}, binding = context.binding || {};
         const blocks = [], slots = [], subquestions = [], imageNodes = binding.imageNodes || new Map();
         let slotAmbiguous = false;
         const mediaByNode = new Map([...imageNodes].map(([id, image]) => [image, id]));
-        const descriptors = new Map((context.media || []).map(item => [item.id,item]));
+        const descriptors = context.parseLookup?.mediaById || new Map((context.media || []).map(item => [item.id,item]));
         const text = value => typeof clean === 'function' ? clean(value) : String(value || '').replace(/\s+/g, ' ').trim();
         const addText = value => { const valueText = text(value); if (valueText) blocks.push({type:'text', text:valueText}); };
         const walk = current => {
@@ -607,24 +630,27 @@
             }
         } else if (['blank','essay'].includes(question.type)) {
             const labels = [...node.querySelectorAll('label')];
-            const allLabels = [...node.ownerDocument.querySelectorAll('label')];
-            const idCounts = new Map();
-            for (const element of node.ownerDocument.querySelectorAll('[id]')) idCounts.set(element.id, (idCounts.get(element.id) || 0) + 1);
+            const index = context.parseLookup?.documentIndex(node.ownerDocument);
+            const allLabels = index ? null : [...node.ownerDocument.querySelectorAll('label')];
+            const idCounts = index ? null : new Map();
+            if (!index) for (const element of node.ownerDocument.querySelectorAll('[id]')) idCounts.set(element.id, (idCounts.get(element.id) || 0) + 1);
+            const idCount = id => index ? index.nodesById.get(id)?.length : idCounts.get(id);
+            const labelCount = control => index ? (index.labelsByControl.get(control)?.length || 0) : allLabels.filter(other => other.control === control).length;
             for (const label of labels) {
                 const targets = (binding.inputs || []).filter(input => label.control === input && node.contains(input));
                 if (targets.length !== 1 || !text(questionContentText(label))) continue;
                 const control = targets[0];
-                if (control.id && idCounts.get(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form') || !questionNodeActive(label)) continue;
-                if (allLabels.filter(other => other.control === control).length !== 1 || slots.some(slot => slot.control === control)) continue;
+                if (control.id && idCount(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form') || !questionNodeActive(label)) continue;
+                if (labelCount(control) !== 1 || slots.some(slot => slot.control === control)) continue;
                 slots.push({id:`label-${slots.length + 1}`, text:text(questionContentText(label)), control, evidence:['native-label-reference'], type:question.type});
             }
             for (const control of binding.inputs || []) {
-                if (slots.some(slot => slot.control === control) || control.id && idCounts.get(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form')) continue;
+                if (slots.some(slot => slot.control === control) || control.id && idCount(control.id) !== 1 || node.closest('form') && control.form !== node.closest('form')) continue;
                 const references = (control.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
                 if (!references.length || new Set(references).size !== references.length) continue;
                 const signature = [...references].sort().join(' ');
                 if ((binding.inputs || []).filter(other => (other.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).sort().join(' ') === signature).length !== 1) continue;
-                const targets = references.map(id => [...node.ownerDocument.querySelectorAll('[id]')].filter(target => target.id === id));
+                const targets = references.map(id => index ? index.nodesById.get(id) || [] : [...node.ownerDocument.querySelectorAll('[id]')].filter(target => target.id === id));
                 if (targets.some(matches => matches.length !== 1 || !node.contains(matches[0]) || matches[0].contains(control)
                     || matches[0].closest(MEDIA_EXCLUDED) || !questionNodeActive(matches[0]))) continue;
                 const label = targets.map(matches => text(questionContentText(matches[0]))).filter(Boolean).join('；');
@@ -704,8 +730,10 @@
     }
     function parseQuestionGraph(doc = document, parseContext = {}) {
         const legacy = parseQuestionDocument(doc, parseContext), controls = [], relations = [], materials = legacy.materials || [], bindings = new Map(legacy.bindings);
+        // This lookup lives for one synchronous parse only; every snapshot check builds fresh indexes.
+        const parseLookup = createQuestionParseLookup(legacy.media);
         const questions = legacy.questions.map(original => {
-            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext,media:legacy.media};
+            const binding = legacy.bindings.get(original.id), context = {question:original, binding, doc, parseContext,media:legacy.media,parseLookup};
             const content = parseQuestionContent(binding.node, context, binding.adapterHints || {});
             const parsedControls = parseQuestionControls(binding.node, context, binding.adapterHints || {});
             const matched = matchQuestionRelations(content, parsedControls, context);

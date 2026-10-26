@@ -18,11 +18,28 @@
             && question.contains(editor) && !frame.closest(STEM_SELECTOR)
             && (!src || /^about:blank(?:[?#].*)?$/i.test(src) || /^javascript:/i.test(src)));
     }
+    function courseOptionalBookReaderFrame(frame) {
+        if(!frame?.matches('iframe.ans-attach-online[name="bookifame"]'))return false;
+        try {
+            const doc=frame.ownerDocument,outer=doc.defaultView.frameElement;
+            if(!outer?.matches('iframe.ans-attach-online.ans-book')||courseTaskRequired(outer)!==false)return false;
+            const container=courseTaskContainer(outer),markers='.ans-job,.ans-job-finished,[data-course-task],[data-isjob="true"],.ans-job-icon,.orangeNew';
+            if(!container||courseTaskLabel(container)||courseVisibleMarker(container,markers))return false;
+            const wrapper=new URL(outer.getAttribute('src'),outer.ownerDocument.baseURI),actual=new URL(doc.URL);
+            const reader=new URL(frame.getAttribute('src'),doc.baseURI);
+            if(!isCourseStudyOrigin(wrapper.origin)||wrapper.pathname!=='/ananas/modules/innerbook/index.html'
+                ||actual.origin!==wrapper.origin||actual.pathname!==wrapper.pathname
+                ||reader.origin!=='https://resapi.chaoxing.com'||reader.pathname!=='/innerurlNew')return false;
+            if(doc.readyState==='loading'||courseBlocker([doc])||doc.querySelector('.fanyaMarking_left,form[action*="login"],[aria-busy="true"],.ans-loading,[data-loading]'))return false;
+            return !courseTaskLabel(doc.body)&&!courseVisibleMarker(doc.body,markers);
+        }catch{return false;}
+    }
     function courseFrameTree(owner) {
         const documents = [owner], inaccessible = [], seen = new Set([owner]);
         const root = owner.querySelector('#mainid #iframe');
         const visit = (frame, depth) => {
-            if (depth > 12 || !courseElementVisible(frame) || (frame !== root && courseAnswerEditorFrame(frame))) return;
+            // 已确认无任务的跨域图书阅读内容不属于待加载的课程控件。
+            if (depth > 12 || !courseElementVisible(frame) || (frame !== root && (courseAnswerEditorFrame(frame)||courseOptionalBookReaderFrame(frame)))) return;
             try {
                 const doc = frame.contentDocument;
                 if (!doc?.documentElement) { if(!courseRemoteReaderFrame(frame))inaccessible.push(frame); return; }

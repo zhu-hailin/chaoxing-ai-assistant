@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "source": "logo-blue.png",
+  "sourceSha256": "ec232ae8af99b0a0f5a25a8bfc9a3edd92f065379cf7798a34605b2d3e8be995",
+  "sourceSize": [
+    1254,
+    1254
+  ],
+  "generatedAt": "2026-10-26",
+  "method": "AI recolor of original logo; fixed RGBA LANCZOS derivatives; PNG optimize; no crop",
+  "originalSource": "logo.png",
+  "originalSourceSha256": "831b890495e2d8f9f3ba066db6062683877f6c2447307786bfacf63cc96c2694",
+  "files": {
+    "floating": {
+      "file": "logo-runtime.png",
+      "width": 176,
+      "height": 176,
+      "mode": "RGBA",
+      "bytes": 28613,
+      "sha256": "e74f86084213d7566139eb93d1a5ddb7f115d60bb2996cf5a154d2c479f49252"
+    },
+    "metadata": {
+      "file": "logo-metadata.png",
+      "width": 32,
+      "height": 32,
+      "mode": "RGBA",
+      "bytes": 2123,
+      "sha256": "84aaae5cd63e48faf3587a0990687141f49c6b358bb24aa9eb2edcbad55c143a"
+    }
+  }
+}

@@ -1,5 +1,6 @@
     // 字体映射缓存、字符还原与原生文本更新。
     const fontCache = new Map();
+    const BUNDLED_FONT_TABLE_JSON = /* BUNDLED_FONT_TABLE */;
     let fontTable;
     function fontRootNeedsDecoding(root) {
         // 只检查实际文本；图片本身不依赖字体。保留平台节点、属性和事件。
@@ -29,7 +30,7 @@
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
                 if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw createCxError('CX-CFG-006',{module:'parser',operation:'font'});
-                if (!fontTable) fontTable = JSON.parse(GM_getResourceText('Table'));
+                if (!fontTable) fontTable = JSON.parse(BUNDLED_FONT_TABLE_JSON);
                 const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
                 const font = Typr.parse(bytes)[0];
                 const mapping = new Map();

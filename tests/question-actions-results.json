@@ -1,6 +1,6 @@
 {
-  "passed": 22,
-  "failed": 0,
+  "passed": 56,
+  "failed": 4,
   "tests": [
     "规划阶段没有点击、focus、输入事件或属性写入，公开计划没有DOM",
     "执行原生选项并回读 单选题",
@@ -9,7 +9,6 @@
     "文字使用原生setter及input/change事件",
     "普通入口保留手工文字、不同选择和隐藏保存答案",
     "人工要求不能由模型非空答案或auto策略解除",
-    "旧文字结果缺少分类策略时拒绝自动填入",
     "不支持控件和非法选项不会写入",
     "完整计划预检：后一道控件替换时前一道也零写入",
     "执行中下一题节点被替换，保留已写入状态并停止后续动作",
@@ -23,7 +22,59 @@
     "执行器从不点击提交/继续或修改任务完成标记",
     "明确label关联的多个文本单元按ID填写并归集原题",
     "多文本框缺少明确槽位关联时不按位置猜测",
-    "首次点击后取消保留部分选择并阻止后续选项"
+    "首次点击后取消保留部分选择并阻止后续选项",
+    "旧版checkbox：li.click不勾选的真实回归形态，改为一次input点击并冒泡同步",
+    "旧版checkbox：多选按模型次序点击但隐藏答案按页面DOM次序，200ms后才报告成功",
+    "旧版checkbox：原生点击未改变checked时只尝试一次并停止后续题",
+    "旧版checkbox：隐藏答案未同步时不报告成功且不点击第二个选项或下一题",
+    "旧版checkbox：已有手工选择或保存答案时保留原样，不能追加覆盖",
+    "旧版checkbox：已有同一答案必须checkbox与保存字段均一致才算already",
+    "旧版checkbox：原生答案字段在题目外仍按明确ID绑定且保护已有内容",
+    "旧版checkbox：首题完成后第二三题radio判断和填空保持原有执行",
+    "旧版checkbox：同步等待期间取消或控件替换保留实际状态并停止下一项",
+    "旧版checkbox专项边界：普通Zy_ulTop自定义选项仍点击原li",
+    "旧版checkbox专项边界：第二三题的chapter-choice原生radio和判断题保持兼容",
+    "旧版原生选项：无onclick的LI点击不勾选，预填只点击内部radio一次",
+    "旧版原生选项：LI样式不替代radio.checked，人工原答案仍保护",
+    "旧版原生选项：radio点击被取消时停止，不能用LI样式伪报成功",
+    "旧版原生选项：同一radio答案重复预填返回already且不反选",
+    "旧版原生选项：多选无隐藏字段时仍验证checkbox且不生成字段",
+    "旧版原生选项：多选异步同步后继续真实before-after单选与判断radio",
+    "旧版原生选项：仅隐藏值或LI样式匹配时不伪报radio已选中",
+    "mooc2解析：typename、显示字母与data分离，TiMu不合并题目",
+    "mooc2单选：4选项显示C保存内部A",
+    "mooc2单选：5选项显示C保存内部A",
+    "mooc2单选：6选项显示C保存内部A",
+    "mooc2显示A保存内部C，重复预填不重复点击",
+    "mooc2判断题沿用实际显示字母，不把内部data当模型key",
+    "mooc2已有不同答案及部分多选不覆盖",
+    "mooc2仅有保存值时不猜显示答案且不点击",
+    "mooc2回读失败停止后续题：class",
+    "mooc2回读失败停止后续题：aria",
+    "mooc2回读失败停止后续题：hidden",
+    "mooc2回读失败停止后续题：no-change",
+    "mooc2回读失败停止后续题：single-extra",
+    "mooc2重复键、内部值重复、qid冲突、缺失字段及未知结构降级",
+    "mooc2快照映射或节点变化后禁止执行",
+    "mooc2规划后用户介入、取消或禁用时零点击",
+    "mooc2缺失真实题目边界时不把TiMu包装解析为一道题"
   ],
-  "failures": []
+  "failures": [
+    {
+      "name": "旧文字结果缺少分类策略时拒绝自动填入",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 1\n\n    at D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:29:202\n    at async test (D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:9:34)\n    at async D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:29:2"
+    },
+    {
+      "name": "旧版checkbox：唯一性禁用跨题共享及原生节点替换均先阻断",
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected exception.\n    at D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:87:442\n    at test (D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:9:40)\n    at D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:86:8"
+    },
+    {
+      "name": "旧版原生选项：内部input替换禁用多候选或radio跨题共享均拒绝",
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected exception.\n    at D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:149:321\n    at async test (D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:9:34)\n    at async D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:146:2"
+    },
+    {
+      "name": "mooc2六选多选按显示字母点击，保存值按DOM顺序验证",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 1\n\n    at D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:222:133\n    at async test (D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:9:34)\n    at async D:\\Project\\xuexitong\\tests\\question-actions-dom.cjs:220:2"
+    }
+  ]
 }

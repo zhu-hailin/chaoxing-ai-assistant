@@ -467,6 +467,30 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    Object.defineProperty(replacement,'contentDocument',{configurable:true,get(){throw new f.w.DOMException('blocked','SecurityError');}});tree=f.api.courseFrameTree(f.d);assert(tree.inaccessible.includes(replacement));assert.equal(f.api.courseContentReady(f.d),false);assert.equal(f.api.coursePageWithoutTasks(tree,[]),false);
   }finally{f.close();}
  });
+ await test('无任务图书：阅读器框架不阻断，新增任务与未知来源仍检查',()=>{
+  const f=fixture([{tabs:[{title:'图书资料',tasks:[]}]}]);
+  try{
+   f.doc.body.innerHTML='<div class="ans-attach-ct"><iframe class="ans-attach-online ans-book"></iframe></div>';
+   const outer=f.doc.querySelector('iframe'),wrapper=outer.contentDocument;
+   const wrapperURL='https://mooc1.chaoxing.com/ananas/modules/innerbook/index.html';
+   const outerGet=outer.getAttribute.bind(outer);outer.getAttribute=name=>name==='src'?wrapperURL:outerGet(name);
+   Object.defineProperty(wrapper,'URL',{value:wrapperURL,configurable:true});Object.defineProperty(wrapper,'readyState',{value:'complete',configurable:true});
+   wrapper.body.innerHTML='<iframe name="bookifame" class="ans-attach-online"></iframe>';
+   const reader=wrapper.querySelector('iframe'),readerGet=reader.getAttribute.bind(reader);
+   let readerURL='https://resapi.chaoxing.com/innerurlNew';reader.getAttribute=name=>name==='src'?readerURL:readerGet(name);
+   reader.contentDocument.body.innerHTML='<iframe id="SaveAs"></iframe>';
+   assert.equal(f.api.courseFrameTree(f.d).documents.length,3);assert(f.api.courseContentReady(f.d));assert(f.api.coursePageWithoutTasks(f.api.courseFrameTree(f.d),[]));
+   const marker=f.doc.createElement('span');marker.className='ans-job-icon';outer.parentElement.prepend(marker);
+   assert.equal(f.api.courseFrameTree(f.d).documents.length,5);assert(!f.api.courseContentReady(f.d));assert(!f.api.coursePageWithoutTasks(f.api.courseFrameTree(f.d),[]));
+   outer.parentElement.setAttribute('data-isjob','false');assert(!f.api.courseContentReady(f.d));outer.parentElement.removeAttribute('data-isjob');
+   marker.remove();assert(f.api.courseContentReady(f.d));
+   readerURL='https://example.invalid/innerurlNew';assert(!f.api.courseContentReady(f.d));
+   readerURL='https://resapi.chaoxing.com/other';assert(!f.api.courseContentReady(f.d));
+   readerURL='https://resapi.chaoxing.com/innerurlNew';Object.defineProperty(reader,'contentDocument',{configurable:true,get(){return null;}});assert(f.api.courseContentReady(f.d));
+   readerURL='https://example.invalid/innerurlNew';assert(!f.api.courseContentReady(f.d));
+   readerURL='https://resapi.chaoxing.com/innerurlNew';wrapper.body.insertAdjacentHTML('afterbegin','<span>任务点</span>');assert(!f.api.courseContentReady(f.d));
+  }finally{f.close();}
+ });
  await test('旧版课程：编号域名与课件来源保持精确边界',()=>{
   const f=fixture([{tabs:[ppt()]}],{url:'https://mooc1-2.chaoxing.com/mooc-ans/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account'});
   try{

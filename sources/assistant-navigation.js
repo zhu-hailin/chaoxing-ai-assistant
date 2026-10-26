@@ -1,4 +1,52 @@
     // 题目、章节、设置与跨面板导航。
+    // Only move existing controls; their handlers, disabled reasons and trust checks stay attached.
+    function initQuestionPresentation() {
+        const { shadow } = panelView;
+        const more = shadow.getElementById('question-more');
+        const summary = more.querySelector('summary');
+        const menu = shadow.getElementById('question-more-menu');
+        panelView.questionCommands = ['extract','solve','prefill','analysis-stop','analysis-resume','copy']
+            .map(id => shadow.getElementById(id));
+        const close = (focus = false) => {
+            more.open = false;
+            if (focus) summary.focus({ preventScroll:true });
+        };
+        more.addEventListener('toggle', () => summary.setAttribute('aria-expanded', String(more.open)));
+        shadow.addEventListener('pointerdown', event => {
+            if (more.open && !event.composedPath().includes(more)) close();
+        });
+        more.addEventListener('focusout', event => {
+            if (event.relatedTarget && !more.contains(event.relatedTarget)) close();
+        });
+        more.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && more.open) {
+                event.preventDefault(); event.stopPropagation(); close(true);
+            }
+        });
+        menu.addEventListener('click', event => {
+            const button = event.target.closest('button');
+            if (button && !button.disabled) close(true);
+        });
+        refreshQuestionPresentation();
+    }
+    function refreshQuestionPresentation() {
+        if (!panelView?.questionCommands) return;
+        const { shadow, questionCommands } = panelView;
+        const getControl = id => shadow.getElementById(id);
+        const primary = getControl('question-primary-actions'), menu = getControl('question-more-menu');
+        const stop = getControl('analysis-stop'), resume = getControl('analysis-resume'), prefill = getControl('prefill');
+        const selected = !stop.hidden ? stop : !resume.hidden ? resume : !prefill.disabled ? prefill
+            : panelView.resultView?.data?.questions?.length ? getControl('solve') : getControl('extract');
+        const focused = shadow.activeElement;
+        for (const button of questionCommands) {
+            const parent = button === selected ? primary : menu;
+            if (button.parentElement !== parent) parent.append(button);
+        }
+        if (focused && !getControl('question-more').open && menu.contains(focused)) {
+            (selected.disabled ? getControl('question-more').querySelector('summary') : selected).focus({ preventScroll:true });
+        }
+    }
+
     function mountQuizToolbar(doc, ctl) {
         const existing = doc.getElementById('cx-ai-toolbar') || (toolbarView?.host.ownerDocument === doc ? toolbarView.host : null);
         if (existing) { placeQuizToolbar(doc, existing, resolveToolbarTarget(doc)); return; }
@@ -7,11 +55,11 @@
         host.style.cssText = 'display:block;min-width:0;max-width:100%;margin-left:auto';
         const shadow = host.attachShadow({ mode: 'open' });
         shadow.innerHTML = `<style>
-          :host{font:14px/1.5 system-ui,sans-serif;color:#415168}
+          :host{font:14px/1.5 system-ui,sans-serif;color:#646d72}
           *{box-sizing:border-box}.buttons{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
           button{font:inherit;border:0;border-radius:7px;min-height:34px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;max-width:100%}
-          #generate{background:#5b80fa;color:white}#settings{background:#edf2ff;color:#355dcc}
-          button[hidden]{display:none}button:disabled{opacity:.65;cursor:wait}button:focus-visible{outline:2px solid #3268df;outline-offset:2px}
+          #generate{background:#3569d4;color:white}#settings{background:#f5f6f8;color:#3569d4}
+          button[hidden]{display:none}button:disabled{opacity:.65;cursor:wait}button:focus-visible{outline:2px solid #3569d4;outline-offset:2px}
           .spinner{width:15px;height:15px;flex:none;border:2px solid #ffffff66;border-top-color:white;border-radius:50%;animation:cx-spin .8s linear infinite}
           .spinner[hidden]{display:none}@keyframes cx-spin{to{transform:rotate(360deg)}}
           @media(prefers-reduced-motion:reduce){.spinner{animation:none}}
@@ -43,11 +91,12 @@
         button.tabIndex = available && button.getAttribute('aria-selected') === 'true' ? 0 : -1;
         return available;
     }
-    function switchPanelView(view, { focus = false } = {}) {
-        if (!panelView || !['model','questions','chapters','other'].includes(view)) return;
+    function switchPanelView(view, { focus = false, accountAuthorized = false } = {}) {
+        if (!panelView || !['model','questions','chapters','other','account'].includes(view)) return;
         clearAssistantControlFeedback();
         if (!refreshQuestionNavigation() && view === 'questions') view = 'chapters';
         const { shadow } = panelView;
+        shadow.getElementById('question-more').open = false;
         for (const button of shadow.querySelectorAll('[data-panel-view]')) {
             const selected = button.dataset.panelView === view;
             button.setAttribute('aria-selected', String(selected));
@@ -58,6 +107,8 @@
         shadow.getElementById('panel').dataset.activeView = view;
         closeProjectIntro();
         panelView.activeView = view;
+        if(view==='account')panelView.loadAccountProfile?.({allowRemote:accountAuthorized});
+        else panelView.cancelAccountProfile?.();
         if (view === 'chapters') refreshCourseSidebar();
         if (focus) shadow.getElementById(`nav-${view}`).focus();
     }
@@ -113,7 +164,7 @@
         };
 
         buttons.forEach(button => {
-            button.onclick = () => activate(button.dataset.panelView);
+            button.onclick = event => activate(button.dataset.panelView,button.dataset.panelView==='account'?{accountAuthorized:trustedAssistantActivation(event,button)}:{});
             button.addEventListener('keydown', event => {
                 refreshQuestionNavigation();
                 const available = buttons.filter(item => !item.disabled);
@@ -126,7 +177,7 @@
                 else if (event.key === 'End') next = available.length - 1;
                 else return;
                 event.preventDefault(); event.stopPropagation();
-                activate(available[next].dataset.panelView, {focus:true});
+                activate(available[next].dataset.panelView, {focus:true,accountAuthorized:available[next].dataset.panelView==='account'&&trustedAssistantActivation(event,button,'keydown')});
             });
         });
         const chapterButtons = [...panelView.shadow.querySelectorAll('[data-chapter-view]')];
