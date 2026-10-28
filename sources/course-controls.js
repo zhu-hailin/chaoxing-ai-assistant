@@ -4,6 +4,7 @@
         if(courseQueueActive(queue)&&!courseRunActive(doc))return queue.message||'课程队列运行中';
         const owner=studyOwnerDocument(doc),scope=owner&&courseScoreKey(owner);
         const report=courseRunner?.report || (scope?get(`cx_course_run:${scope}`,null)?.report:null);
+        if(report?.mode==='unlock'&&state.message===courseReportText(report))return report.status==='running'?'正在遍历解锁课程':report.status==='done'?'解锁遍历结束':'解锁已停止';
         if(report && state.message===courseReportText(report)) {
             if(report.navigationBoundary)return report.reason;
             if(report.protection?.triggered)return report.reason||'连续超时，已保护性停止';
@@ -21,6 +22,7 @@
         const queue=view.courseQueue=createCourseQueueAdapter(doc,ctl,view,home);
         const canStart=()=>queue?.list?queue.available:Boolean(courseRunController(owner)||home?.available);
         const stopButton=s.getElementById('course-stop');
+        const unlockButton=s.getElementById('course-unlock');
         let stopRunId=null,stopUntil=0,stopTimer=null,stopCountdownTimer=null;
         const clearStopConfirmation=()=>{
             if(stopTimer!==null)doc.defaultView?.clearTimeout(stopTimer);
@@ -93,18 +95,18 @@
             control.checked=get(key,fallback)===true;
             control.onchange=()=>{if(courseRunActive(doc)||queue?.active||ctl.state.busy){render();return;}set(key,control.checked);render();};
         }
-        // 自动提交权限仅属于本次明确选择，不从旧设置或网页修改恢复。
-        let submitAuthorized=false,submitSelectionSignature='';autoSubmit.checked=false;
+        // 独立的新偏好键；不继承旧版一次性授权或运行记录。
+        const submitPreferenceKey='cx_course_submit_preference_v1';
+        const submitPreference=()=>get(submitPreferenceKey,false)===true;
+        autoSubmit.checked=submitPreference();
         autoSubmit.onchange=event=>{
-            if(!trustedAssistantActivation(event,autoSubmit,'change') || !canStart()||courseRunActive(doc)||queue?.active||ctl.state.busy){autoSubmit.checked=submitAuthorized;return;}
+            if(!trustedAssistantActivation(event,autoSubmit,'change') || !canStart()||courseRunActive(doc)||queue?.active||ctl.state.busy){autoSubmit.checked=submitPreference();return;}
             const enabling=autoSubmit.checked===true;
-            submitAuthorized=enabling&&assistantConfirm(queue?.list?'是否允许本次所选课程队列自动提交章节测验？':'本次运行会自动提交章节测验，AI 答案可能错误。是否允许本次运行自动提交？')===true;
-            submitSelectionSignature=submitAuthorized&&queue?.list?JSON.stringify([...queue.selected].sort()):'';
-            if(courseRunActive(doc)||ctl.state.busy)submitAuthorized=false;
-            autoSubmit.checked=submitAuthorized;
+            const allowed=!enabling||assistantConfirm('开启后会记住自动提交章节测验的设置，后续课程及切换账号也会沿用。AI 答案可能错误，是否开启？')===true;
+            if(!courseRunActive(doc)&&!ctl.state.busy&&allowed)set(submitPreferenceKey,enabling);
+            autoSubmit.checked=submitPreference();
         };
-        // Consume the one-run authorization; render the checkbox from the active run separately.
-        const takeSubmitPermission=()=>{const allowed=submitAuthorized&&(!queue?.list||submitSelectionSignature===JSON.stringify([...queue.selected].sort()));submitAuthorized=false;submitSelectionSignature='';return allowed;};
+        const takeSubmitPermission=()=>submitPreference();
         skipUnanswerable.onchange=()=>{
             if(courseRunActive(doc)||queue?.active||ctl.state.busy){skipUnanswerable.checked=get('cx_course_skip_unanswerable',false)===true;return;}
             set('cx_course_skip_unanswerable',skipUnanswerable.checked);render();
@@ -140,6 +142,7 @@
         };
         s.getElementById('close').addEventListener('click',clearRetryConfirmation);
         const renderPending=report=>{
+            if(report?.mode==='unlock'){s.getElementById('course-pending').hidden=true;retryButton.hidden=true;clearRetryConfirmation();return;}
             const pending=coursePendingChapters(report),summary=s.getElementById('course-pending-summary'),list=s.getElementById('course-pending-list');
             const hasManualTasks=report?.chapters?.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
             const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.waiting.length+pending.navigation.length+pending.unvisited.length;
@@ -156,19 +159,19 @@
         };
         const render=()=>{
             const running=courseRunActive(doc),report=latestReport();
+            const unlocking=courseRunController(owner)?.mode==='unlock',verifying=Boolean(owner&&courseVerificationSessions.get(owner)?.pending);
             if(queue?.active) {
                 const frozen=queue.record.options;
                 for(const [control,key] of [[skipLearned,'skipLearned'],[timeoutNext,'continueOnTimeout'],[muteVideo,'muteVideo'],[skipUnanswerable,'skipUnanswerable'],[videoQuizAuto,'videoQuizAuto'],[speedEnabled,'speedEnabled']])control.checked=frozen[key]===true;
                 renderLearningFields();
             }
             renderPreview();
-            if(queue?.list&&!queue.active&&submitSelectionSignature!==JSON.stringify([...queue.selected].sort()))submitAuthorized=false;
             const locked=running||queue?.active||ctl.state.busy;
             const settingsReason=running||queue?.active?'自动学习运行中，请停止后修改本轮设置':'当前操作进行中，请结束后修改设置';
             forcePlayback.checked=courseForcePlaybackEnabled();
-            setAssistantControlDisabled(forcePlayback,!backgroundPlaybackGuard&&!home&&!queue?.list,'请进入课程学习页面使用连续播放');
+            setAssistantControlDisabled(forcePlayback,unlocking||verifying||!backgroundPlaybackGuard&&!home&&!queue?.list,unlocking||verifying?'当前流程正在解锁或等待核验':'请进入课程学习页面使用连续播放');
             const playback=backgroundPlaybackGuard?.controls;
-            setAssistantControlDisabled(videoPause,!playback?.available,'当前暂无可由助手暂停或继续的视频');videoPause.textContent=playback?.paused?'继续':'暂停';
+            setAssistantControlDisabled(videoPause,unlocking||verifying||!playback?.available,unlocking||verifying?'当前流程正在解锁或等待核验':'当前暂无可由助手暂停或继续的视频');videoPause.textContent=playback?.paused?'继续':'暂停';
             renderDelay();
             renderPending(report);
             const lease=owner?.getElementById('cx-ai-course-lease');
@@ -186,12 +189,16 @@
             const hasCommands=Boolean(courseRunController(owner));
             const unavailableReason=queue?.list?(courseListSnapshot()?.ready?'请选择本次课程':doc.documentElement.dataset.cxCourseListReason||'正在加载课程列表'):home?'课程身份或标签页交接能力尚未就绪，请刷新后重试':owner?'请通过课程主页面的助手开始自动学习':'请进入课程首页或学习页面开始刷课';
             setAssistantControlDisabled(s.getElementById('course-start'),!canStart()||locked||home?.pending||home?.active,home?.pending?'正在进入学习页面，可点击“取消启动”':running||queue?.active||home?.active?'自动学习正在进行中':ctl.state.busy?'当前操作进行中，请结束后开始刷课':unavailableReason);
+            const canUnlock=Boolean((owner===doc&&courseRunController(owner))||home?.available);
+            unlockButton.hidden=Boolean(queue?.list)||(!home&&owner!==doc);
+            unlockButton.textContent=unlocking?'解锁中…':'解锁课程';
+            setAssistantControlDisabled(unlockButton,locked||home?.pending||home?.active||!canUnlock,home?.pending?'正在进入学习页面，可点击“取消启动”':home?.active||locked?'当前流程进行中，请先停止':'课程身份或标签页交接能力尚未就绪，请刷新后重试');
             if(home)s.getElementById('course-start').title=home.available?'':'课程身份或标签页交接能力尚未就绪，请刷新后重试';
             setAssistantControlDisabled(s.getElementById('course-stop'),home?!home.pending:!hasCommands||!running,home?'当前没有待取消的启动任务':!hasCommands?'请通过课程主页面的助手停止自动学习':'当前没有运行中的自动学习');
             if(queue?.active)setAssistantControlDisabled(stopButton,false);
             if(home&&!stopRunId)stopButton.textContent=home.pending?'取消启动':'停止';
-            setAssistantControlDisabled(s.getElementById('course-skip'),!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : !courseSkipResume(owner)),!hasCommands?'请在课程学习页面跳过章节':running?'当前处理阶段暂不能跳过章节':'当前没有可跳过并继续的章节');
-            autoSubmit.checked=running ? courseRunController(owner)?.autoSubmitEnabled===true : submitAuthorized;
+            setAssistantControlDisabled(s.getElementById('course-skip'),!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : report?.mode==='unlock'||!courseSkipResume(owner)),!hasCommands?'请在课程学习页面跳过章节':running?'当前处理阶段暂不能跳过章节':'当前没有可跳过并继续的章节');
+            autoSubmit.checked=running ? courseRunController(owner)?.autoSubmitEnabled===true : submitPreference();
             if(queue?.active&&!running)autoSubmit.checked=queue.record.submitAuthorized===true;
             setAssistantControlDisabled(autoSubmit,!canStart()||locked||home?.active,locked||home?.active?settingsReason:unavailableReason);
             setAssistantControlDisabled(skipLearned,locked,settingsReason);
@@ -215,6 +222,11 @@
             if(!trustedAssistantActivation(event,s.getElementById('course-start')) || !canStart() || queue?.active || ctl.state.busy || home?.pending || home?.active)return;
             const options=readRunOptions();
             if(queue?.list)queue.start(options);else if(home)home.start(options);else courseRunController(owner).start(options);
+        };
+        unlockButton.onclick=event=>{
+            if(!trustedAssistantActivation(event,unlockButton)||ctl.state.busy||courseRunActive(doc)||queue?.active||queue?.list||home?.pending||home?.active)return;
+            const options={mode:'unlock',continueOnTimeout:timeoutNext.checked,failureProtectionEnabled:failureProtection.checked};
+            if(home?.available)home.start(options);else if(owner===doc)courseRunController(owner)?.start(options);
         };
         s.getElementById('course-queue-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-queue-skip')))queue?.skip();};
         s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};

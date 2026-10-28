@@ -96,6 +96,7 @@
         s.getElementById('course-preview-select').onclick=()=>{switchChapterView('queue');selection.open=true;selection.querySelector('summary').focus();};
         const labels={waiting:'等待中',running:'正在学习',completed:'任务点已完成','no-tasks':'无需刷课',pending:'本轮已处理，仍有待办','waiting-unlock':'待解锁',skipped:'已跳过',failed:'待重试'};
         const chapterLabels={running:'正在学习',already:'已完成',done:'已完成','no-tasks':'无任务点',skipped:'已跳过','timed-out':'已超时','manual-pending':'需人工处理','waiting-unlock':'待解锁','navigation-unknown':'入口未确认',stopped:'已停止'};
+        const unlockLabels={running:'正在解锁',already:'已完成跳过',visited:'已触发',verified:'已核验',pending:'待处理',skipped:'已跳过','timed-out':'待处理',stopped:'已停止',unvisited:'尚未遍历'};
         function render() {
             const mode=queue?.list,record=queue?.record,snapshot=queue?.list?courseListSnapshot():null;
             s.getElementById('course-mode-badge').hidden=!queue?.active||queue.list;
@@ -160,19 +161,20 @@
             } else {
                 const catalog=readCourseCatalog(doc),entries=catalog?.entries.filter(item=>!item.isGroup)||[],owner=studyOwnerDocument(doc);
                 emptyCourse=catalog?.empty===true;
-                const stored=owner&&courseScoreKey(owner)?get(`cx_course_run:${courseScoreKey(owner)}`,null):null;
+                const currentReport=courseRunController(owner)?.report,unlock=currentReport?.mode==='unlock';
+                const stored=owner&&courseScoreKey(owner)?get(`${unlock?'cx_course_unlock':'cx_course_run'}:${courseScoreKey(owner)}`,null):null;
                 const running=courseRunActive(doc),lease=owner?.getElementById('cx-ai-course-lease'),currentId=lease?.getAttribute('data-chapter-id');
                 let index=0;
                 if(running)index=Math.max(0,entries.findIndex(item=>item.id===(currentId||entries.find(entry=>entry.active)?.id)));
                 else if(!s.getElementById('course-from-current').disabled&&s.getElementById('course-from-current').checked)index=Math.max(0,entries.findIndex(item=>item.active));
                 else if(s.getElementById('course-skip-learned').checked){const pending=entries.findIndex(item=>item.completed!==true&&item.pending!==0);index=pending<0?Math.max(0,entries.length-1):pending;}
-                const sameRun=running&&stored?.ownerId===lease?.getAttribute('data-run-id');
+                const sameRun=running&&stored?.ownerId===lease?.getAttribute('data-run-id')||unlock&&stored?.report?.startedAt===currentReport.startedAt;
                 const selected=sameRun&&Array.isArray(stored.queue)?stored.queue.map(item=>entries.find(entry=>entry.id===item.id)).filter(Boolean)
                     :entries.slice(index).filter((item,i)=>i===0||!s.getElementById('course-skip-learned').checked||item.completed!==true&&item.pending!==0);
                 wheelScope=`chapters:${catalog?.scopeKey||owner?.URL||doc.URL}`;wheelCurrent=running?currentId||selected[0]?.id:selected[0]?.id;
                 cards=selected.map(item=>{
                     const chapter=sameRun?stored.report?.chapters?.find(entry=>entry.id===item.id):null;
-                    return {id:item.id,title:`${item.number} ${item.title}`.trim(),detail:chapterLabels[chapter?.status]||catalogStatus(item),progress:''};
+                    return {id:item.id,title:`${item.number} ${item.title}`.trim(),detail:(unlock?unlockLabels:chapterLabels)[chapter?.status]||catalogStatus(item),progress:''};
                 });
             }
             wheel.update(cards,wheelScope,wheelCurrent);
@@ -181,7 +183,7 @@
             s.getElementById('course-list-loading').hidden=!connecting;
             empty.setAttribute('aria-busy',String(connecting));
             s.getElementById('course-preview-empty-text').textContent=queue?.list?(snapshot?.ready?'选择本次课程':doc.documentElement.dataset.cxCourseListReason||'课程列表加载中…'):emptyCourse?'暂无章节，无需刷课':'章节目录加载中…';
-            s.getElementById('course-preview-scope').textContent=mode?`课程队列${queue.active?` · ${Math.min(record.index+1,record.items.length)}/${record.items.length}`:''}`:'本课程';
+            s.getElementById('course-preview-scope').textContent=mode?`课程队列${queue.active?` · ${Math.min(record.index+1,record.items.length)}/${record.items.length}`:''}`:courseRunController(studyOwnerDocument(doc))?.report?.mode==='unlock'?'本课程 · 解锁':'本课程';
             const results=s.getElementById('course-queue-results');results.hidden=!queue?.list||!record;
             results.dataset.queuePhase=record?.phase||'';
             if(!results.hidden) {

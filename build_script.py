@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.32'
+VERSION = '1.33'
 
 def bundled_logo_icons():
     directory = ROOT / 'assets'
@@ -90,8 +90,10 @@ SOURCE_FILES = (
     'course_catalog.js',
     'sources/course-document-bridge.js',
     'sources/course-page-adapter.js',
+    'sources/course-verification.js',
     'sources/course-video-quiz.js',
     'sources/course-runner.js',
+    'sources/course-unlock.js',
     'sources/course-home-launch.js',
     'sources/course-list.js',
     'sources/course-queue.js',

@@ -5,13 +5,14 @@
         if (initBackgroundPlayback.instance) return initBackgroundPlayback.instance;
         let active = null, closed = false, lastScan = -Infinity;
         const videos = new Map(), documents = new Map();
+        const unlockSuppressed=new WeakSet();
         const notify = () => document.dispatchEvent(new window.Event('cx-ai-course-update'));
         const standalone = () => [...videos.values()].find(record => record.video.isConnected && !record.video.paused && !record.video.ended)
             || [...videos.values()].find(record => record.video.isConnected && record.armed && !record.video.ended)
             || [...videos.values()].find(record => record.video.isConnected && !record.video.ended);
         const allowed = record => {
             const video=record.video;
-            if(closed || active || courseRunActive(document) || !record.identity
+            if(closed || active || courseRunActive(document) || unlockSuppressed.has(video) || !record.identity
                 || courseScoreKey(document)!==record.identity || !video.isConnected || video.ended || video.error || video.seeking)return false;
             const tree=courseFrameTree(document);
             if(tree.inaccessible.length || !tree.documents.includes(video.ownerDocument) || courseBlocker(tree.documents)
@@ -21,6 +22,7 @@
         };
         const recover = async (record, explicit=false) => {
             const video=record.video;
+            if(explicit)unlockSuppressed.delete(video);
             if(record.pending || record.manual || !allowed(record) || !explicit&&(!courseForcePlaybackEnabled() || !record.armed || record.blocked)
                 || !video.paused || video.readyState<2)return;
             if(explicit){record.attempts=0;record.blocked=false;record.requireUserStart=false;}
@@ -58,6 +60,7 @@
                 const changed=event=>{
                     if(event.type==='playing') {
                         clearTimeout(record.resumeTimer);
+                        if(unlockSuppressed.has(video)){video.pause();return;}
                         if(record.manual){video.pause();return;}
                         if(!record.requireUserStart || Date.now()<=record.userStartUntil){record.armed=true;record.requireUserStart=false;}
                         record.pausedAt=null;
@@ -68,7 +71,7 @@
                     else {record.armed=false;record.manual=false;}
                     notify();
                 };
-                const input=event=>{if(courseVideoPauseInput(event,video))record.userStartUntil=Date.now()+2000;};
+                const input=event=>{if(courseVideoPauseInput(event,video)){record.userStartUntil=Date.now()+2000;unlockSuppressed.delete(video);}};
                 for(const type of ['playing','pause','ended','emptied'])video.addEventListener(type,changed);
                 for(const type of ['pointerdown','keydown'])video.ownerDocument.addEventListener(type,input,true);
                 record.close=()=>{
@@ -129,10 +132,18 @@
                 notify();
             },
             refresh() {active?.settingsChanged?.();tick();notify();},
+            suppressForUnlock(video) {
+                if(!videos.has(video))scan();
+                unlockSuppressed.add(video);
+                const record=videos.get(video);
+                if(record){record.armed=false;record.requireUserStart=true;record.userStartUntil=0;clearTimeout(record.resumeTimer);record.abort?.abort();}
+                if(!video.paused)video.pause();
+            },
             activate(context) {
                 if (closed || !context?.video || typeof context.canProtect !== 'function'
                     || typeof context.onSuppressed !== 'function') return () => {};
                 active = context;
+                if(context.suppressPlayback===true)unlockSuppressed.add(context.video);else unlockSuppressed.delete(context.video);
                 courseVideoPlaybackRequests.delete(context.video);
                 const record=videos.get(context.video);
                 if(record){record.armed=false;record.manual=false;record.requireUserStart=true;record.userStartUntil=0;clearTimeout(record.resumeTimer);if(record.pending){context.video.pause();record.abort?.abort();}}

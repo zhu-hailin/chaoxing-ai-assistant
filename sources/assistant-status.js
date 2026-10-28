@@ -1,17 +1,20 @@
     // 运行进度、操作按钮资格和配置状态展示。
     function renderRunState(state) {
         if (!document?.defaultView || document.defaultView.document !== document) return;
+        const courseOwner=studyOwnerDocument(document),courseLease=courseOwner?.getElementById('cx-ai-course-lease');
+        const unlocking=Boolean(courseLease?.getAttribute('data-run-id')&&courseLease.getAttribute('data-mode')==='unlock');
         const busy = state.busy || courseRunActive() || courseQueueActive();
-        const busyReason = state.busy ? '当前操作进行中，请等待完成或先停止' : '自动学习运行中，请先停止再操作';
+        const busyReason = unlocking ? '解锁课程进行中，请结束后再操作' : state.busy ? '当前操作进行中，请等待完成或先停止' : '自动学习运行中，请先停止再操作';
         const errorCode=panelView?.shadow.getElementById('last-error-code');
         if(errorCode)errorCode.textContent=state.lastErrorCode || '';
         if (toolbarView) {
             const s = toolbarView.shadow;
+            const answerBusy=busy&&!unlocking;
             setAssistantControlDisabled(s.getElementById('generate'),busy,busyReason);
-            s.querySelector('.spinner').hidden = !busy;
-            s.getElementById('generate').setAttribute('aria-busy', String(busy));
+            s.querySelector('.spinner').hidden = !answerBusy;
+            s.getElementById('generate').setAttribute('aria-busy', String(answerBusy));
             const labels = { decoding: '解密中…', extracting: '提取中…', 'preparing-images':'读取图片…', classifying:'判断作答要求…', searching: '检索中…', generating: '生成中…', prefilling: '预填中…' };
-            s.getElementById('label').textContent = state.busy ? (labels[state.phase] || '处理中…') : '一键生成答案';
+            s.getElementById('label').textContent = state.busy&&!unlocking ? (labels[state.phase] || '处理中…') : '一键生成答案';
             s.getElementById('status').textContent = '';
             s.getElementById('status').hidden = true;
         }

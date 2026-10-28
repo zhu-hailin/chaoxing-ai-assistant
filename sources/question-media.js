@@ -272,9 +272,46 @@
             catch { finish(questionMediaError('SVG 无法生成安全的图像资源')); }
         });
     }
+    const MEDIA_PROCESS_VERSION='white-static-v1';
+    function animatedMedia(bytes,mime) {
+        const ascii=(offset,size)=>String.fromCharCode(...bytes.subarray(offset,offset+size));
+        const le=(offset)=>new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(offset,true);
+        if(mime==='image/png') {
+            const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+            for(let offset=8;offset+12<=bytes.length;){const size=view.getUint32(offset);if(ascii(offset+4,4)==='acTL')return true;offset+=size+12;}
+        }
+        if(mime==='image/webp')for(let offset=12;offset+8<=bytes.length;){if(['ANIM','ANMF'].includes(ascii(offset,4)))return true;const length=le(offset+4);offset+=8+length+(length%2);}
+        if(mime==='image/gif') {
+            let offset=13,frames=0;
+            if(bytes[10]&128)offset+=3*(1<<((bytes[10]&7)+1));
+            const skipBlocks=()=>{while(offset<bytes.length){const size=bytes[offset++];if(!size)return;offset+=size;}};
+            while(offset<bytes.length){const kind=bytes[offset++];if(kind===0x3b)break;
+                if(kind===0x21){offset++;skipBlocks();}
+                else if(kind===0x2c){if(++frames>1)return true;if(offset+9>bytes.length)return true;const packed=bytes[offset+8];offset+=9;if(packed&128)offset+=3*(1<<((packed&7)+1));offset++;skipBlocks();}
+                else return true;
+            }
+        }
+        return false;
+    }
+    async function whiteStaticMedia(bytes,mime,doc,signal,check) {
+        if(mime==='image/jpeg'||animatedMedia(bytes,mime))return bytes;
+        const dataUrl=bytesDataUrl(bytes,mime),size=await decodeMediaSize(dataUrl,doc,signal);check();
+        if(size.width>8192||size.height>8192||size.width*size.height>MAX_VISUAL_PIXELS)throw questionMediaError('图片超出安全转换尺寸');
+        return new Promise((resolve,reject)=>{
+            const image=new doc.defaultView.Image(),canvas=doc.createElement('canvas');let settled=false,timer;
+            const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',cancel);image.onload=image.onerror=null;image.src='';canvas.width=canvas.height=0;error?reject(error):resolve(value);};
+            const cancel=()=>finish(cancelledError());
+            if(signal?.aborted){cancel();return;}signal?.addEventListener('abort',cancel,{once:true});
+            timer=setTimeout(()=>finish(questionMediaError('图片白底转换超时')),10000);
+            image.onerror=()=>finish(questionMediaError('图片白底转换失败'));
+            image.onload=()=>{try{check();canvas.width=size.width;canvas.height=size.height;const ctx=canvas.getContext('2d');if(!ctx)throw questionMediaError('图片转换画布不可用');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0);const value=canvas.toDataURL('image/png'),binary=atob(value.slice(value.indexOf(',')+1));if(binary.length>MAX_IMAGE_BYTES)throw questionMediaError('转换图片超过 32 MiB');const result=Uint8Array.from(binary,char=>char.charCodeAt(0));check();finish(null,result);}catch(error){finish(error);}};
+            image.src=dataUrl;
+        });
+    }
+
     function mediaCacheKey(descriptor, doc) {
-        if (['svg','canvas'].includes(descriptor.kind)) return `${descriptor.kind}:${descriptor.contentSignature || ''}`;
-        try { return `image:${new URL(descriptor.src,doc.baseURI).href}`; }
+        if (['svg','canvas'].includes(descriptor.kind)) return `${MEDIA_PROCESS_VERSION}:${descriptor.kind}:${descriptor.contentSignature || ''}`;
+        try { return `${MEDIA_PROCESS_VERSION}:image:${new URL(descriptor.src,doc.baseURI).href}`; }
         catch { throw questionMediaError('图片地址无效'); }
     }
     async function readPreparedMediaContent(descriptor, doc, imageNodes, signal, check) {
@@ -297,6 +334,7 @@
         check();
         if (!bytes.length) throw questionMediaError('图片响应为空');
         if (bytes.length > MAX_IMAGE_BYTES) throw questionMediaError('单张图片超过 32 MiB');
+        bytes=await whiteStaticMedia(bytes,sniffImageMime(bytes),doc,signal,check);check();
         const mime = sniffImageMime(bytes), dataUrl = bytesDataUrl(bytes,mime);
         const {width,height} = await decodeMediaSize(dataUrl,doc,signal);check();
         if (width > 8192 || height > 8192) throw questionMediaError('图片单边尺寸超过 8192 像素');
@@ -308,7 +346,7 @@
         const cache = contentCache || new Map(), ownsCache = !contentCache;
         const limit = concurrency === 1 ? 1 : 2;
         for(const value of prepared.values()) {
-            if (sameMediaIdentity(preparedMediaIdentities.get(value),value) && !cache.has(mediaCacheKey(value,doc)))
+            if (preparedMediaIdentities.get(value)?.processingVersion===MEDIA_PROCESS_VERSION && sameMediaIdentity(preparedMediaIdentities.get(value),value) && !cache.has(mediaCacheKey(value,doc)))
                 cache.set(mediaCacheKey(value,doc),Promise.resolve(Object.freeze(mediaContent(value))));
         }
         let next = 0, done = 0;
@@ -322,7 +360,7 @@
                     if (visual && captureVisualMediaSignature(imageNodes.get(descriptor.id),descriptor.kind) !== descriptor.contentSignature)
                         throw questionMediaError('原生图形内容或题目绑定已变化');
                     const previous = prepared.get(descriptor.id);
-                    if(sameMediaIdentity(previous,descriptor) && sameMediaIdentity(preparedMediaIdentities.get(previous),previous)) {
+                    if(preparedMediaIdentities.get(previous)?.processingVersion===MEDIA_PROCESS_VERSION && sameMediaIdentity(previous,descriptor) && sameMediaIdentity(preparedMediaIdentities.get(previous),previous)) {
                         report(`正在读取题目图片 ${++done}/${media.length}`, 'preparing-images');continue;
                     }
                     const key = mediaCacheKey(descriptor,doc);
@@ -334,7 +372,7 @@
                     if (visual && captureVisualMediaSignature(imageNodes.get(descriptor.id),descriptor.kind) !== descriptor.contentSignature)
                         throw questionMediaError('原生图形在读取时发生变化');
                     const bound = {...descriptor,...value};
-                    preparedMediaIdentities.set(bound,Object.freeze(mediaIdentity(descriptor)));
+                    preparedMediaIdentities.set(bound,Object.freeze({...mediaIdentity(descriptor),processingVersion:MEDIA_PROCESS_VERSION}));
                     prepared.set(descriptor.id,bound);
                     report(`正在读取题目图片 ${++done}/${media.length}`, 'preparing-images');
                 } catch (error) {

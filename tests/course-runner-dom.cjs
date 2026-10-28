@@ -1859,6 +1859,12 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    assert.equal(r.status,'stopped');assert.match(f.api.courseReportText(r),/自动学习已停止/);assert(!f.api.courseRunActive());assert.equal(stop.textContent,'停止');assert(!stop.classList.contains('stop-confirm'));assert(stop.disabled);
   }finally{f.runner.stop();if(pending)await pending;f.close();}
  });
+ await test('持久提交偏好在新页面沿用，关闭值仍跳过测验',async()=>{
+  for(const enabled of [true,false])for(let reopen=0;reopen<2;reopen++){
+   const f=fixture([{tabs:[quiz()]}],{storage:[['deepseek_api_key','mock-only-key'],['cx_model','deepseek-flash'],['cx_course_submit_preference_v1',enabled]]});
+   try{const box=f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('course-auto-submit');assert.equal(box.checked,enabled);f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('course-start').click();await waitForTest(()=>f.runner.report?.status==='done');assert.equal(f.submits,enabled?1:0);assert.equal(f.storage.get('cx_course_submit_preference_v1'),enabled);assert.equal(box.checked,enabled);}finally{f.close();}
+  }
+ });
  await test('P0 默认与旧设置均不授予自动提交，重试默认仍跳过测验',async()=>{
   const f=fixture([{tabs:[quiz()]}],{storage:[['deepseek_api_key','mock-only-key'],['cx_model','deepseek-flash'],['cx_course_auto_submit',true]]});
   try{const s=f.d.getElementById('cx-ai-study-root').shadowRoot;assert(!s.getElementById('course-auto-submit').checked);
@@ -1866,11 +1872,11 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    const retry=await f.runner.retryIncomplete();assert.equal(retry.status,'done');assert.equal(retry.chapters[0].status,'manual-pending');assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert.equal(f.storage.get(f.runner.key).submit,false);
   }finally{f.close();}
  });
- await test('P0 自动提交须明确选择且仅用于本次，改写勾选状态不能授予权限',async()=>{
+ await test('P0 自动提交须明确开启并保存，改写勾选状态不能授予权限',async()=>{
   for(const [selected,accepted] of [[false,true],[true,false],[true,true]]){
    const approved=selected&&accepted,f=fixture([{tabs:[quiz()]}],{confirmSubmit:accepted});try{const s=f.d.getElementById('cx-ai-study-root').shadowRoot,box=s.getElementById('course-auto-submit');box.checked=true;
     if(selected)box.dispatchEvent(new f.w.Event('change'));s.getElementById('course-start').click();await waitForTest(()=>f.runner.report?.status==='stopped'||f.runner.report?.status==='done');
-    assert.equal(f.submits,approved?1:0);assert.equal(f.storage.get(f.runner.key).submit,approved);assert(!box.checked);assert.equal(f.events.filter(e=>e.startsWith('confirm-auto-submit:')).length,selected?1:0);
+    assert.equal(f.submits,approved?1:0);assert.equal(f.storage.get(f.runner.key).submit,approved);assert.equal(box.checked,approved);assert.equal(f.storage.get('cx_course_submit_preference_v1')===true,approved);assert.equal(f.events.filter(e=>e.startsWith('confirm-auto-submit:')).length,selected?1:0);
    }finally{f.close();}
   }
  });

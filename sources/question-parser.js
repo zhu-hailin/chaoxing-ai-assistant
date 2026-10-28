@@ -68,6 +68,7 @@
     function questionContentText(root) {
         if (!root) return '';
         if (root.nodeType === 3) return root.textContent || '';
+        if(root.nodeType===1&&root.matches('.chosen-container')&&root.closest('.matching'))return '';
         if (root.nodeType !== 1 || root.matches('input,textarea,select,button,script,style,[contenteditable="true"],.mark_answer,.answer-content,.correct-answer,.teacher-comment,.editor-toolbar,.cx-ai-ignore')) return '';
         const expression = questionNativeMathExpression(root);
         if (expression) return expression;
@@ -133,7 +134,7 @@
         }
         return {materials, unreadable};
     }
-    function collectQuestionMedia(node, stem, id, groupId, optionTargets = new Map(), sharedMaterials = []) {
+    function collectQuestionMedia(node, stem, id, groupId, optionTargets = new Map(), sharedMaterials = [], matching = null) {
         const media = [], sharedMedia = [], imageNodes = new Map(), seen = new Set(), sequences = new Map();
         const collect = (root, location, optionKey = null, material = null) => {
             if (!root) return;
@@ -162,6 +163,7 @@
                 imageNodes.set(imageId, visual);
             }
         };
+        if(matching){for(const item of matching.left)collect(item.node,'matching-left',item.key);for(const item of matching.right)collect(item.node,'option',item.key);}
         // 先绑定选项图片；即使选项被包在 .Zy_TItle 中，也不能变成组内共用题干。
         for (const [key, target] of optionTargets) {
             collect(optionContentRoot(node, target), 'option', key);
@@ -226,7 +228,7 @@
             && before.records.every((record,index)=>['key','value','row','marker','content','qtype','role','handler'].every(key=>record[key]===after.records[index][key]));
     }
     function readChapterRowChoiceBindings(node,id,type,rows) {
-        if(!['single','multiple'].includes(type)||!rows.length||rows.some(row=>row.querySelector('input,.num_option')))return null;
+        if(!['single','multiple'].includes(type)||!rows.length||rows.some(row=>row.querySelector('input')))return null;
         try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
         catch{return null;}
         if(!rows.some(row=>row.matches('li.before-after,li.before-after-checkbox')||/add(?:Multiple)?Choice\s*\(/.test(row.getAttribute('onclick')||'')))return null;
@@ -243,7 +245,10 @@
             if(!owns||labels.length!==1||contents.length!==1||!key||keys.has(key))contentValid=false;
             if(!owns||labels.length!==1||contents.length!==1||clears.length!==1||!key||keys.has(key)
                 ||!row.matches(type==='multiple'?'li.before-after-checkbox':'li.before-after')||call?.[1]!==expected)valid=false;
-            keys.add(key);records.push({key,row,label,content,clear:clears[0],handler});
+            const markers=[...row.querySelectorAll('.num_option_dx,.num_option')];
+            const marker=markers[0]||null,value=marker?clean(marker.getAttribute('data')):key;
+            if(markers.length>1||!value||records.some(record=>record.value===value))valid=false;
+            keys.add(key);records.push({key,value,marker,row,label,content,clear:clears[0],handler});
         }
         const saved=/^\d+$/.test(String(id))?[...node.ownerDocument.querySelectorAll(`[id="answer${id}"],[name="answer${id}"]`)]:[];
         if(saved.length>1||saved.length===1&&(!saved[0].matches('input[type="hidden"]')
@@ -256,7 +261,7 @@
         if(!before||!after)return !before&&!after;
         return before.valid===after.valid&&before.contentValid===after.contentValid&&before.id===after.id&&before.mode===after.mode
             &&before.savedInput===after.savedInput&&before.records.length===after.records.length
-            &&before.records.every((record,index)=>['key','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
+            &&before.records.every((record,index)=>['key','value','marker','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
     }
     function readQuestionUEditor(node,id) {
         // 只读取已存在的实例；不调用 UE.getEditor，不按 uid 或题号顺序猜测实例。
@@ -329,6 +334,68 @@
         return ['id','mode','nativeQuestionId','registry','editor','input','form','iframe','document','body','container','key','name','setContent','getContent','sync']
             .every(key=>before[key]===after[key]);
     }
+    function matchingPageWindow(doc) {
+        const realm=typeof courseVideoPlayerWindow==='function'?courseVideoPlayerWindow(doc):doc.defaultView;
+        return realm?.document?.isSameNode(doc)?realm:null;
+    }
+    function matchingChosen(select) {
+        try {
+            const instance=matchingPageWindow(select.ownerDocument)?.jQuery?.(select)?.data('chosen');
+            const container=instance?.container?.[0],field=instance?.form_field||instance?.form_field_jq?.[0];
+            return field===select&&container===select.nextElementSibling&&container?.matches('.chosen-container')?{instance,container}:null;
+        }catch{return null;}
+    }
+    function readQuestionMatching(node,id) {
+        const blocks=[...node.querySelectorAll('.matching')];
+        if(!blocks.length)return null;
+        const block=blocks[0],owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
+        const items=selector=>[...block.querySelectorAll(selector)].filter(item=>!item.classList.contains('groupTitile'));
+        const read=(li)=>({node:li,key:clean(li.querySelector(':scope > i')?.textContent).replace(/[.、:：)）]$/,''),text:clean(questionContentText(li))});
+        const left=items('.firstUlList > li').map(read),right=items('.secondUlList > li').map(read);
+        const rows=items('.thirdUlList .lineOption').map(row=>{
+            const selects=[...row.querySelectorAll('select.dept_select')],select=selects[0];
+            const widget=select?matchingChosen(select):null,chosen=widget?.container||null;
+            return {node:row,index:String(row.getAttribute('index')||''),num:clean(row.querySelector('.matchNum')?.textContent).replace(/[.、:：)）]$/,''),select,count:selects.length,chosen,chosenInstance:widget?.instance,
+                handler:select?.getAttribute('onchange')||'',onchange:select?.onchange,
+                options:select?[...select.options].map(option=>({node:option,value:option.value,text:option.textContent,disabled:option.disabled})):[]};
+        });
+        const saved=[...node.ownerDocument.querySelectorAll('input[type="hidden"]')].filter(input=>input.id===`answer${id}`||input.name===`answer${id}`);
+        const keys=right.map(item=>item.key),valid=blocks.length===1&&owner(block)===node&&left.length>0&&right.length>0&&rows.length===left.length
+            &&left.every(item=>/^\d+$/.test(item.key)&&owner(item.node)===node)&&right.every(item=>owner(item.node)===node)
+            &&new Set(left.map(item=>item.key)).size===left.length&&keys.every(key=>/^[A-Z]$/.test(key))&&new Set(keys).size===keys.length
+            &&saved.length===1&&!saved[0].disabled&&!saved[0].readOnly&&saved[0].form===node.closest('form')&&(!owner(saved[0])||owner(saved[0])===node)
+            &&rows.every((row,index)=>row.count===1&&row.index===left[index].key&&row.num===left[index].key&&owner(row.select)===node
+                &&row.select.form===saved[0].form&&!row.select.disabled&&!row.select.closest('[aria-disabled="true"],fieldset[disabled]')
+                &&(courseElementVisible(row.select)||row.chosen&&courseElementVisible(row.chosen)&&!row.chosen.matches('.chosen-disabled')&&typeof matchingPageWindow(row.select.ownerDocument)?.jQuery==='function')
+                &&row.options.filter(option=>option.value).length===keys.length&&keys.every(key=>row.options.filter(option=>option.value===key&&!option.disabled).length===1));
+        return {block,left,right,rows,savedInput:saved[0]||null,valid};
+    }
+    function sameQuestionMatching(a,b) {
+        if(!a||!b)return !a&&!b;
+        const same=(x,y,keys)=>keys.every(key=>x[key]===y[key]);
+        return a.valid===b.valid&&a.block===b.block&&a.savedInput===b.savedInput
+            &&['left','right'].every(group=>a[group].length===b[group].length&&a[group].every((item,i)=>same(item,b[group][i],['node','key','text'])))
+            &&a.rows.length===b.rows.length&&a.rows.every((row,i)=>same(row,b.rows[i],['node','index','num','select','chosen','chosenInstance','handler','onchange'])
+                &&row.options.length===b.rows[i].options.length&&row.options.every((option,j)=>same(option,b.rows[i].options[j],['node','value','text','disabled'])));
+    }
+    function questionMatchingState(binding) {
+        const matching=binding.matching,values=matching.rows.map(row=>row.select.value),saved=matching.savedInput?.value||'';
+        let stored=[],consistent=matching.valid;
+        try {stored=saved?JSON.parse(saved):[];}catch{consistent=false;}
+        if(!Array.isArray(stored))consistent=false;
+        else {
+            if(new Set(stored.map(item=>String(item?.name))).size!==stored.length)consistent=false;
+            if(stored.some(item=>!item||!matching.rows.some(row=>String(item.name)===row.index&&item.content===row.select.value)))consistent=false;
+            if(matching.rows.some(row=>row.select.value&&stored.filter(item=>item&&String(item.name)===row.index&&item.content===row.select.value).length!==1))consistent=false;
+        }
+        if(values.some(value=>value&&!matching.right.some(item=>item.key===value)))consistent=false;
+        return {keys:[],values,saved,unknownSaved:!consistent};
+    }
+    function questionMatchingVerified(unit) {
+        const state=questionMatchingState(unit.binding);
+        return !state.unknownSaved&&state.values.every((value,i)=>value===unit.answerKeys[i])&&unit.binding.matching.rows.every(row=>!row.chosen||clean(row.chosen.querySelector('.chosen-single span')?.textContent)===clean(row.select.selectedOptions[0]?.textContent));
+    }
+
     function rawQuestion(node, index, adapter, videoContext = {}) {
         // Only verified local adapters supply context; ordinary chapter selectors stay unchanged.
         const local = ['video-quiz','chaoxing-mooc2-work'].includes(adapter) ? videoContext : {};
@@ -336,17 +403,19 @@
         const group = node.closest('.mark_item');
         const id = questionId(node, index);
         const groupId = group ? `work-group-${[...node.ownerDocument.querySelectorAll('.mark_item')].indexOf(group) + 1}` : `question-group-${id}`;
-        const typeLabel = local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
-        const question = stripQuestionPrefix(questionContentText(stem), typeLabel);
+        const matching=adapter==='video-quiz'?null:readQuestionMatching(node,id);
+        const typeLabel = matching?'连线题':local.typeLabel ?? readQuestionTypeLabel(node, stem, group);
+        let question = stripQuestionPrefix(questionContentText(stem), typeLabel);
         const instructions = clean([TEXT_ANSWER_TYPE_LABEL.test(clean(typeLabel)) ? `题型：${typeLabel}` : '', node.getAttribute('data-answer-instructions'),
             ...[...node.children].filter(child=>child.matches('.question-instructions,[data-answer-instructions]')).map(questionContentText),
             questionContentText(group?.querySelector(':scope > .type_tit')),
             questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
-        const mooc2=adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node,id,canonicalType({typeLabel,question})) : null;
+        const mooc2=!matching&&adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node,id,canonicalType({typeLabel,question})) : null;
         let optionTargets, options, writer,chapterRows=null;
-        if (mooc2) {
+        if(matching){options=matching.right.map(item=>({key:item.key,text:item.text}));optionTargets=new Map();writer='matching';}
+        else if (mooc2) {
             options=mooc2.records.map(record=>({key:record.key,text:clean(questionContentText(record.content))}));
             optionTargets=new Map(mooc2.records.map(record=>[record.key,record.row]));writer='mooc2-choice';
         } else if (legacy.length) {
@@ -378,11 +447,12 @@
         const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id);
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const shared = readQuestionSharedMaterials(node, group, groupId, local.graphHints || {});
-        const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials);
+        const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials,matching);
         for (const option of options) {
             const imageIds = media.filter(item => item.location === 'option' && item.optionKey === option.key).map(item => item.id);
             if (imageIds.length) option.imageIds = imageIds;
         }
+        if(matching){const describe=(item,location)=>`${item.key}. ${item.text} ${media.filter(image=>image.location===location&&image.optionKey===item.key).map(image=>`〔图片 ${image.id}〕`).join(' ')}`;question=[question,'第一组（按此顺序填写）：',...matching.left.map(item=>describe(item,'matching-left')),'第二组：',...matching.right.map(item=>describe(item,'option'))].join('\n');}
         const optionImageNodes = new Set(media.filter(item => item.location === 'option').map(item => imageNodes.get(item.id)));
         const unboundOptionImages = native.some(input => {
             const container = input.closest('.option,.answer-option,.option-item') || input.closest('label');
@@ -394,7 +464,7 @@
         media.forEach(item => { item.sourceQuestionNumber = index + 1; });
         const chapterEvidence=writer==='chapter-choice'&&adapter!=='video-quiz'?JSON.stringify([...optionTargets].map(([key,row])=>
             [key,row.getAttribute('onclick'),[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')].map(input=>[input.type,input.name,input.value,input.id])])):null;
-        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, sharedMedia, sharedMaterialUnreadable:shared.unreadable, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, chapterRows, chapterEvidence,ueditor,sharedMaterials:shared.materials,
+        return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, sharedMedia, sharedMaterialUnreadable:shared.unreadable, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, matching, chapterRows, chapterEvidence,ueditor,sharedMaterials:shared.materials,
             choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:local.graphHints || {} } };
     }
     registerPageAdapter({
@@ -414,6 +484,7 @@
     });
     function canonicalType(raw) {
         const label = raw.typeLabel || raw.question.match(/【([^】]+)】/)?.[1] || '';
+        if (/连线|匹配/.test(label)) return 'matching';
         if (/多选|多项选择/.test(label)) return 'multiple';
         if (/单选|单项选择/.test(label)) return 'single';
         if (/判断|是非/.test(label)) return 'judge';
@@ -449,7 +520,7 @@
             return {status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''};
         if(question.recognition?.materials === 'unreadable' || question.blocks?.some(block=>block.unreadable))
             return {status:'uncertain',category:'materials',reason:'题目包含尚未可靠读取的材料，请人工核对',evidence:''};
-        return {status:'auto',category:['single','multiple','judge'].includes(question.type)?'objective':'knowledge',reason:'直接生成答案与解析',evidence:''};
+        return {status:'auto',category:['single','multiple','judge','matching'].includes(question.type)?'objective':'knowledge',reason:'直接生成答案与解析',evidence:''};
     }
     function questionCanAutoAnswer(question, policy) {
         const local=questionLocalAnswerPolicy(question);
@@ -477,6 +548,7 @@
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
         if(['blank','essay'].includes(type)&&raw.binding.ueditor)prefill=raw.binding.ueditor.valid
             &&raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input;
+        if(type==='matching'){prefill=raw.binding.matching?.valid===true;if(!prefill)diagnostics.push('连线题行号、控件、Chosen 或原生保存字段未可靠对应，暂不预填');}
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
         if(raw.binding.chapterRows&&!raw.binding.chapterRows.valid){diagnostics.push(...raw.binding.chapterRows.diagnostics);prefill=false;}
@@ -587,6 +659,7 @@
         const addText = value => { const valueText = text(value); if (valueText) blocks.push({type:'text', text:valueText}); };
         const walk = current => {
             if (current.nodeType === 3) { addText(current.textContent); return; }
+            if(binding.matching&&current.nodeType===1&&current.matches('.chosen-container'))return;
             if (current.nodeType !== 1 || current.matches(MEDIA_EXCLUDED + ',script,style,button,input,textarea,select,[contenteditable="true"]')) return;
             if (context.parseContext?.scope === 'video-quiz' && typeof courseElementVisible === 'function' && !courseElementVisible(current)) return;
             if (current.matches('.Zy_ulTop,.option,.answer-option,.option-item')) return;
@@ -684,6 +757,7 @@
         for (const [key, target] of binding.optionTargets || []) add(target,
             ['chapter-choice','mooc2-choice'].includes(binding.writer) ? binding.writer : target.type === 'checkbox' ? 'checkbox' : 'radio',
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
+        if(binding.matching)for(const row of binding.matching.rows)add(row.select,'select',binding.canPrefill,{matchingRow:row.index});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
             ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&binding.ueditor?.valid&&binding.ueditor.input===input));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
@@ -701,7 +775,8 @@
             const targetId = controlIds.length === 1 ? controlIds[0] : `${question.id}:options`;
             relations.push({responseUnitId:id, targetId, targetKind:controlIds.length === 1 ? 'control' : 'group', status, evidence});
         };
-        if (['single','multiple','judge'].includes(question.type)) {
+        if(question.type==='matching'){const targets=all.filter(control=>control.matchingRow);const confirmed=binding.canPrefill&&targets.length===binding.matching?.rows.length&&targets.every(control=>control.writable);unit(question.id,'matching',targets.map(control=>control.id),confirmed?'confirmed':'unsupported',['matching-row-binding']);}
+        else if (['single','multiple','judge'].includes(question.type)) {
             const targets = all.filter(control => control.optionKey);
             const confirmed = binding.canPrefill && targets.length === question.options.length && targets.every(control => control.writable);
             unit(question.id, question.type, targets.map(control => control.id), confirmed ? 'confirmed' : 'unsupported',
@@ -723,7 +798,7 @@
         // A writable text/choice area does not make another explicitly present
         // unsupported response control complete. Preserve partial analysis safely.
         if (relations.some(relation => relation.status === 'confirmed')) {
-            for (const control of all.filter(control => ['select','upload','richtext','canvas'].includes(control.kind)))
+            for (const control of all.filter(control => ['select','upload','richtext','canvas'].includes(control.kind)&&!control.matchingRow))
                 unit(`${question.id}::unsupported:${control.id.split(':').at(-1)}`, 'unknown', [control.id], 'unsupported', ['no-safe-writer']);
         }
         return {responseUnits, relations};

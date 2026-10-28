@@ -103,16 +103,29 @@
         const adapter=binding.chapterRows,keys=[];
         let consistent=adapter.valid;
         for(const record of adapter.records) {
-            const signals=[record.row,record.label].flatMap(node=>['aria-checked','aria-pressed'].flatMap(name=>{
+            const signals=[record.row,record.label,record.marker].filter(Boolean).flatMap(node=>['aria-checked','aria-pressed'].flatMap(name=>{
                 const value=node.getAttribute(name);return value===null?[]:[value];
             }));
-            const marked=selected(record.row)||[record.row,record.label].some(node=>node.matches('.check_answer,.check,.checked,.selected,.on,.active'));
+            const marked=selected(record.row)||[record.row,record.label,record.marker].filter(Boolean).some(node=>node.matches('.check_answer,.check,.checked,.selected,.on,.active'));
             if(signals.some(value=>!['true','false'].includes(value))||signals.includes('true')&&signals.includes('false')
                 ||marked&&signals.includes('false'))consistent=false;
             if(marked||signals.includes('true'))keys.push(record.key);
         }
         if(question.type!=='multiple'&&keys.length>1)consistent=false;
-        const saved=clean(adapter.savedInput?.value),parts=saved?savedKeys(saved,binding.optionTargets):[];
+        const saved=clean(adapter.savedInput?.value),byValue=new Map(adapter.records.map(record=>[record.value,record.key]));
+        let parts=[];
+        if(saved) {
+            if(byValue.has(saved))parts=[byValue.get(saved)];
+            else if(/[,;|\s]/.test(saved))parts=saved.split(/[,;|\s]+/).filter(Boolean).map(value=>byValue.get(value));
+            else {
+                let offset=0;
+                while(offset<saved.length) {
+                    const candidates=adapter.records.filter(record=>saved.startsWith(record.value,offset));
+                    if(candidates.length!==1){consistent=false;break;}
+                    parts.push(candidates[0].key);offset+=candidates[0].value.length;
+                }
+            }
+        }
         if(adapter.savedInput&&(new Set(parts).size!==parts.length||parts.some(key=>!binding.optionTargets.has(key))
             ||parts.length!==keys.length||parts.some(key=>!keys.includes(key))))consistent=false;
         return {keys:[...keys].sort(),values:[],saved,unknownSaved:!consistent};
@@ -162,6 +175,7 @@
         return !state.unknownSaved && state.keys.length===expected.size && state.keys.every(key=>expected.has(key));
     }
     function questionActionState(binding, question, parseContext, chapterCheckbox = null, chapterInputs = null) {
+        if(binding.matching)return questionMatchingState(binding);
         if(binding.writer==='ueditor'&&binding.ueditor?.valid)return questionUEState(binding);
         if (binding.mooc2) return questionActionMooc2State(binding,question);
         if(binding.chapterRows)return questionActionRowChoiceState(binding,question);
@@ -226,6 +240,14 @@
             const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
             const owns=Boolean(previous && previous.node===binding.node);
             const unit={id:entry.id,parentId:projection.parentByUnit.get(entry.id)||entry.id,question:current,binding,chapterInputs,chapterCheckbox,chapterRows,text,previous,owns,state,actions:[],targets:new Map()};
+            if(current.type==='matching') {
+                const matching=binding.matching,keys=entry.answer;
+                if(!matching?.valid||keys.length!==matching.rows.length||keys.some(key=>!matching.right.some(item=>item.key===key))||state.unknownSaved){failUnit(question,entry,'连线答案或原生保存状态无法核对，未填写');continue;}
+                unit.answerKeys=[...keys];
+                if(state.values.some(Boolean)&&!questionMatchingVerified(unit)){failUnit(question,entry,'已有不同的连线作答，未覆盖');continue;}
+                if(!questionMatchingVerified(unit))unit.actions.push({responseUnitId:unit.id,type:'matching',value:[...keys]});
+                units.push(unit);plan.actions.push(...unit.actions);continue;
+            }
             if(text) {
                 const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
                 if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
@@ -288,6 +310,7 @@
             validate();
             const {binding}=unit,nodes=[binding.node,...binding.inputs,...binding.optionTargets.values()];
             if(nodes.some(node=>!node?.isConnected || node.ownerDocument!==live.doc || node!==binding.node&&!binding.node.contains(node)))throw questionActionError('CX-CTL-006','作答控件已替换，请重新分析');
+            if(binding.matching&&!sameQuestionMatching(binding.matching,readQuestionMatching(binding.node,unit.question.id)))throw questionActionError('CX-CTL-006','连线控件或关联已变化');
             const native=questionActionChapterInputs(binding,unit.question,live.parseContext);
             if(Boolean(native)!==Boolean(unit.chapterInputs) || native && (native.targets.size!==unit.chapterInputs.targets.size
                 || [...unit.chapterInputs.targets].some(([key,node])=>native.targets.get(key)!==node)))
@@ -332,6 +355,31 @@
             unitLoop:for(const unit of live.units) {
                 activeUnit=unit;activeWrites=0;activeRecorded=false;
                 validateUnit(unit);
+                if(unit.binding.matching) {
+                    if(!unit.actions.length){if(questionMatchingVerified(unit))result(unit,'already');else result(unit,'unverified');continue;}
+                    let matched=true;
+                    for(const [index,row] of unit.binding.matching.rows.entries()) {
+                        validateUnit(unit);
+                        if(row.select.value===unit.answerKeys[index])continue;
+                        write(()=>{
+                            const realm=row.select.ownerDocument.defaultView;
+                            const setter=Object.getOwnPropertyDescriptor(realm.HTMLSelectElement.prototype,'value')?.set;
+                            if(setter)setter.call(row.select,unit.answerKeys[index]);else row.select.value=unit.answerKeys[index];
+                            activeWrites++;
+                            row.select.dispatchEvent(new realm.Event('input',{bubbles:true}));row.select.dispatchEvent(new realm.Event('change',{bubbles:true}));
+                            if(row.chosen)matchingPageWindow(row.select.ownerDocument).jQuery(row.select).trigger('chosen:updated');
+                        });
+                        const end=Date.now()+500;
+                        while(Date.now()<end){validateUnit(unit,false);await new Promise(resolve=>setTimeout(resolve,25));}
+                        validateUnit(unit,false);
+                        const next=questionMatchingState(unit.binding);
+                        if(next.unknownSaved||next.values.some((value,i)=>value!==(i===index?unit.answerKeys[i]:unit.state.values[i]))){matched=false;break;}
+                        unit.state=next;
+                    }
+                    if(matched&&questionMatchingVerified(unit))result(unit,'filled');
+                    else {result(unit,'unverified');summary.details.push(`第${unit.question.number}题：连线控件、显示或原生保存未同步，请人工核对`);break;}
+                    continue;
+                }
                 if(unit.binding.writer==='ueditor') {
                     if(unit.actions.length) {
                         write(()=>{

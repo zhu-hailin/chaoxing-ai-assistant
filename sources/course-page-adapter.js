@@ -51,11 +51,11 @@
         if (root) visit(root, 0);
         return { documents, inaccessible, root };
     }
-    function courseBlocker(documents, videoQuizContext = null) {
+    function courseBlocker(documents, videoQuizContext = null, verification = null) {
         for (const doc of documents) {
             for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
                 if (node.id === 'fcqrimg' && !node.getAttribute('src')) continue;
-                if (courseElementVisible(node)) return '需要人脸识别，请自行处理；自动流程已停止';
+                if (courseElementVisible(node) && !verification?.allows(node)) return '需要人脸识别，请自行处理；自动流程已停止';
             }
             for (const node of doc.querySelectorAll('.geetest_panel,.yidun_popup,[data-captcha],iframe[src*="captcha"],.captcha-container')) {
                 if (courseElementVisible(node)) return '出现验证码，自动流程已停止';
@@ -69,7 +69,7 @@
             for (const node of doc.querySelectorAll('[role="alert"],.layui-layer-content,.vjs-modal-dialog-content')) {
                 if (!courseElementVisible(node)) continue;
                 const text = clean(node.textContent);
-                if (/人脸|身份核验/.test(text)) return '需要人脸识别，请自行处理；自动流程已停止';
+                if (/人脸|身份核验/.test(text) && !verification?.allows(node)) return '需要人脸识别，请自行处理；自动流程已停止';
                 if (/验证码|人机验证/.test(text)) return '出现验证码，自动流程已停止';
                 if (/尚未解锁|未解锁|无权访问|访问受限/.test(text)) return '章节未解锁或访问受限';
                 if (/登录已过期|重新登录/.test(text)) return '登录状态已失效，请重新登录';

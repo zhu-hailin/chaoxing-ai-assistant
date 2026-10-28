@@ -76,8 +76,9 @@
     function questionBindingNodes(binding) {
         return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
             ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()],
+            binding.matching?.savedInput,...(binding.matching?[binding.matching.block,...binding.matching.left.map(item=>item.node),...binding.matching.right.map(item=>item.node),...binding.matching.rows.flatMap(row=>[row.node,row.select,row.chosen,...row.options.map(option=>option.node)])]:[]),
             binding.mooc2?.savedInput,...(binding.mooc2?.records || []).flatMap(record=>[record.marker,record.content]),
-            binding.chapterRows?.savedInput,...(binding.chapterRows?.records || []).flatMap(record=>[record.label,record.content,record.clear]),
+            binding.chapterRows?.savedInput,...(binding.chapterRows?.records || []).flatMap(record=>[record.label,record.content,record.clear,record.marker]),
             ...(binding.choiceInputs || []),binding.choiceForm,
             ...(binding.ueditor?.valid?[binding.ueditor.input,binding.ueditor.form,binding.ueditor.container,binding.ueditor.iframe,binding.ueditor.body]:[])].filter(Boolean))];
     }
@@ -128,6 +129,7 @@
             if (questionGraphContentSignature(current) !== state.signature) throw questionContextError('CX-PAR-008', '题干、选项或关联已变化');
             for (const [id, binding] of state.graph.bindings) {
                 const live = current.bindings.get(id);
+                if(!sameQuestionMatching(binding.matching,live?.matching))throw questionContextError('CX-CTL-006','连线题控件或原生关联已变化');
                 if((binding.ueditor||live?.ueditor)&&!sameQuestionUEditor(binding.ueditor,live?.ueditor))
                     throw questionContextError('CX-CTL-006','UEditor 实例、题目或同步表单已变化');
                 if ((binding.mooc2 || live?.mooc2) && !sameMooc2ChoiceBindings(binding.mooc2,live?.mooc2))

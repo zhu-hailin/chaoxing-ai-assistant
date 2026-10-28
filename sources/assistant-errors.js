@@ -101,7 +101,7 @@
         if (['auto','manual','uncertain','needs-classification'].includes(context.policyStatus)) result.policyStatus=context.policyStatus;
         if (['confirmed','probable','ambiguous','unsupported','inside','outside','unknown'].includes(context.relationStatus)) result.relationStatus=context.relationStatus;
         const recognitionEnums={adapterId:['chaoxing-chapter','chaoxing-homework','chaoxing-mooc2-work','video-quiz'],
-            questionType:['single','multiple','judge','blank','essay','unknown'],writer:['native-choice','chapter-choice','mooc2-choice','ueditor','none'],
+            questionType:['single','multiple','judge','blank','essay','matching','unknown'],writer:['native-choice','chapter-choice','mooc2-choice','ueditor','matching','none'],
             recognitionType:['declared','text-alias','native-inferred','unknown'],materialState:['complete','unreadable'],
             materialKind:['text','image','math','table','code','mixed'],sharing:['none','explicit'],slotState:['single','native-label','adapter-declared','ambiguous']};
         for(const [name,allowed] of Object.entries(recognitionEnums))if(allowed.includes(context[name]))result[name]=context[name];

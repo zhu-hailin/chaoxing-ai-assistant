@@ -1,8 +1,9 @@
     // 题目结果、原图、逐题操作与复制展示。
-    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', unknown: '未识别题型' };
+    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', matching:'连线题', unknown: '未识别题型' };
 
     function readableAnswer(question, entry) {
         if (!entry?.answer?.length) return '暂无有效答案，请人工核对';
+        if(question.type==='matching')return entry.answer.map((key,index)=>`${index+1} → ${key}`).join('；');
         return entry.answer.map(key => {
             if (['blank','essay'].includes(question.type)) return key;
             const option = question.options.find(item => item.key === key);

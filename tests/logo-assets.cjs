@@ -61,14 +61,14 @@ test('Complete script embeds the exact metadata and floating PNG bytes', () => {
   assert(dataUri(floating[1]).equals(read('assets/' + manifest.files.floating.file)));
   assert(!source.includes('__ASSISTANT_ICON__')); assert(!source.includes('__FLOATING_LAUNCHER_ICON__'));
 });
-test('Existing updater accepts the complete metadata and recognizes version 1.32', () => {
+test('Existing updater accepts the complete metadata and recognizes version 1.33', () => {
   const updateSource = text('sources/assistant-updates.js');
   const functions = ['assistantVersionParts','assistantUpdateScriptVersion'].map(name => {
     const match = new RegExp('    function ' + name + '\\([^]*?\\n    \\}').exec(updateSource);
     assert(match, 'Existing updater function not found: ' + name); return match[0];
   }).join('\n');
   const version = script => vm.runInNewContext(functions + '\nassistantUpdateScriptVersion(script)', {script});
-  assert.equal(version(source), '1.32'); assert.equal(version(source.replace(/\n/g, '\r\n')), '1.32');
+  assert.equal(version(source), '1.33'); assert.equal(version(source.replace(/\n/g, '\r\n')), '1.33');
   const header = /^\/\/ ==UserScript==\n([\s\S]*?)^\/\/ ==\/UserScript==/m.exec(source);
   assert(header && header.index === 0); assert(header[1].length > 0 && header[1].length <= 16000);
   const oversized = source.replace(/^\/\/ @icon\s+[^\n]+/m, '// @icon ' + 'x'.repeat(16001));

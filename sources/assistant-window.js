@@ -34,6 +34,7 @@
         initCourseSidebar();
         initPanelNavigation();
         initOtherFeatureControls(shadow,doc);
+        initCourseVerificationView(doc,panelView);
         initCourseRunControls(doc, ctl, panelView);
         initResultControls(ctl);
         initQuestionPresentation();
@@ -283,6 +284,7 @@
     function setAssistantWindowMode(mode) {
         if (!panelView || !['open','minimized','closed'].includes(mode)) return;
         if (assistantUiHidden) return;
+        if(mode!=='open')panelView.hideCourseVerification?.();
         clearAssistantControlFeedback();
         if(mode!=='open'){closeProjectIntro();panelView.cancelAccountProfile?.();}
         if(mode!=='open')closeResultImage();
@@ -424,11 +426,11 @@
         return { left, top };
     }
 
-    function initPanelDragging() {
-        const head = panelView.shadow.querySelector('.head');
+    function initPanelDragging(handle = null) {
+        const head = handle || panelView.shadow.querySelector('.head');
         let drag = null;
         head.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || event.target.closest('button,a,input,select')) return;
+            if (event.button !== 0 || event.target.closest('button,a,input,select,canvas')) return;
             const rect = panelView.host.getBoundingClientRect();
             drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
             try { head.setPointerCapture(event.pointerId); } catch { /* 不支持捕获时仍处理标题栏事件。 */ }
@@ -442,6 +444,10 @@
         head.addEventListener('pointerup', end);
         head.addEventListener('pointercancel', end);
         head.addEventListener('lostpointercapture', () => { drag = null; });
+        return () => {
+            const id=drag?.id;drag=null;
+            try {if(id!==undefined&&head.hasPointerCapture(id))head.releasePointerCapture(id);} catch { /* 目标隐藏或指针取消后可能已释放。 */ }
+        };
     }
 
     function initPanelResizing() {

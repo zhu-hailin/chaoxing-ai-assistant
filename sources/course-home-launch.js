@@ -58,7 +58,8 @@
         if(!courseHomeUUID(id))return null;
         const record=get(COURSE_HOME_PREFIX+id,null);
         return record?.id===id && Number.isFinite(record.createdAt) && record.expiresAt===record.createdAt+COURSE_HOME_TTL
-            && record.createdAt<=Date.now()+10000 && ['course','classroom','student'].every(key=>/^\d+$/.test(record.identity?.[key]||'')) ? record:null;
+            && record.createdAt<=Date.now()+10000 && ['course','classroom','student'].every(key=>/^\d+$/.test(record.identity?.[key]||''))
+            && (record.options?.mode===undefined||['study','unlock'].includes(record.options.mode)) ? record:null;
     }
     function courseHomeUpdate(id,patch) {
         const record=courseHomeRecord(id);
@@ -96,6 +97,12 @@
         return JSON.stringify([modelConfigurationSignature(settings),endpointFingerprint(settings.key)]);
     }
     function courseHomeOptions(options) {
+        if(options.mode!==undefined&&!['study','unlock'].includes(options.mode))throw new Error('启动模式无效，请重新开始');
+        if(options.mode==='unlock') {
+            if(options.queueContext)throw new Error('解锁仅用于当前课程，请从课程目录页开始');
+            return {mode:'unlock',fromCurrent:false,submit:false,skipLearned:true,
+                continueOnTimeout:options.continueOnTimeout===true,failureProtectionEnabled:options.failureProtectionEnabled===true};
+        }
         const result={fromCurrent:false,...courseLearningSettings(options),videoDelay:courseVideoDelaySettings(options.videoDelay)};
         for(const key of ['submit','skipLearned','continueOnTimeout','muteVideo','skipUnanswerable','videoQuizAuto','speedEnabled','failureProtectionEnabled'])result[key]=options[key]===true;
         if(options.queueContext) {
@@ -508,7 +515,7 @@
         const blocker=courseHomeBlocker(document);if(blocker){courseHomeFail(id,blocker);return;}
         const catalog=readCourseCatalog(document),selection=courseHomeSelection(catalog,record.options.skipLearned);
         if(selection.status==='unready'){if(record.message!==selection.message)courseHomeUpdate(id,{message:selection.message});return;}
-        if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:selection.message,options:{...record.options,submit:false}});return;}
+        if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:record.options.mode==='unlock'?'当前课程没有待解锁任务':selection.message,options:{...record.options,submit:false}});return;}
         if(selection.entry.navigation.status!=='available') {
             courseHomeBoundary(id,selection.entry);return;
         }
@@ -629,7 +636,7 @@
     function createCourseHomeLauncher(doc,ctl) {
         if(window!==window.top||!isCourseHomeURL(pageURL(doc)))return null;
         let pending=null,timer=null,starting=false,generation=0;
-        const active=()=>{const identity=courseHomeIdentity(doc);if(!identity)return false;const scope=COURSE_SCORE_PREFIX+[identity.course,identity.classroom,identity.student].map(encodeURIComponent).join(':');const run=get(`cx_course_run:${scope}`,null);return run?.status==='running'&&Date.now()-run.heartbeat<15000;};
+        const active=()=>{const identity=courseHomeIdentity(doc);if(!identity)return false;const scope=COURSE_SCORE_PREFIX+[identity.course,identity.classroom,identity.student].map(encodeURIComponent).join(':');return ['cx_course_run:','cx_course_unlock:'].some(prefix=>{const run=get(prefix+scope,null);return run?.status==='running'&&Date.now()-run.heartbeat<15000;});};
         const finish=(message,phase='error')=>{clearInterval(timer);timer=null;pending=null;starting=false;ctl.report(message,phase,false);};
         const poll=()=>{
             if(courseHomeClosed){clearInterval(timer);return;}
@@ -665,18 +672,18 @@
                 starting=true;ctl.report('正在准备课程入口…','course-navigating',true);
                 try {
                     if(!api.available)throw new Error('课程身份或标签页交接能力尚未就绪，请刷新后重试');
-                    const optionsSnapshot=courseHomeOptions({...options,videoDelay:options.queueContext?options.videoDelay:readCourseVideoDelaySettings()}),model=courseHomeModelSignature();
+                    const optionsSnapshot=courseHomeOptions(options.mode==='unlock'?options:{...options,videoDelay:options.queueContext?options.videoDelay:readCourseVideoDelaySettings()}),model=optionsSnapshot.mode==='unlock'?null:courseHomeModelSignature();
                     const createdAt=Date.now(),identity=courseHomeIdentity(doc),tab=await courseHomeTab(),id=crypto.randomUUID();
                     if(turn!==generation)return;
                     if(courseHomeClosed||!sameCourseHomeIdentity(identity,courseHomeIdentity(doc)))throw new Error('课程或账号已变化');
-                    if(model!==courseHomeModelSignature())throw new Error('模型设置已变化，请重新开始');
+                    if(optionsSnapshot.mode!=='unlock'&&model!==courseHomeModelSignature())throw new Error('模型设置已变化，请重新开始');
                     if(api.active)throw new Error('本课程已有运行任务，请在学习页面查看');
                     const blocker=courseHomeBlocker(doc);if(blocker)throw new Error(blocker);
                     const frame=doc.getElementById('frame_content-zj');
                     const navigation=doc.querySelector('li[dataname="zj"] a[data-url="/mooc2-ans/mycourse/studentcourse"]');
                     if(!frame&&!navigation)throw new Error('未找到原生章节入口，请先打开课程章节栏目');
                     if(tab.cxCourseLaunchId)courseHomeFail(tab.cxCourseLaunchId,'已由新的启动操作替代','cancelled');
-                    const record={id,identity,sourceTab:tab.cxCourseTabId,targetTab:tab.cxCourseTabId,createdAt,expiresAt:createdAt+COURSE_HOME_TTL,status:'preparing',model,options:optionsSnapshot,message:'正在准备课程入口'};
+                    const record={id,identity,sourceTab:tab.cxCourseTabId,targetTab:tab.cxCourseTabId,createdAt,expiresAt:createdAt+COURSE_HOME_TTL,status:'preparing',model,options:optionsSnapshot,message:optionsSnapshot.mode==='unlock'?'正在进入学习页面，准备解锁课程':'正在准备课程入口'};
                     if(options.queueContext) {
                         if(!courseQueueValidContext(options.queueContext,doc))throw new Error('课程队列已停止或身份已变化');
                         record.queueContext={...options.queueContext};courseQueueAttachLaunch(record.queueContext,id);
@@ -702,10 +709,10 @@
         }).catch(()=>{});
         const identityAtMount=courseHomeIdentity(doc);
         const scope=identityAtMount?COURSE_SCORE_PREFIX+[identityAtMount.course,identityAtMount.classroom,identityAtMount.student].map(encodeURIComponent).join(':'):null;
-        const runListener=scope&&typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener(`cx_course_run:${scope}`,()=>{
+        const runListeners=scope&&typeof GM_addValueChangeListener==='function'?['cx_course_run:','cx_course_unlock:'].map(prefix=>GM_addValueChangeListener(prefix+scope,()=>{
             if(!courseHomeClosed&&!api.pending)renderRunState(ctl.state);
-        }):null;
-        doc.defaultView.addEventListener('pagehide',()=>{clearInterval(timer);if(runListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(runListener);},{once:true});return api;
+        })):[];
+        doc.defaultView.addEventListener('pagehide',()=>{clearInterval(timer);if(typeof GM_removeValueChangeListener==='function')for(const listener of runListeners)GM_removeValueChangeListener(listener);},{once:true});return api;
     }
     async function resumeCourseHomeLaunch(runner,ctl) {
         if(!isCourseStudyURL(pageURL(document))||window!==window.top||typeof GM_getTab!=='function')return false;
@@ -725,7 +732,7 @@
             if(identity.complete && identity.chapterId && record.chapterId!==identity.chapterId){courseHomeFail(id,'到达的章节与原生入口不一致');break;}
             if(record.expectedOrigin && record.expectedOrigin!==location.origin){courseHomeFail(id,'学习页面来源与原生入口不一致');break;}
             const blocker=courseBlocker(courseFrameTree(document).documents);if(blocker){courseHomeFail(id,blocker);break;}
-            if(courseHomeModelSignature()!==record.model){courseHomeFail(id,'模型设置已变化，请重新开始');break;}
+            if(record.options.mode!=='unlock'&&courseHomeModelSignature()!==record.model){courseHomeFail(id,'模型设置已变化，请重新开始');break;}
             const catalog=identity.complete&&readCourseCatalog(document),tree=courseFrameTree(document);
             const legacyReady=catalog?.structure!=='legacy-h4'||catalog.entries.filter(item=>!item.isGroup&&item.active).length===1
                 &&!tree.inaccessible.length&&coursePageTasks(tree).some(task=>['video','document','quiz','knowledge-graph'].includes(task.type));
@@ -738,9 +745,9 @@
                     if(latest.queueContext&&!courseQueueValidContext(latest.queueContext)){courseHomeFail(id,'课程队列已取消');return;}
                     if(runner.busy||courseRunActive(document)){courseHomeFail(id,'本课程已有运行任务，未重复启动');return;}
                     const options=courseHomeOptions(latest.options),startedAt=Date.now();
-                    courseHomeUpdate(id,{status:'consumed',message:'正在启动自动学习',options:{...latest.options,submit:false}});await courseHomeBindTab(null);
+                    courseHomeUpdate(id,{status:'consumed',message:options.mode==='unlock'?'正在启动解锁课程':'正在启动自动学习',options:{...latest.options,submit:false}});await courseHomeBindTab(null);
                     if(courseHomeClosed)return;
-                    if(latest.expiresAt<Date.now()||!sameCourseHomeIdentity(courseStudyContext(document),latest.identity)||courseHomeModelSignature()!==latest.model
+                    if(latest.expiresAt<Date.now()||!sameCourseHomeIdentity(courseStudyContext(document),latest.identity)||(options.mode!=='unlock'&&courseHomeModelSignature()!==latest.model)
                         ||latest.queueContext&&!courseQueueValidContext(latest.queueContext)||courseBlocker(courseFrameTree(document).documents)) {
                         courseHomeUpdate(id,{status:'failed',message:'启动前课程或模型状态已变化，请重新开始'});
                         ctl.report('启动前课程或模型状态已变化，请重新开始','error',false);return;
@@ -749,7 +756,7 @@
                     if(!freshCatalog||freshIdentity.chapterId!==latest.chapterId) {
                         courseHomeUpdate(id,{status:'failed',message:'启动前章节已变化，请重新开始'});ctl.report('启动前章节已变化，请重新开始','error',false);return;
                     }
-                    options.startChapterId=courseHomeStartChapter(latest,freshCatalog);
+                    if(options.mode!=='unlock')options.startChapterId=courseHomeStartChapter(latest,freshCatalog);
                     ctl.state.busy=false;let settled=false;
                     Promise.resolve(runner.start(options)).catch(()=>{}).finally(()=>{settled=true;});
                     for(let attempts=0;!courseHomeClosed&&attempts<10;attempts++) {

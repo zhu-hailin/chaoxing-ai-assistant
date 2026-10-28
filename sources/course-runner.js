@@ -27,7 +27,7 @@
     function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
     function courseForcePlaybackEnabled() {return get('cx_course_force_playback',true)!==false;}
     const courseVideoPlaybackRequests=new WeakMap();
-    function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs) {
+    function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs,clock=null) {
         if(signal?.aborted)return Promise.reject(cancelledError());
         const request=Symbol('playback');courseVideoPlaybackRequests.set(video,request);
         if(!video.paused||video.ended)return Promise.resolve();
@@ -44,7 +44,13 @@
             const failed=()=>finish(new Error('视频播放失败'));
             const cancel=()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(cancelledError());};
             video.addEventListener('playing',playing);video.addEventListener('pause',paused);video.addEventListener('ended',ended);video.addEventListener('error',failed);signal?.addEventListener('abort',cancel,{once:true});
-            timer=setTimeout(()=>{abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(courseTimeoutError('视频播放请求超时'));},timeoutMs);
+            const playbackClock=clock||(()=>Date.now()),deadline=playbackClock()+timeoutMs;
+            const expire=()=>{
+                const remaining=deadline-playbackClock();
+                if(remaining>0){timer=setTimeout(expire,Math.min(500,remaining));return;}
+                abandoned=true;if(courseVideoPlaybackRequests.get(video)===request)video.pause();finish(courseTimeoutError('视频播放请求超时'));
+            };
+            timer=setTimeout(expire,clock?Math.min(500,timeoutMs):timeoutMs);
             try {
                 const button=courseVideoStartButton(video);
                 if(button)button.click();
@@ -190,6 +196,10 @@
         }).join('\n');
     }
     function courseReportText(report) {
+        if(report?.mode==='unlock') {
+            const tasks=report.chapters.flatMap(chapter=>chapter.tasks),count=status=>tasks.filter(task=>task.status===status).length;
+            return `${report.status==='running'?'正在遍历解锁课程':report.status==='done'?'解锁遍历结束':'解锁已停止'}\n已触发 ${count('visited')}，已核验 ${count('verified')}，已完成跳过 ${count('already')+report.chapters.filter(chapter=>chapter.status==='already').length}，待处理 ${count('pending')+report.chapters.filter(chapter=>['pending','timed-out','skipped','unvisited','stopped'].includes(chapter.status)&&!chapter.tasks.some(task=>task.status==='pending')).length}${report.reason?'\n'+report.reason:''}`;
+        }
         if (!report) return '尚未开始自动学习';
         const pending=coursePendingChapters(report),protection=report.protection;
         const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
@@ -282,14 +292,15 @@
             session = owner.defaultView.sessionStorage.getItem('cx-ai-course-session');
             if (!session) { session = crypto.randomUUID(); owner.defaultView.sessionStorage.setItem('cx-ai-course-session',session); }
         } catch { session = crypto.randomUUID(); }
-        let current = null;
+        let current = null,lastUnlockReport=null;
         const refreshScope = () => {
             if (current) return; // A running session keeps its frozen identity and account-change guard.
             scope = courseScoreKey(owner);key = scope ? `cx_course_run:${scope}` : null;
         };
         const api = { owner, get key() { refreshScope();return key; }, get busy() { return Boolean(current && !current.cancelled); },
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
-            get canSkip() { return current ? Boolean(!current.cancelled && !current.waitingUnlock && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : Boolean(courseSkipResume(owner)); },
+            get mode() { return current?.mode||null; },
+            get canSkip() { return current ? Boolean(!current.cancelled && !current.waitingUnlock && !current.verification?.pending && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : lastUnlockReport?.scope===scope?false:Boolean(courseSkipResume(owner)); },
             get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
@@ -298,13 +309,14 @@
                 if(!candidate.allowed || token!==undefined&&token!==candidate.token){ctl.report(candidate.allowed?'运行记录已变化，请重新确认重试':candidate.reason,'error');return;}
                 return api.start({retry:true,retryToken:candidate.token,submit:submit===true,...readCourseLearningSettings()});
             },
-            get report() { refreshScope();return current?.report || (key ? get(key,null)?.report : null); },
+            get report() { refreshScope();return current?.report || (lastUnlockReport?.scope===scope?lastUnlockReport:null) || (key ? get(key,null)?.report : null); },
             stop(reason = '用户停止自动学习', diagnosticError = null) {
                 if (!current || current.cancelled) return;
                 const cancellation=cancelledError();cancellation.message=reason;
                 current.stopError=diagnosticError || cancellation;
                 current.cancelled = true; current.reason = reason; current.abort.abort(); current.chapter?.abort.abort(); current.cancelWake();
                 current.releaseVideoProtection?.();
+                current.verification?.close();
                 current.activeVideo?.pause();
             },
             skip() {
@@ -318,8 +330,17 @@
                 current.notify('正在跳过本章节…','course-skipping');
                 return true;
             },
-            async start({ submit = false, skipLearned = true, fromCurrent = false, startChapterId = null, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings(), queueContext = null, queuePacing = null } = {}) {
+            async start({ mode='study',submit = false, skipLearned = true, fromCurrent = false, startChapterId = null, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings(), queueContext = null, queuePacing = null } = {}) {
                 if (current || courseRunActive(owner)) return;
+                if(mode==='unlock') {
+                    if(ctl.state.busy)return;
+                    const unlock=createCourseUnlockRun(owner,ctl,{limits,now,sleep,continueOnTimeout,failureProtectionEnabled});
+                    current=unlock;
+                    try {lastUnlockReport=await unlock.start();return lastUnlockReport;}
+                    finally {current=null;owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));}
+                }
+                if(mode!=='study')return;
+                lastUnlockReport=null;
                 if (studyOwnerDocument(owner) !== owner || !owner.querySelector('#mainid #iframe')) {
                     ctl.report('仅课程学习页面支持自动学习；独立作业页无法刷课','error'); return;
                 }
@@ -343,6 +364,8 @@
                     }
                 }
                 const previous = get(key,null);
+                const unlockLock=get(`cx_course_unlock:${scope}`,null);
+                if(unlockLock?.status==='running'&&now()-unlockLock.heartbeat<15000){ctl.report('另一个页面正在解锁本课程，请先停止该页面','error');return;}
                 let retryCandidate=null;
                 if(retry) {
                     retryCandidate=courseRetryCandidate(owner,previous);
@@ -404,7 +427,7 @@
                 const savedDelay=resume?previous.videoDelayUntil:null;
                 const protection=courseRunProtection(resume?previous:null,report.chapters,resume?previous.chapterIndex:0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
                 report.protection=protection;
-                const run = {id:crypto.randomUUID(),queue,report,settings,protection,queueContext,
+                const run = {id:crypto.randomUUID(),mode:'study',queue,report,settings,protection,queueContext,
                     retrying:retry||resume&&previous.retrying===true,originalQueue:retry?previous.originalQueue||previous.queue:resume?previous.originalQueue||previous.queue:queue,
                     previousReport:retry?previous.report:resume?previous.previousReport||null:null,submit:resume ? false : submit===true,
                     learning,videoDelay:delaySettings,videoDelayUntil:Number.isFinite(savedDelay)&&savedDelay>=0&&savedDelay<=now()+60000?savedDelay:null,
@@ -430,6 +453,7 @@
                 let lease = owner.getElementById('cx-ai-course-lease');
                 if (!lease) { lease = owner.createElement('span'); lease.id = 'cx-ai-course-lease'; lease.hidden = true; owner.body.append(lease); }
                 lease.setAttribute('data-run-id',run.id);
+                lease.setAttribute('data-mode','study');
                 const pausePacing=()=>{
                     if(run.pacing.activeStartedAt!==null)run.pacing.activeMs+=Math.max(0,now()-run.pacing.activeStartedAt);
                     run.pacing.activeStartedAt=null;
@@ -461,23 +485,47 @@
                     owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
                     for (const doc of courseFrameTree(owner).documents) doc.dispatchEvent(new doc.defaultView.Event('cx-ai-course-state'));
                 };
-                const guardRun = () => {
+                let verificationPacing=false;
+                const verification=run.verification=createCourseVerification(owner,{now,notify:waiting=>{
+                    if(waiting) {
+                        if(!run.verificationWaiting){verificationPacing=run.pacing.activeStartedAt!==null;pausePacing();}
+                        run.verificationWaiting=true;
+                        lease.setAttribute('data-phase','course-verification-wait');lease.setAttribute('data-can-skip','false');
+                        lease.setAttribute('data-message','等待学习通扫码核验');ctl.report('等待学习通扫码核验','course-verification-wait',true);
+                    } else {run.verificationWaiting=false;if(verificationPacing)resumePacing();verificationPacing=false;}
+                }});
+                const taskNow=()=>now()-verification.excludedMs;
+                const guardRun = (allowVerification=false) => {
                     if (run.cancelled) throw run.stopError || cancelledError();
                     courseQueueCheckRun(run,owner);
                     if (owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id') !== run.id) throw new Error('运行锁已失效');
                     if (run.claimed && get(key,null)?.ownerId !== run.id) throw new Error('运行锁已失效');
                     if (courseScoreKey(owner) !== scope) throw new Error('课程或账号已变化');
-                    const tree = courseFrameTree(owner), blocker = courseBlocker(tree.documents, run.videoQuizAuto ? courseVideoQuizCandidate(run.activeVideo || (tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible).length===1 ? tree.documents.flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible)[0] : null)) : null);
-                    if (blocker) throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
-                    // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
-                    // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
-                        throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if (run.expected && !run.navigating) {
                         const active = readCourseCatalog(owner)?.entries.find(item => !item.isGroup && item.active);
                         if (active?.id !== run.expected) throw new Error('用户切换了章节，已停止，避免操作新题目');
                         if (run.expectedTab && courseTabSnapshot(owner).activeId !== run.expectedTab) throw new Error('当前栏目已变化或无法唯一确认，已停止');
                     }
+                    const tree = courseFrameTree(owner),videos=tree.documents.slice(1).flatMap(doc=>[...doc.querySelectorAll('video')]).filter(courseElementVisible);
+                    const video=run.activeVideo||(videos.length===1?videos[0]:null);
+                    verification.poll(tree,video);
+                    const blocker = courseBlocker(tree.documents, run.videoQuizAuto ? courseVideoQuizCandidate(video) : null, verification);
+                    if (blocker) throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
+                    // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
+                    // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
+                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                        throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
+                    if(verification.pending&&!allowVerification)throw courseVerificationWaitError();
+                };
+                const verificationReady=async()=>{
+                    guardRun(true);
+                    while(verification.pending) {
+                        const context=run.chapter;
+                        await Promise.race([sleep(limits.pollMs),run.cancelWait,...(context?[context.wait]:[])]);
+                        guardRun(true);
+                        if(context?.skipped)throw Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
+                    }
+                    guardRun();
                 };
                 const skippedError=()=>Object.assign(new Error('用户跳过本章节'),{code:'CHAPTER_SKIPPED'});
                 const navigationContext=(id,catalog=readCourseCatalog(owner))=>{
@@ -522,7 +570,7 @@
                     try {
                         emitRun(`前置章节已完成，正在检测 ${chapter.number||''} 是否解锁…`,'course-waiting-unlock');
                         while(true) {
-                            guardRun();if(context&&(context!==run.chapter||context.skipped))throw skippedError();
+                            await verificationReady();guardRun();if(context&&(context!==run.chapter||context.skipped))throw skippedError();
                             catalog=readCourseCatalog(owner);access=courseChapterAccess(owner,chapter,catalog);
                             if(access.allowed) {
                                 if(record?.status==='waiting-unlock'){record.status=oldStatus==='waiting-unlock'||oldStatus==='navigation-unknown'?'unvisited':oldStatus;record.reason=oldReason||'';}
@@ -545,12 +593,12 @@
                         if(context && (context!==run.chapter || context.skipped))throw skippedError();
                     };
                     const delay=async()=>{
-                        check();
+                        await verificationReady();check();
                         await Promise.race([sleep(limits.frameReadDelayMs),run.cancelWait,...(context?[context.wait]:[])]);
-                        check();
+                        await verificationReady();check();
                     };
                     try {
-                        check();
+                        await verificationReady();check();
                         if(settle){if(courseTaskTargetReady(owner,target))report.locator.readyHits++;else await delay();}
                         while(!courseContentReady(owner)) {
                             if(run.frameReadRetries>=limits.maxFrameReadRetries)
@@ -569,7 +617,7 @@
                     save();
                     try {
                         while(now()<run.pacing.restUntil){
-                            guardRun();const left=Math.max(0,run.pacing.restUntil-now());
+                            await verificationReady();guardRun();const left=Math.max(0,run.pacing.restUntil-now());
                             emitRun(`章节已结束，休息中，剩余 ${Math.ceil(left/1000)} 秒`,'course-rest');
                             await Promise.race([sleep(Math.min(limits.pollMs,left)),run.cancelWait]);guardRun();
                         }
@@ -587,6 +635,7 @@
                     }
                 };
                 const locateAhead=async(entry,context)=>{
+                    await verificationReady();
                     const boundary=run.rangeStart?.chapterId===entry.id?run.rangeStart:null;
                     const locationBefore=readCourseCatalog(owner)?.entries.find(item=>item.active)?.id,tabBefore=courseTabs(owner).find(tab=>tab.active)?.id;
                     const catalogBefore=JSON.stringify(readCourseCatalog(owner)?.entries.filter(item=>!item.isGroup).map(item=>item.id));
@@ -598,39 +647,48 @@
                     };
                     run.probeCheck=check;run.locating=true;pausePacing();const started=now();
                     try {
-                        emitRun('正在定位任务…','course-locating');check();
+                        await verificationReady();emitRun('正在定位任务…','course-locating');check();
                         const catalog=readCourseCatalog(owner),range=queue.slice(run.chapterIndex).filter(item=>!resume||!['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(report.chapters.find(ch=>ch.id===item.id)?.status))
                             .map(item=>{const found=catalog.entries.find(ch=>ch.id===item.id&&!ch.isGroup);if(!found?.node?.isConnected)throw new Error('课程目录发生变化或章节不存在');return found;});
-                        const location=run.probeBlocked?{entry,probe:{known:false,reason:'submission-unconfirmed'}}:await findNextCourseTask(range,{owner,submit:run.submit,skipLearned:run.skipLearned,retrying:run.retrying,
+                        let location;
+                        while(true) {try {location=run.probeBlocked?{entry,probe:{known:false,reason:'submission-unconfirmed'}}:await findNextCourseTask(range,{owner,submit:run.submit,skipLearned:run.skipLearned,retrying:run.retrying,
                             startChapterId:entry.id,startTabId:boundary?.tabId==='current'?null:boundary?.tabId,startCardId:boundary?.cardId,
                             startTabIndex:Math.max(run.tabIndex,boundary?.tabIndex||0),check:()=>run.probeCheck(),now,timeoutMs:limits.loadMs,
-                            onRequest:()=>report.locator.requests++,onCacheHit:()=>report.locator.cacheHits++,onDeduplicated:()=>report.locator.deduplicated++},context.abort.signal);
-                        check();if(location.probe?.reason==='start-tab-missing')throw new Error('本次起点栏目发生变化，请重新开始');
+                            onRequest:()=>report.locator.requests++,onCacheHit:()=>report.locator.cacheHits++,onDeduplicated:()=>report.locator.deduplicated++},context.abort.signal);break;}
+                            catch(error){if(error.code!=='COURSE_VERIFICATION_WAIT')throw error;await verificationReady();check();}}
+                        await verificationReady();check();if(location.probe?.reason==='start-tab-missing')throw new Error('本次起点栏目发生变化，请重新开始');
                         return location;
                     }finally{report.locator.elapsedMs+=Math.max(0,now()-started);resumePacing();}
                 };
                 const processChapter = async (chapter,entry,location) => {
+                    await verificationReady();
                     // 每章独立闭包和取消信号：旧请求/解密/预填回调不能进入下一章。
                     const context=run.chapter;
+                    const submissionReadbacks=new WeakMap();
                     const guard=()=>{
                         guardRun();
                         if(context!==run.chapter || context.skipped) throw skippedError();
                     };
                     const emit=(message,phase)=>{guard();emitRun(message,phase);};
                     const wait = async ms => {
-                        guard(); await Promise.race([sleep(ms),run.cancelWait,context.wait]); guard();
+                        await verificationReady();guard();
+                        const deadline=taskNow()+ms;
+                        while(taskNow()<deadline) {
+                            await Promise.race([sleep(Math.min(limits.pollMs,deadline-taskNow())),run.cancelWait,context.wait]);
+                            await verificationReady();guard();
+                        }
                     };
                     const until = async (test, timeout, message) => {
-                        const end = now()+timeout;
+                        const end = taskNow()+timeout;
                         // 后台计时器可晚于期限才唤醒；先复查当前状态，再决定超时。
                         while(true) {
-                            guard(); const value=test(); if(value)return value;
-                            if(now()>=end)throw context.submitting ? new Error(message) : courseTimeoutError(message);
-                            await wait(Math.min(limits.pollMs,Math.max(0,end-now())));
+                            await verificationReady();guard(); const value=test(); if(value)return value;
+                            if(taskNow()>=end)throw context.submitting ? new Error(message) : courseTimeoutError(message);
+                            await wait(Math.min(limits.pollMs,Math.max(0,end-taskNow())));
                         }
                     };
                     const race = async promise => {
-                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();})]); guard(); return value;
+                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();})]); await verificationReady();guard(); return value;
                     };
                     const taskDone = async node => {
                         if (courseTaskComplete(node) === false) await until(() => courseTaskComplete(node) === true,limits.completionMs,'播放/阅读结束，但平台未确认任务完成');
@@ -643,6 +701,7 @@
                         task.startSeconds=Number(video.currentTime);task.resumes=0;task.unstableResumes=0;task.pauseCount=0;task.playbackEvents=[];task.startedAt=now();task.seekCount=0;task.rollbackCount=0;
                         let wakeMedia=null,pendingSeek=null,fatalError=null,replay=null,requiredReplay=null;
                         let excludedWaitMs=0,waitingStartedAt=null,foregroundWaitingStartedAt=null,manualWaitingStartedAt=null,quizWaitingStartedAt=null;
+                        let verificationOverlapMs=0,verificationOverlapStart=0;
                         let foregroundPausePending=false,policyPauseExpected=false,playingEventCount=0;
                         const pauseControl={manualIntentUntil:0,manualPaused:false,scriptPaused:false,resumeRequested:false,pausedAt:null,lastAttemptAt:-Infinity,recoveryBlocked:false};
                         let playRequestPending=false;
@@ -655,10 +714,12 @@
                         task.speedState={status:'unknown',rates:[],evidence:'not-checked',selectedRate:null,outcome:!run.speedEnabled?'switch-off':settings.videoInfoEnabled?'recognition-enabled':'unchanged'};
                         const syncVideoWaitBudget=()=>{
                             const waiting=foregroundWaitingStartedAt!==null||manualWaitingStartedAt!==null||quizWaitingStartedAt!==null;
-                            if(waiting&&waitingStartedAt===null)waitingStartedAt=now();
-                            else if(!waiting&&waitingStartedAt!==null){excludedWaitMs+=Math.max(0,now()-waitingStartedAt);waitingStartedAt=null;}
+                            if(waiting&&waitingStartedAt===null){waitingStartedAt=now();verificationOverlapStart=verification.excludedMs;}
+                            else if(!waiting&&waitingStartedAt!==null){excludedWaitMs+=Math.max(0,now()-waitingStartedAt);verificationOverlapMs+=Math.max(0,verification.excludedMs-verificationOverlapStart);waitingStartedAt=null;}
                         };
-                        const videoBudgetNow=()=>{const at=now();return at-excludedWaitMs-(waitingStartedAt===null?0:Math.max(0,at-waitingStartedAt));};
+                        const verificationBudgetStart=verification.excludedMs;
+                        const videoBudgetNow=()=>{const at=now();return at-excludedWaitMs-(verification.excludedMs-verificationBudgetStart)+verificationOverlapMs
+                            -(waitingStartedAt===null?0:Math.max(0,at-waitingStartedAt)-Math.max(0,verification.excludedMs-verificationOverlapStart));};
                         task.pauseState={waiting:false,waitCount:0,waitMs:0,reason:null};
                         task.backgroundState={installed:Boolean(backgroundPlaybackGuard),installedAt:backgroundPlaybackGuard?.installedAt??null,
                             installedReadyState:backgroundPlaybackGuard?.installedReadyState??null,interceptedMouseouts:0,recoveryAttempts:0,category:'playing',reason:null};
@@ -786,7 +847,7 @@
                             onItems:items=>{guard();if(materialRecord)mergeCourseContext(materialRecord.store,materialRecord.identity.id,items);},
                             onStatus:message=>{task.infoStatus=String(message).slice(0,240);}});
                         const collectVideoInfo=(forceText=false)=>{
-                            if(!settings.videoInfoEnabled||quizWaitingStartedAt!==null||courseVideoQuizCandidate(video))return;
+                            if(verification.pending||!settings.videoInfoEnabled||quizWaitingStartedAt!==null||courseVideoQuizCandidate(video))return;
                             try {
                                 videoInfo.observe(video);
                                 if(forceText || now()-contextCapturedAt>=5000){captureCurrentCourseContext(owner,{video,expectedIdentity:materialRecord?.identity.id});contextCapturedAt=now();}
@@ -993,11 +1054,12 @@
                                                 task.resumes++;task.unstableResumes++;task.backgroundState.recoveryAttempts++;task.backgroundState.category='recovering';
                                             }
                                             playRequestPending=true;
-                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs).then(()=>{
+                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
                                                 if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
                                             },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
                                         }
+                                        await verificationReady();
                                         emit('视频尚未开始播放，等待启动重试…','course-video-start');
                                         await waitForMedia();
                                     }
@@ -1237,6 +1299,7 @@
                         task.status='done';task.totalPages=reader.total;report.documents++;
                     };
                     const solveQuiz = async (doc, task, chapter) => {
+                        const verificationPasses=verification.passes;
                         if (doc.querySelector('.fanyaMarking_left')) throw new Error('这是作业页面，无法在刷课流程自动处理');
                         if (courseQuizComplete(doc) || courseTaskComplete(doc.querySelector('.CeYan,.singleQuesId,.TiMu,[data-quiz-status]')||doc.body)===true) {task.status='already';emit('章节测验已完成，跳过作答…','course-running');return;}
                         if(!run.submit) {
@@ -1266,7 +1329,7 @@
                         try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'),
                             {retryTransient:true,onProgress:result=>{guard();ctl.output({...data,...result,model:settings.model});}})); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
-                        guard();checkSnapshot(snapshot);
+                        guard();if(verification.passes!==verificationPasses)throw courseVerificationWaitError();checkSnapshot(snapshot);
                         const payload={...data,...answers,model:settings.model};ctl.output(payload);
                         if(!answers.analysisComplete) {
                             chapter.issues.push(...answers.analysisFailures.map(item=>({number:questionAnswerSnapshot(snapshot).questions.find(q=>q.id===item.id)?.number || null,reason:`${item.reason}（${item.code}）`})));
@@ -1276,7 +1339,7 @@
                         const summary=answers.answers.some(a=>a.answer.length)
                             ? await race(prefillChecked(snapshot,answers.answers))
                             : {filled:0,already:0,skipped:data.total,unverified:0,details:answers.answers.map(a=>`第${a.number}题：${a.answerPolicy?.reason || a.reason || '需人工处理'}`)};
-                        guard();checkSnapshot(snapshot);ctl.output({...payload,prefill:summary});
+                        guard();if(verification.passes!==verificationPasses)throw courseVerificationWaitError();checkSnapshot(snapshot);ctl.output({...payload,prefill:summary});
                         const invalid=units.filter(q=>!questionCanAutoAnswer(q,byId.get(q.id)?.answerPolicy) || !q.capabilities.prefill || !byId.get(q.id)?.answer?.length);
                         if(invalid.length || summary.skipped || summary.unverified || summary.filled+summary.already!==units.length) {
                             chapter.issues.push(...invalid.map(q=>({number:q.number,reason:(byId.get(q.id)?.answerPolicy?.status!=='auto'?byId.get(q.id)?.answerPolicy?.reason:null) || byId.get(q.id)?.reason || q.diagnostics.join('；') || '无可靠答案或控件不可自动填写'})));
@@ -1302,9 +1365,8 @@
                             current=current.ownerDocument.defaultView?.frameElement;
                         }
                         context.submitting=true;task.submissionStarted=true;
-                        emit('正在提交并等待平台确认…','course-submitting');buttons[0].click();
                         let confirmed=false;
-                        await until(()=>{
+                        const readSubmission=async()=>{await until(()=>{
                             const tree=courseFrameTree(owner);
                             // 不读取导航期间的旧完成页，也不把跨域/空文档当提交成功。
                             if(tree.inaccessible.length)return false;
@@ -1319,7 +1381,11 @@
                             if(dialogs.length===1 && !confirmed){guard();confirmed=true;dialogs[0].click();}
                             return false;
                         },limits.submitMs,'测验提交后未收到成功状态，请人工核对；不会重试提交');
-                        context.submitting=false;context.submissionFrames=null;task.status='done';task.questionCount=data.total;report.quizzes++;
+                        context.submitting=false;context.submissionFrames=null;
+                        if(task.status!=='done'){task.status='done';task.questionCount=data.total;report.quizzes++;}};
+                        submissionReadbacks.set(task,readSubmission);
+                        emit('正在提交并等待平台确认…','course-submitting');buttons[0].click();
+                        await readSubmission();submissionReadbacks.delete(task);
                     };
                     const legacyCatalog=readCourseCatalog(owner)?.structure==='legacy-h4';
                     const boundary=run.rangeStart?.chapterId===chapter.id?run.rangeStart:null;
@@ -1330,7 +1396,7 @@
                     run.tabIndex=location.tab?.index??firstIndex;
                     entry=courseRequireChapterAccess(owner,entry);
                     run.expected=entry.id;run.expectedTab=null;run.navigating=true;chapter.status='running';
-                    emit(`正在打开章节：${entry.number} ${entry.title}${location.tab?' · '+location.tab.title:''}`,'course-navigating');
+                    await verificationReady();emit(`正在打开章节：${entry.number} ${entry.title}${location.tab?' · '+location.tab.title:''}`,'course-navigating');
                     const before=courseContentFingerprint(owner);
                     const access=courseChapterAccess(owner,entry);
                     entry=courseRequireChapterAccess(owner,entry);
@@ -1406,7 +1472,7 @@
                         save();
                     };
                     const waitForTailConfirmation=async state=>{
-                        const started=now(),fullDeadline=started+limits.completionMs;
+                        const started=taskNow(),fullDeadline=started+limits.completionMs;
                         const shortDeadline=Math.min(fullDeadline,started+limits.emptyTailWaitMs);
                         const initialSignature=tabSignature;
                         const recordedEmpty=()=>{
@@ -1442,7 +1508,7 @@
                         const initial=inspect();
                         let shortWait=emptyTail(initial);
                         while(true) {
-                            guard();
+                            await verificationReady();guard();
                             if(refreshTabs()) {
                                 const progress=state();
                                 if(nextTab())return;
@@ -1462,15 +1528,16 @@
                                     ||!(progress?.pending>0))shortWait=false;
                             }else shortWait=false;
                             const deadline=shortWait?shortDeadline:fullDeadline;
-                            if(now()>=deadline) {
+                            if(taskNow()>=deadline) {
                                 const message='栏目已核对，本章仍有未完成任务或平台未确认';
                                 throw context.submitting?new Error(message):courseTimeoutError(message);
                             }
-                            await wait(Math.min(limits.pollMs,Math.max(0,deadline-now())));
+                            await wait(Math.min(limits.pollMs,Math.max(0,deadline-taskNow())));
                         }
                     };
                     let taskFreeOnly=!chapter.tasks.some(task=>task.type!=='non-task');
                     tabLoop:for(;;) {
+                        await verificationReady();
                         await until(refreshTabs,limits.loadMs,'栏目列表或 active 状态持续无法确认');
                         let tab=nextTab();
                         if(!tab) {
@@ -1539,11 +1606,14 @@
                         let videoNumber=0,documentNumber=0;
                         while(tasks.length) {
                             const item=tasks[0];
-                            guard();
+                            await verificationReady();guard();
                             const task={tab:id,type:item.type,status:'running'};
                             if(item.type==='video')task.number=++videoNumber;
                             if(item.type==='document')task.number=++documentNumber;
                             chapter.tasks.push(task);
+                            while(true) {
+                            await verificationReady();guard();
+                            try {
                             if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
                             else if(item.type==='video')await playVideo(item.node,task);
                             else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);if(settings.videoInfoEnabled)captureCurrentCourseContext(owner,{reader:item.reader});}
@@ -1567,6 +1637,19 @@
                                     manualNodes.add(item.node);
                                     emit(task.requiresManualSave?'富文本答案已预填并同步到表单，未提交，继续后续任务…':'此测验含无法自动答题的题目，已保留支持题答案；不提交，继续后续任务…','course-running');
                                 }
+                            }
+                            break;
+                            } catch(error) {
+                                if(error.code!=='COURSE_VERIFICATION_WAIT')throw error;
+                                await verificationReady();guard();
+                                if(!item.node.isConnected||!courseFrameTree(owner).documents.includes(item.node.ownerDocument))throw new Error('核验期间任务页面已替换，请人工确认');
+                                if(task.submissionStarted||context.submitting||task.videoQuizUnconfirmed) {
+                                    const readback=submissionReadbacks.get(task);
+                                    if(!readback)throw new Error('提交状态待确认，请在平台人工核对；不会重复提交');
+                                    await readback();break;
+                                }
+                                if(task.status==='done'||task.status==='already')break;
+                            }
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
                             if(task.status==='done')courseInvalidateTaskProbe(owner,entry.id);
@@ -1641,7 +1724,7 @@
                 const onUnload = () => {
                     if(!current) return;
                     run.leaving=true;
-                    run.handoff=run.navigating||run.resting;
+                    run.handoff=!verification.pending&&(run.navigating||run.resting);
                     report.status=run.handoff?'running':'stopped'; report.reason=run.handoff?'页面导航中，等待恢复':'页面已离开或刷新，自动流程停止';
                     save();api.stop(report.reason);
                     courseQueueRunLeaving(run);
@@ -1652,12 +1735,12 @@
                     save();
                     courseQueueRunStarted(run,owner);
                     watchdog=owner.defaultView.setInterval(()=>{
-                        try {guardRun();if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
+                        try {guardRun(true);if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
                     },limits.pollMs);
                     if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null||run.queueContext&&run.learning.restEnabled&&run.pacing.activeMs>=run.learning.studyMinutes*60000)await waitForRest();
                     for(;run.chapterIndex<queue.length;run.chapterIndex++,run.tabIndex=0) {
-                        run.locating=true;guardRun();let chapter=report.chapters[run.chapterIndex];
+                        run.locating=true;await verificationReady();guardRun();let chapter=report.chapters[run.chapterIndex];
                         if(resume&&['done','no-tasks','already','skipped','timed-out','manual-pending'].includes(chapter.status))continue;
                         let entry=readCourseCatalog(owner)?.entries.find(item=>item.id===chapter.id);
                         if(!entry?.node?.isConnected) throw new Error('课程目录发生变化或章节不存在');
@@ -1751,12 +1834,13 @@
                     }
                 } finally {
                     pausePacing();
+                    verification.close();
                     report.endedAt=report.status==='running'?null:now();
                     try{save();}catch{report.status='stopped';report.stopCode='COURSE_SAVE_FAILED';report.reason+='；运行进度无法保存';}
                     owner.defaultView.clearInterval(watchdog);
                     if(report.status!=='done' && !run.activeVideo?.ended) run.activeVideo?.pause();
                     owner.defaultView.removeEventListener('pagehide',onUnload);
-                    if(lease.getAttribute('data-run-id')===run.id) lease.removeAttribute('data-run-id');
+                    if(lease.getAttribute('data-run-id')===run.id){lease.removeAttribute('data-run-id');lease.removeAttribute('data-mode');}
                     current=null;ctl.state.busy=false;
                     ctl.report(courseReportText(report),report.status==='done'?'done':report.status==='running'?'course-navigating':'error',false);
                     owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
