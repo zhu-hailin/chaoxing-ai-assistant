@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent
 # 正式发布版本；每次升级增加 0.01。
-VERSION = '1.33'
+VERSION = '1.33.1'
 
 def bundled_logo_icons():
     directory = ROOT / 'assets'

@@ -49,3 +49,38 @@ test('randomOptions compares saved data values to displayed letters and rejects 
  const f=fixture(`<form><div class="singleQuesId" data-questionid="201"><ul>${[['A','3'],['B','1']].map(([key,value])=>`<li class="before-after-checkbox selected" onclick="addMultipleChoice(this)"><label class="fl before num_option_dx" data="${value}">${key}</label><a class="fl after">选项${key}</a><div class="clear"></div></li>`).join('')}</ul><input type="hidden" id="answer201" value="3,1"></div></form>`);
  try{const node=f.d.querySelector('.singleQuesId'),rows=[...node.querySelectorAll('li')],adapter=f.a.readChapterRowChoiceBindings(node,'201','multiple',rows);assert(adapter.valid);const binding={chapterRows:adapter,optionTargets:new Map([['A',rows[0]],['B',rows[1]]])};const state=f.a.questionActionRowChoiceState(binding,{type:'multiple'});assert.equal(state.unknownSaved,false);assert.deepEqual(Array.from(state.keys),['A','B']);rows[1].querySelector('label').setAttribute('data','3');assert.equal(f.a.readChapterRowChoiceBindings(node,'201','multiple',rows).valid,false);}finally{f.close();}
 });
+
+function legacySpanChoice(attribute='name'){
+ return `<form><div class="singleQuesId" data-questionid="301"><div class="Zy_TItle">【单选题】本地选项夹具</div><ul class="Zy_ulTop">${[['A','3'],['B','1'],['C','2'],['D','4']].map(([key,value])=>`<li class="before-after" onclick="addChoice(this)"><label class="fl before num_option_dx" data="${value}">${key}</label><a class="fl after"><span ${attribute}="answer301">选项${key}</span></a><div class="clear"></div></li>`).join('')}</ul><input type="hidden" id="answer301" name="answer301" value=""></div></form>`;
+}
+function legacySpanSetup(f,sync=true){
+ const rows=[...f.d.querySelectorAll('.Zy_ulTop li')],saved=f.d.querySelector('input[type="hidden"]');
+ rows.forEach(row=>row.onclick=()=>{rows.forEach(item=>item.classList.remove('selected'));row.classList.add('selected');if(sync)saved.value=row.querySelector('label').getAttribute('data');});
+ return {rows,saved,snapshot:()=>f.a.createQuestionSnapshot(f.a.parseQuestionGraph(f.d),{doc:f.d})};
+}
+test('legacy option spans with the answer name or ID retain native value mapping and save readback',async()=>{
+ for(const attribute of ['name','id']){const f=fixture(legacySpanChoice(attribute));try{
+  const {saved,snapshot}=legacySpanSetup(f),current=snapshot();assert.equal(current.questions[0].capabilities.prefill,true);
+  const result=await f.a.executeQuestionActions(f.a.planQuestionActions(current,[{id:'301',answer:['B']}]));assert.equal(result.filled,1);assert.equal(saved.value,'1');
+ }finally{f.close();}}
+});
+test('legacy option span exception keeps duplicate fields and unrelated same-name nodes blocked',()=>{
+ for(const mode of ['duplicate-hidden','outside-span','cross-question','wrong-form','text-input']){const f=fixture(legacySpanChoice());try{
+  const q=f.d.querySelector('.singleQuesId'),saved=f.d.querySelector('input[type="hidden"]');
+  if(mode==='duplicate-hidden')q.append(saved.cloneNode(true));
+  if(mode==='outside-span'){const span=f.d.createElement('span');span.setAttribute('name','answer301');q.append(span);}
+  if(mode==='cross-question'){const other=f.d.createElement('div');other.className='singleQuesId';other.setAttribute('data-questionid','302');other.append(saved);f.d.querySelector('form').append(other);}
+  if(mode==='wrong-form'){const form=f.d.createElement('form');f.d.body.append(form);form.append(saved);}
+  if(mode==='text-input')saved.type='text';
+  const binding=f.a.readChapterRowChoiceBindings(q,'301','single',[...q.querySelectorAll('.Zy_ulTop li')]);assert.equal(binding.valid,false,mode);
+ }finally{f.close();}}
+});
+test('legacy option span exception preserves existing answers and stops on replacement or missing native save',async()=>{
+ for(const mode of ['manual','replace','unsynced']){const f=fixture(legacySpanChoice());try{
+  const {rows,saved,snapshot}=legacySpanSetup(f,mode!=='unsynced');
+  if(mode==='manual')rows[0].click();
+  const plan=f.a.planQuestionActions(snapshot(),[{id:'301',answer:['B']}]);
+  if(mode==='replace'){saved.replaceWith(saved.cloneNode(true));await assert.rejects(f.a.executeQuestionActions(plan));}
+  else {const result=await f.a.executeQuestionActions(plan);assert.equal(result[mode==='manual'?'skipped':'unverified'],1);assert.equal(saved.value,mode==='manual'?'3':'');}
+ }finally{f.close();}}
+});

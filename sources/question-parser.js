@@ -250,7 +250,10 @@
             if(markers.length>1||!value||records.some(record=>record.value===value))valid=false;
             keys.add(key);records.push({key,value,marker,row,label,content,clear:clears[0],handler});
         }
-        const saved=/^\d+$/.test(String(id))?[...node.ownerDocument.querySelectorAll(`[id="answer${id}"],[name="answer${id}"]`)]:[];
+        // Legacy option text/markers may share the answer field's name or ID.
+        // Ignore only spans inside this question's bound option rows.
+        const saved=/^\d+$/.test(String(id))?[...node.ownerDocument.querySelectorAll(`[id="answer${id}"],[name="answer${id}"]`)]
+            .filter(target=>!(target.tagName==='SPAN'&&questionOwner(target)===node&&records.some(record=>record.row.contains(target)))):[];
         if(saved.length>1||saved.length===1&&(!saved[0].matches('input[type="hidden"]')
             ||saved[0].id&&saved[0].id!==`answer${id}`||saved[0].name&&saved[0].name!==`answer${id}`
             ||saved[0].form!==node.closest('form')||questionOwner(saved[0])&&questionOwner(saved[0])!==node))valid=false;
