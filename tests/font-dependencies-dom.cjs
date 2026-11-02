@@ -64,7 +64,7 @@ function fixture(mapping) {
 }
 function attachFont(f, bytes, html) {
     const style = f.w.document.createElement('style');
-    style.textContent = `@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,${bytes.toString('base64')}')}`;
+    style.textContent = `@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,${bytes.toString('base64')}')}.font-cxsecret{font-family:font-cxsecret}`;
     f.w.document.head.append(style); f.w.document.body.innerHTML = html;
 }
 const results = [];
@@ -134,6 +134,73 @@ async function test(name, action) { await action(); results.push(name); console.
         assert(nodes.every(node => node.isConnected && node.classList.contains('font-cxsecret')));
         assert.equal(f.calls.length, 0); assert.equal(f.resourceCalls.length, 0);
       } finally { f.close(); }
+    });
+    await test('Marked English, Chinese, NBSP and curly quotes remain plaintext without secret fonts', async () => {
+      const f=fixture();try {
+        f.w.document.body.innerHTML='<div class="font-cxsecret">【单选题】What’s the answer?&nbsp;正常中文</div><li class="font-cxsecret">A. ordinary English</li>';
+        const before=f.w.document.body.innerHTML;
+        f.api.Typr.parse=()=>{throw new Error('Plaintext must not invoke the decoder');};
+        await f.api.ensureFontDecoded();
+        assert.equal(f.w.document.body.innerHTML,before);assert.equal(f.calls.length,0);assert.equal(f.resourceCalls.length,0);
+      } finally {f.close();}
+    });
+    await test('Failed local quote fonts do not block plaintext or trigger font loading', async () => {
+      const f=fixture();try {
+        const style=f.w.document.createElement('style');
+        style.textContent='@font-face{font-family:CXChineseQuote;src:local("PingFangSC-Regular");unicode-range:U+2018-2019,U+201C-201D}.font-cxsecret{font-family:CXChineseQuote,Arial,sans-serif}';
+        f.w.document.head.append(style);f.w.document.body.innerHTML='<div class="font-cxsecret">【单选题】What’s “normal”? 正常中文</div>';
+        let loads=0;
+        Object.defineProperty(f.w.document,'fonts',{value:{status:'loaded',load(){loads++;throw new Error('NetworkError');},*[Symbol.iterator](){yield {family:'CXChineseQuote',status:'error',unicodeRange:'U+2018-2019,U+201C-201D'};}}});
+        const before=f.w.document.body.innerHTML;await f.api.ensureFontDecoded();
+        assert.equal(f.w.document.body.innerHTML,before);assert.equal(loads,0);assert.equal(f.calls.length,0);
+      } finally {f.close();}
+    });
+    await test('Unused secret faces and unrelated Base64 fonts never decode ordinary text', async () => {
+      const f=fixture();try {
+        const style=f.w.document.createElement('style');
+        style.textContent='@font-face{font-family:Other;src:url("data:font/ttf;base64,AA==")}@font-face{font-family:font-cxsecret;src:url("/missing.ttf")}.font-cxsecret{font-family:Arial,sans-serif}';
+        f.w.document.head.append(style);f.w.document.body.innerHTML='<div class="font-cxsecret">普通中文一</div>';
+        const before=f.w.document.body.innerHTML;await f.api.ensureFontDecoded();assert.equal(f.w.document.body.innerHTML,before);
+      } finally {f.close();}
+    });
+    await test('Declared secret fonts with missing, external or broken sources fail without DOM edits', async () => {
+      for(const source of ['', '@font-face{font-family:font-cxsecret;src:url("/missing.ttf")}', '@font-face{font-family:font-cxsecret;src:url("data:font/ttf;base64,AA==")}']) {
+        const f=fixture();try {
+          const style=f.w.document.createElement('style');style.textContent=source+'.font-cxsecret{font-family:font-cxsecret}';f.w.document.head.append(style);
+          f.w.document.body.innerHTML='<div class="font-cxsecret">一丁</div>';const before=f.w.document.body.innerHTML;
+          await assert.rejects(f.api.ensureFontDecoded(),error=>error.cxCode==='CX-PAR-005');
+          assert.equal(f.w.document.body.innerHTML,before);assert.equal(f.calls.length,0);
+        } finally {f.close();}
+      }
+    });
+    await test('Font sources stay paired with their own face and unicode range', async () => {
+      const f=fixture();try {
+        const style=f.w.document.createElement('style');
+        style.textContent='@font-face{font-family:Other;src:url("data:font/ttf;base64,AA==")}@font-face{font-family:font-cxsecret;src:local("Missing");unicode-range:U+2018-2019,U+201C-201D}.font-cxsecret{font-family:font-cxsecret}';
+        f.w.document.head.append(style);f.w.document.body.innerHTML='<div class="font-cxsecret">普通中文一 “English”</div>';
+        const before=f.w.document.body.innerHTML;await f.api.ensureFontDecoded();assert.equal(f.w.document.body.innerHTML,before);
+        style.textContent=style.textContent.replace('U+2018-2019,U+201C-201D','U+4???');
+        await assert.rejects(f.api.ensureFontDecoded(),error=>error.cxCode==='CX-PAR-005');assert.equal(f.w.document.body.innerHTML,before);
+      } finally {f.close();}
+    });
+    await test('Mixed plaintext and encoded nodes retain plaintext markers and use the supplied document', async () => {
+      const f=fixture({[shapeHash]:20057});try {
+        const frame=f.w.document.createElement('iframe');f.w.document.body.append(frame);const doc=frame.contentDocument;
+        const style=doc.createElement('style');style.textContent=`@media all{@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,${triangleFont().toString('base64')}')}}.font-cxsecret{font-family:font-cxsecret}.plain{font-family:Arial}`;
+        doc.head.append(style);doc.body.innerHTML='<div class="font-cxsecret">一</div><div class="font-cxsecret plain">普通中文一</div>';
+        await f.api.ensureFontDecoded(doc);
+        assert.equal(doc.body.firstElementChild.textContent,'乙');assert(!doc.body.firstElementChild.classList.contains('font-cxsecret'));
+        assert.equal(doc.body.lastElementChild.textContent,'普通中文一');assert(doc.body.lastElementChild.classList.contains('font-cxsecret'));
+      } finally {f.close();}
+    });
+    await test('Unreadable unrelated styles do not block plaintext; unresolved secret families still fail', async () => {
+      const f=fixture();try {
+        const sheet={get cssRules(){throw new f.w.DOMException('Cross-origin stylesheet','SecurityError');}};
+        Object.defineProperty(f.w.document,'styleSheets',{value:[sheet]});
+        f.w.document.body.innerHTML='<div class="font-cxsecret" style="font-family:Arial">普通中文</div>';
+        await f.api.ensureFontDecoded();const root=f.w.document.body.firstElementChild;root.style.fontFamily='font-cxsecret';
+        await assert.rejects(f.api.ensureFontDecoded(),error=>error.cxCode==='CX-PAR-005');assert(root.classList.contains('font-cxsecret'));
+      } finally {f.close();}
     });
     console.log(`PASS ${results.length} font dependency checks; no remote fonts, resources or model requests`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

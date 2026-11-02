@@ -5,7 +5,7 @@
 // @icon         data:image/png;base64,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
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.33.1
+// @version      1.33.2
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2918,7 +2918,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.33.1';
+    const ASSISTANT_VERSION = '1.33.2';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2967,7 +2967,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.33.1', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.33.2', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -7237,7 +7237,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.1');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.2');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -9074,7 +9074,7 @@ Typr["U"] = {
                     } else {run.verificationWaiting=false;if(verificationPacing)resumePacing();verificationPacing=false;}
                 }});
                 const taskNow=()=>now()-verification.excludedMs;
-                const guardRun = (allowVerification=false) => {
+                const guardRun = (allowVerification=false,allowUnavailableFrame=false) => {
                     if (run.cancelled) throw run.stopError || cancelledError();
                     courseQueueCheckRun(run,owner);
                     if (owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id') !== run.id) throw new Error('运行锁已失效');
@@ -9092,9 +9092,18 @@ Typr["U"] = {
                     if (blocker) throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
                     // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    if (!allowUnavailableFrame && !run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if(verification.pending&&!allowVerification)throw courseVerificationWaitError();
+                };
+                const canContinueFailure=(error,context,chapter)=>Boolean(!run.protection.enabled && context && !context.skipped && !context.submitting
+                    && error.name!=='AbortError' && !error.navigationBoundary
+                    && !['COURSE_NATIVE_BLOCKER','COURSE_QUEUE_CANCELLED','COURSE_LOCATOR_CHANGED','COURSE_TAB_LOCKED','COURSE_SUBMISSION_UNCONFIRMED','COURSE_VERIFICATION_WAIT'].includes(error.code)
+                    && !chapter?.tasks.some(task=>(task.submissionStarted || task.videoQuizUnconfirmed) && task.status!=='done'));
+                const recordFailure=(error,chapter,task=null)=>{
+                    const diagnostic=recordCxDiagnostic(error,{module:'course',operation:'run',taskId:diagnosticTaskId});
+                    chapter.issues.push({number:null,reason:error.message,code:diagnostic.code});
+                    if(task){task.status='manual-pending';task.reason=error.message;task.errorCode=diagnostic.code;}
                 };
                 const verificationReady=async()=>{
                     guardRun(true);
@@ -9624,7 +9633,8 @@ Typr["U"] = {
                                             pauseControl.recoveryBlocked=true;return;
                                         }
                                         if(videoBudgetNow()>=startDeadline)throw courseTimeoutError('视频启动超时，播放入口重试后仍未开始播放');
-                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
+                                        const retryButton=playRequestPending&&video.paused?courseVideoStartButton(video):null;
+                                        if(video.paused&&(!playRequestPending||retryButton)&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
                                             &&(!recovery||now()-pauseControl.lastAttemptAt>=(courseForcePlaybackEnabled()?500:limits.resumeMs))) {
                                             lastAttemptAt=videoBudgetNow();pauseControl.lastAttemptAt=now();foregroundWaitCount=task.foregroundState.waitCount;
                                             task.startAttempts=(task.startAttempts||0)+1;
@@ -9632,14 +9642,18 @@ Typr["U"] = {
                                                 if(task.unstableResumes===0)resumeProgress=0;
                                                 task.resumes++;task.unstableResumes++;task.backgroundState.recoveryAttempts++;task.backgroundState.category='recovering';
                                             }
-                                            playRequestPending=true;
-                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
-                                                if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
-                                            },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
+                                            // 原生入口尚未响应时重试点击，复用正在等待的播放请求及取消监听。
+                                            if(retryButton)retryButton.click();
+                                            else {
+                                                playRequestPending=true;
+                                                requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
+                                                    if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                                },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
+                                            }
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
                                         }
                                         await verificationReady();
-                                        emit('视频尚未开始播放，等待启动重试…','course-video-start');
+                                        emit(video.paused?'视频尚未开始播放，等待启动重试…':'已请求播放，正在等待视频加载…','course-video-start');
                                         await waitForMedia();
                                     }
                                     guard();
@@ -9933,7 +9947,7 @@ Typr["U"] = {
                         checkSnapshot(snapshot);guard();
                         const buttons=courseSubmitButton(doc);
                         if(buttons.length!==1) throw new Error('无法唯一确认章节测验提交按钮，已保留预填答案');
-                        if(courseSubmitConfirmation(doc,owner).length) throw new Error('已有提交确认窗口，请人工核对后再开始');
+                        if(courseSubmitConfirmation(doc,owner).length) throw Object.assign(new Error('已有提交确认窗口，请人工核对后再开始'),{code:'COURSE_SUBMISSION_UNCONFIRMED'});
                         // 必须在第一次点击前保存原 frame/测验标识，点击可能同步触发文档导航。
                         const frame=doc.defaultView.frameElement;
                         const quizId=pageURL(doc)?.searchParams.get('workId');
@@ -10136,7 +10150,7 @@ Typr["U"] = {
                         const id=tab.id;currentTabId=id;run.tabIndex=tabIds.indexOf(id);
                         run.tabProgress={chapterId:chapter.id,currentId:id,completed:[...visitedTabs],identities:[...identities]};
                         let readyType=id===initialProbeTab?location.targetType:null;
-                        if(tab.disabled)throw new Error('章节页面标签未解锁，无法自动继续');
+                        if(tab.disabled)throw Object.assign(new Error('章节页面标签未解锁，无法自动继续'),{code:'COURSE_TAB_LOCKED'});
                         if(probe?.known&&id!==initialProbeTab) {
                             const descriptor=probe.tabs.find(item=>item.id===id);let summary;
                             const started=now();pausePacing();run.locating=true;
@@ -10207,9 +10221,8 @@ Typr["U"] = {
                                 try {await solveQuiz(item.doc,task,chapter);}
                                 catch(error) {
                                     guard();
-                                    // 只放行已确定的作答适用性问题；验证、网络及提交异常保持原停止规则。
-                                    if(!run.skipUnanswerable || error.code!=='COURSE_MANUAL_ANSWER_REQUIRED' || context.submitting
-                                        || chapter.tasks.some(t=>t.submissionStarted&&t.status!=='done'))throw error;
+                                    if((run.protection.enabled && !run.skipUnanswerable) || error.code!=='COURSE_MANUAL_ANSWER_REQUIRED' || context.submitting
+                                        || chapter.tasks.some(t=>(t.submissionStarted||t.videoQuizUnconfirmed)&&t.status!=='done'))throw error;
                                     task.status='manual-pending';task.reason=error.message;
                                     if(error.requiresManualSave)task.requiresManualSave=true;
                                     task.manualQuestions=chapter.issues.slice(issueStart).map(issue=>({number:issue.number,reason:clean(issue.reason).slice(0,200)}));
@@ -10219,7 +10232,15 @@ Typr["U"] = {
                             }
                             break;
                             } catch(error) {
-                                if(error.code!=='COURSE_VERIFICATION_WAIT')throw error;
+                                if(error.code!=='COURSE_VERIFICATION_WAIT') {
+                                    guard();
+                                    // 超时和不可读框架交给章节层；其余任务失败先尝试本章后续任务。
+                                    if(!canContinueFailure(error,context,chapter) || ['COURSE_TIMEOUT','TIMEOUT','COURSE_FRAME_UNAVAILABLE'].includes(error.code))throw error;
+                                    recordFailure(error,chapter,task);
+                                    if(item.type==='video'){run.activeVideo?.pause();run.activeVideo=null;}
+                                    emit(`当前任务未完成：${error.message}；继续后续任务…`,'course-running');
+                                    break;
+                                }
                                 await verificationReady();guard();
                                 if(!item.node.isConnected||!courseFrameTree(owner).documents.includes(item.node.ownerDocument))throw new Error('核验期间任务页面已替换，请人工确认');
                                 if(task.submissionStarted||context.submitting||task.videoQuizUnconfirmed) {
@@ -10278,7 +10299,8 @@ Typr["U"] = {
                     const pending=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
                     if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
-                        chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
+                        const failedTask=chapter.tasks.find(task=>task.status==='manual-pending'&&task.errorCode);
+                        chapter.status='manual-pending';chapter.reason=failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':chapter.tasks.some(task=>task.requiresManualSave)
                             ?'富文本答案已预填并同步到表单，等待人工保存或提交':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
                     }
@@ -10314,7 +10336,10 @@ Typr["U"] = {
                     save();
                     courseQueueRunStarted(run,owner);
                     watchdog=owner.defaultView.setInterval(()=>{
-                        try {guardRun(true);if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
+                        try {guardRun(true);if(now()-run.lastSaved>2500)save();} catch(error) {
+                            if(error.code==='COURSE_FRAME_UNAVAILABLE' && canContinueFailure(error,run.chapter,report.chapters[run.chapterIndex]))return;
+                            api.stop(error.message,error);
+                        }
                     },limits.pollMs);
                     if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null||run.queueContext&&run.learning.restEnabled&&run.pacing.activeMs>=run.learning.studyMinutes*60000)await waitForRest();
@@ -10357,25 +10382,33 @@ Typr["U"] = {
                             save();await processChapter(chapter,entry,location);
                         }
                         catch(error) {
-                            guardRun();
+                            const continueFailure=canContinueFailure(error,context,chapter);
+                            guardRun(false,continueFailure);
                             if(context.skipped) {
                                 chapter.status='skipped';chapter.reason='用户跳过本章节';
                                 for(const task of chapter.tasks.filter(task=>task.status==='running')) {task.status='skipped';task.reason=chapter.reason;}
-                            } else if(run.continueOnTimeout && ['COURSE_TIMEOUT','TIMEOUT'].includes(error.code) && !context.submitting
-                                && !chapter.tasks.some(task=>task.submissionStarted && task.status!=='done')) {
+                            } else if((run.continueOnTimeout || !run.protection.enabled) && ['COURSE_TIMEOUT','TIMEOUT'].includes(error.code) && !context.submitting
+                                && !chapter.tasks.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed) && task.status!=='done')) {
                                 context.timedOut=true;chapter.status='timed-out';chapter.reason=error.message;
                                 chapter.issues.push({number:null,reason:error.message});
                                 for(const task of chapter.tasks.filter(task=>task.status==='running')) {task.status='timed-out';task.reason=error.message;}
                                 // 先结束章节、记录失败，再决定是否允许进入下一节。
+                            } else if(continueFailure) {
+                                context.failed=true;chapter.status='manual-pending';chapter.reason=error.message;
+                                recordFailure(error,chapter);
+                                for(const task of chapter.tasks.filter(task=>task.status==='running')) {
+                                    task.status='manual-pending';task.reason=error.message;
+                                }
                             } else throw error;
                             save();
                         } finally {
                             context.abort.abort();
-                            if(context.skipped || context.timedOut) run.activeVideo?.pause();
+                            if(context.skipped || context.timedOut || context.failed){run.activeVideo?.pause();run.activeVideo=null;}
                             run.chapter=null;
                             run.expected=null;run.expectedTab=null;run.navigating=false;
                             lease.setAttribute('data-can-skip','false');
                         }
+                        run.locating=true;
                         courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);
                         if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit) {
                             run.protection.triggered=true;run.protection.triggeredAt=now();save();
@@ -13287,21 +13320,43 @@ Typr["U"] = {
         const onlyType = new RegExp('^(?:\\d+\\s*[.．、]\\s*)?(?:【\\s*' + label + '\\s*】|\\[\\s*' + label + '\\s*\\]|（\\s*' + label + '\\s*）|\\(\\s*' + label + '\\s*\\))$');
         return !onlyType.test(text);
     }
-    async function ensureFontDecoded(doc = document, parseContext = {}) {
-        const roots = [...(parseContext.root?.matches('.font-cxsecret')?[parseContext.root]:[]),...(parseContext.root || doc).querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
-        if (!roots.length) return;
-        const styles = [...doc.querySelectorAll('style')];
-        const style = styles.find(el =>
-            /font-cxsecret/.test(el.textContent) && /base64,/.test(el.textContent));
-        const base64 = style?.textContent.match(/base64,([A-Za-z0-9+/=\s]+)["']/)?.[1].replace(/\s/g, '');
-        if (!base64) {
-            // 已批改结果页仍给明文题干加 font-cxsecret 类，却不再提供字体。
-            // 仅在已完成、没有字体声明且没有已知混淆字符时视为明文。
-            const completed = clean(doc.querySelector('#RightCon .testTit_status, .testTit_status')?.textContent) === '已完成';
-            const declaresSecretFont = styles.some(el => /@font-face[\s\S]*?font-cxsecret/.test(el.textContent));
-            if (completed && !declaresSecretFont && roots.every(root => !GARBLED.test(root.textContent))) return;
-        }
-        if (!base64) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+    function secretFontFaces(doc) {
+        const faces=[],seen=new Set(),view=doc.defaultView;
+        const visitSheet=sheet=>{
+            if(!sheet || sheet.disabled || seen.has(sheet))return;
+            seen.add(sheet);
+            if(sheet.media?.mediaText && view?.matchMedia && !view.matchMedia(sheet.media.mediaText).matches)return;
+            let rules;
+            // 跨域样式不可读时，只有实际使用混淆字体的正文会因缺少资源报错。
+            try {rules=sheet.cssRules;} catch {return;}
+            visitRules(rules);
+        };
+        const visitRules=rules=>{
+            for(const rule of rules || []) {
+                if(rule.type===5) {
+                    const family=rule.style.getPropertyValue('font-family').trim().replace(/^(['"])(.*)\1$/,'$2').toLowerCase();
+                    if(family!=='font-cxsecret')continue;
+                    const range=rule.style.getPropertyValue('unicode-range') || 'U+0-10FFFF';
+                    const ranges=range.split(',').map(part=>{
+                        const match=part.trim().match(/^U\+([0-9a-f?]+)(?:-([0-9a-f]+))?$/i);
+                        return match?[parseInt(match[1].replace(/\?/g,'0'),16),parseInt((match[2] || match[1]).replace(/\?/g,'f'),16)]:null;
+                    }).filter(Boolean);
+                    const src=rule.style.getPropertyValue('src');
+                    const base64=src.match(/url\(\s*(['"]?)data:[^,]*;base64,([A-Za-z0-9+/=\s]+)\1\s*\)/i)?.[2].replace(/\s/g,'');
+                    faces.push({ranges,base64});
+                } else if(rule.type===3) {
+                    if(!rule.media?.mediaText || !view?.matchMedia || view.matchMedia(rule.media.mediaText).matches)visitSheet(rule.styleSheet);
+                } else if(rule.cssRules) {
+                    if(rule.type===4 && view?.matchMedia && !view.matchMedia(rule.conditionText).matches)continue;
+                    if(rule.type===12 && view?.CSS?.supports && !view.CSS.supports(rule.conditionText))continue;
+                    visitRules(rule.cssRules);
+                }
+            }
+        };
+        for(const sheet of doc.styleSheets)visitSheet(sheet);
+        return faces;
+    }
+    function loadSecretFont(base64) {
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
                 if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw createCxError('CX-CFG-006',{module:'parser',operation:'font'});
@@ -13325,28 +13380,56 @@ Typr["U"] = {
             fontCache.set(base64, pending);
             pending.catch(() => fontCache.delete(base64));
         }
-        const { mapping, encodedCodes } = await fontCache.get(base64);
-        // 先验证全部文本，再一次性替换，避免失败后重试二次解密已转换的字符。
-        const edits = new Map();
-        for (const root of roots.filter(root => root.classList.contains('font-cxsecret'))) {
-            const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-            let node;
-            while ((node = walker.nextNode())) {
-                if (edits.has(node) || node.parentElement?.closest('script,style')) continue;
-                const next = node.data.replace(/[\u4e00-\u9fa5]/g, char => {
-                    const code = char.charCodeAt(0);
-                    // 容器会同时包含题型标签和普通中文。没有自定义字形的字符
-                    // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
-                    if (!encodedCodes.has(code)) return char;
-                    const decoded = mapping.get(code);
-                    if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
-                    return decoded;
-                });
-                edits.set(node, next);
+        return fontCache.get(base64);
+    }
+    async function ensureFontDecoded(doc = document, parseContext = {}) {
+        const roots = [...(parseContext.root?.matches('.font-cxsecret')?[parseContext.root]:[]),...(parseContext.root || doc).querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
+        if (!roots.length) return;
+        const faces=secretFontFaces(doc),nodes=new Map(),decodedRoots=new Set(),resources=new Set();
+        const failure=()=>createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+        for(const root of roots) {
+            const walker=doc.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
+            while((node=walker.nextNode())) {
+                if(node.parentElement?.closest('script,style,noscript,template'))continue;
+                if(nodes.has(node)){if(nodes.get(node).size)decodedRoots.add(root);continue;}
+                const font=doc.defaultView?.getComputedStyle(node.parentElement).fontFamily || '';
+                const usesSecret=/(?:^|,)\s*(?:"font-cxsecret"|'font-cxsecret'|font-cxsecret)\s*(?:,|$)/i.test(font);
+                const codes=new Map();nodes.set(node,codes);
+                if(usesSecret)for(const char of new Set(node.data.match(/[\u4e00-\u9fa5]/g) || [])) {
+                    const code=char.charCodeAt(0);
+                    if(!faces.length)throw failure();
+                    const matching=faces.filter(face=>face.ranges.some(([start,end])=>code>=start && code<=end));
+                    if(!matching.length)continue;
+                    const sources=new Set(matching.map(face=>face.base64));
+                    if(sources.size!==1 || sources.has(undefined))throw failure();
+                    const base64=matching[0].base64;codes.set(code,base64);resources.add(base64);
+                }
+                if(!codes.size && GARBLED.test(node.data))throw failure();
+                if(codes.size)decodedRoots.add(root);
             }
         }
+        if(!resources.size)return;
+        const fonts=new Map(await Promise.all([...resources].map(async base64=>[base64,await loadSecretFont(base64)])));
+        const activeRoots=[...decodedRoots].filter(root=>root.classList.contains('font-cxsecret'));
+        // 先验证全部文本，再一次性替换，避免失败后重试二次解密已转换的字符。
+        const edits = new Map();
+        for (const [node,codes] of nodes) {
+            if(!codes.size || !activeRoots.some(root=>root.contains(node)))continue;
+            const next = node.data.replace(/[\u4e00-\u9fa5]/g, char => {
+                const code = char.charCodeAt(0);
+                if(!codes.has(code))return char;
+                const {mapping,encodedCodes}=fonts.get(codes.get(code));
+                // 容器会同时包含题型标签和普通中文。没有自定义字形的字符
+                // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
+                if (!encodedCodes.has(code)) return char;
+                const decoded = mapping.get(code);
+                if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+                return decoded;
+            });
+            edits.set(node, next);
+        }
         for (const [node, text] of edits) node.data = text;
-        roots.forEach(root => root.classList.remove('font-cxsecret'));
+        activeRoots.forEach(root => root.classList.remove('font-cxsecret'));
     }
 
     // 题目快照、预填资格与受保护预填入口。
@@ -14481,7 +14564,7 @@ Typr["U"] = {
           #course-verification-open{flex:none;border:0;background:transparent;color:var(--accent);padding:2px 0;font-size:12px;white-space:nowrap}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.33.1</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
+          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.33.2</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-haspopup="dialog" aria-controls="about" aria-expanded="false" title="项目介绍">?</button>
@@ -14614,7 +14697,7 @@ Typr["U"] = {
                   </section>
                   <section id="chapter-run-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-run" hidden>
                     <div class="course-run-controls">
-                      <div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-force-playback" checked /> 强制连续播放</label><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label" title="开启后连续三个章节超时将停止本轮；关闭时沿用单章超时处理"><input type="checkbox" id="course-failure-protection" /> 连续失败保护性停止</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><span class="course-speed-option"><label class="check-label"><input type="checkbox" id="course-speed-enabled" /> 开启倍速</label><button type="button" id="course-speed-help" class="course-speed-help" aria-label="倍速说明" aria-describedby="course-speed-tooltip">?</button></span><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><div class="course-video-delay"><label class="check-label"><input type="checkbox" id="course-video-delay-enabled" /> 视频间隔</label><div id="course-video-delay-fields" hidden><select id="course-video-delay-mode" aria-label="视频间隔方式"><option value="fixed">固定</option><option value="random">随机</option></select><output id="course-video-delay-value" aria-live="polite">10 秒</output><input id="course-video-delay-fixed" type="range" min="0" max="60" step="1" value="10" aria-label="固定间隔秒数" /><div id="course-video-delay-random" class="course-delay-range" hidden><input id="course-video-delay-min" type="range" min="0" max="60" step="1" value="5" aria-label="随机间隔最小秒数" /><input id="course-video-delay-max" type="range" min="0" max="60" step="1" value="15" aria-label="随机间隔最大秒数" /></div></div></div><details id="course-queue-results" class="course-queue-results" hidden><summary>课程结果</summary><pre id="course-queue-result-list"></pre></details><span id="course-speed-tooltip" class="course-speed-tooltip" role="tooltip" popover="manual" hidden>根据当前视频播放器提供的档位，自动选择最高且不超过 2 倍的速度；开启视频信息识别时保持原速。</span><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
+                      <div class="course-run-options"><label class="check-label"><input type="checkbox" id="course-force-playback" checked /> 强制连续播放</label><label class="check-label"><input type="checkbox" id="course-auto-submit" checked /> 自动提交章节测验</label><label class="check-label"><input type="checkbox" id="course-skip-learned" checked /> 自动跳过已学</label><label class="check-label"><input type="checkbox" id="course-from-current" /> 从当前开始</label><label class="check-label"><input type="checkbox" id="course-timeout-next" checked /> 超时是否继续下一节</label><label class="check-label" title="开启后连续三个章节超时将停止本轮；关闭后可跳过的任务错误和超时继续运行，锁定、核验及提交待确认除外"><input type="checkbox" id="course-failure-protection" /> 连续失败保护性停止</label><label class="check-label"><input type="checkbox" id="course-mute-video" checked /> 关闭视频声音</label><span class="course-speed-option"><label class="check-label"><input type="checkbox" id="course-speed-enabled" /> 开启倍速</label><button type="button" id="course-speed-help" class="course-speed-help" aria-label="倍速说明" aria-describedby="course-speed-tooltip">?</button></span><label class="check-label"><input type="checkbox" id="course-skip-unanswerable" /> 自动跳过AI无法答题的题目</label><label class="check-label"><input type="checkbox" id="course-video-quiz-auto" checked /> 自动处理视频弹题（含确认）</label></div><div class="course-video-delay"><label class="check-label"><input type="checkbox" id="course-video-delay-enabled" /> 视频间隔</label><div id="course-video-delay-fields" hidden><select id="course-video-delay-mode" aria-label="视频间隔方式"><option value="fixed">固定</option><option value="random">随机</option></select><output id="course-video-delay-value" aria-live="polite">10 秒</output><input id="course-video-delay-fixed" type="range" min="0" max="60" step="1" value="10" aria-label="固定间隔秒数" /><div id="course-video-delay-random" class="course-delay-range" hidden><input id="course-video-delay-min" type="range" min="0" max="60" step="1" value="5" aria-label="随机间隔最小秒数" /><input id="course-video-delay-max" type="range" min="0" max="60" step="1" value="15" aria-label="随机间隔最大秒数" /></div></div></div><details id="course-queue-results" class="course-queue-results" hidden><summary>课程结果</summary><pre id="course-queue-result-list"></pre></details><span id="course-speed-tooltip" class="course-speed-tooltip" role="tooltip" popover="manual" hidden>根据当前视频播放器提供的档位，自动选择最高且不超过 2 倍的速度；开启视频信息识别时保持原速。</span><details id="course-pending" hidden><summary id="course-pending-summary"></summary><ul id="course-pending-list"></ul></details><button type="button" id="course-retry" class="secondary" hidden>重试未完成</button><div id="course-retry-confirm" hidden><p id="course-retry-message" class="note"></p><button type="button" id="course-retry-accept">确认重试</button><button type="button" id="course-retry-cancel" class="secondary">取消</button></div></div>
                   </section>
                   <section id="chapter-catalog-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-catalog" hidden>
                     <input id="catalog-search" type="search" placeholder="搜索章节" aria-label="搜索课程目录" />
@@ -15326,7 +15409,7 @@ Typr["U"] = {
         const total=(task.requestSnapshot||task.snapshot).questions.length;
         const count=status=>task.batches.filter(record=>record.status===status).length;
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.33.1',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.33.2',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,

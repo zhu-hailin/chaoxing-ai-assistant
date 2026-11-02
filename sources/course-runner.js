@@ -495,7 +495,7 @@
                     } else {run.verificationWaiting=false;if(verificationPacing)resumePacing();verificationPacing=false;}
                 }});
                 const taskNow=()=>now()-verification.excludedMs;
-                const guardRun = (allowVerification=false) => {
+                const guardRun = (allowVerification=false,allowUnavailableFrame=false) => {
                     if (run.cancelled) throw run.stopError || cancelledError();
                     courseQueueCheckRun(run,owner);
                     if (owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id') !== run.id) throw new Error('运行锁已失效');
@@ -513,9 +513,18 @@
                     if (blocker) throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
                     // 提交跳转时当前测验及父 iframe 可短暂不可读；仅在有界提交等待中容许该父链。
                     // 读取等待只暂缓 iframe 不可读；用户换章/换标签、验证码和运行锁仍立即检查。
-                    if (!run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
+                    if (!allowUnavailableFrame && !run.navigating && !run.frameLoading && !run.locating && tree.inaccessible.some(frame => !run.chapter?.submitting || !run.chapter.submissionFrames?.has(frame)))
                         throw Object.assign(new Error('任务 iframe 跨域或尚未加载，无法确认控件；请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE',cxCode:'CX-MAT-004'});
                     if(verification.pending&&!allowVerification)throw courseVerificationWaitError();
+                };
+                const canContinueFailure=(error,context,chapter)=>Boolean(!run.protection.enabled && context && !context.skipped && !context.submitting
+                    && error.name!=='AbortError' && !error.navigationBoundary
+                    && !['COURSE_NATIVE_BLOCKER','COURSE_QUEUE_CANCELLED','COURSE_LOCATOR_CHANGED','COURSE_TAB_LOCKED','COURSE_SUBMISSION_UNCONFIRMED','COURSE_VERIFICATION_WAIT'].includes(error.code)
+                    && !chapter?.tasks.some(task=>(task.submissionStarted || task.videoQuizUnconfirmed) && task.status!=='done'));
+                const recordFailure=(error,chapter,task=null)=>{
+                    const diagnostic=recordCxDiagnostic(error,{module:'course',operation:'run',taskId:diagnosticTaskId});
+                    chapter.issues.push({number:null,reason:error.message,code:diagnostic.code});
+                    if(task){task.status='manual-pending';task.reason=error.message;task.errorCode=diagnostic.code;}
                 };
                 const verificationReady=async()=>{
                     guardRun(true);
@@ -1045,7 +1054,8 @@
                                             pauseControl.recoveryBlocked=true;return;
                                         }
                                         if(videoBudgetNow()>=startDeadline)throw courseTimeoutError('视频启动超时，播放入口重试后仍未开始播放');
-                                        if(!playRequestPending&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
+                                        const retryButton=playRequestPending&&video.paused?courseVideoStartButton(video):null;
+                                        if(video.paused&&(!playRequestPending||retryButton)&&videoBudgetNow()-lastAttemptAt>=(recovery?(courseForcePlaybackEnabled()?500:limits.resumeMs):limits.videoStartRetryMs)
                                             &&(!recovery||now()-pauseControl.lastAttemptAt>=(courseForcePlaybackEnabled()?500:limits.resumeMs))) {
                                             lastAttemptAt=videoBudgetNow();pauseControl.lastAttemptAt=now();foregroundWaitCount=task.foregroundState.waitCount;
                                             task.startAttempts=(task.startAttempts||0)+1;
@@ -1053,14 +1063,18 @@
                                                 if(task.unstableResumes===0)resumeProgress=0;
                                                 task.resumes++;task.unstableResumes++;task.backgroundState.recoveryAttempts++;task.backgroundState.category='recovering';
                                             }
-                                            playRequestPending=true;
-                                            requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
-                                                if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
-                                            },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
+                                            // 原生入口尚未响应时重试点击，复用正在等待的播放请求及取消监听。
+                                            if(retryButton)retryButton.click();
+                                            else {
+                                                playRequestPending=true;
+                                                requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
+                                                    if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                                },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
+                                            }
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
                                         }
                                         await verificationReady();
-                                        emit('视频尚未开始播放，等待启动重试…','course-video-start');
+                                        emit(video.paused?'视频尚未开始播放，等待启动重试…':'已请求播放，正在等待视频加载…','course-video-start');
                                         await waitForMedia();
                                     }
                                     guard();
@@ -1354,7 +1368,7 @@
                         checkSnapshot(snapshot);guard();
                         const buttons=courseSubmitButton(doc);
                         if(buttons.length!==1) throw new Error('无法唯一确认章节测验提交按钮，已保留预填答案');
-                        if(courseSubmitConfirmation(doc,owner).length) throw new Error('已有提交确认窗口，请人工核对后再开始');
+                        if(courseSubmitConfirmation(doc,owner).length) throw Object.assign(new Error('已有提交确认窗口，请人工核对后再开始'),{code:'COURSE_SUBMISSION_UNCONFIRMED'});
                         // 必须在第一次点击前保存原 frame/测验标识，点击可能同步触发文档导航。
                         const frame=doc.defaultView.frameElement;
                         const quizId=pageURL(doc)?.searchParams.get('workId');
@@ -1557,7 +1571,7 @@
                         const id=tab.id;currentTabId=id;run.tabIndex=tabIds.indexOf(id);
                         run.tabProgress={chapterId:chapter.id,currentId:id,completed:[...visitedTabs],identities:[...identities]};
                         let readyType=id===initialProbeTab?location.targetType:null;
-                        if(tab.disabled)throw new Error('章节页面标签未解锁，无法自动继续');
+                        if(tab.disabled)throw Object.assign(new Error('章节页面标签未解锁，无法自动继续'),{code:'COURSE_TAB_LOCKED'});
                         if(probe?.known&&id!==initialProbeTab) {
                             const descriptor=probe.tabs.find(item=>item.id===id);let summary;
                             const started=now();pausePacing();run.locating=true;
@@ -1628,9 +1642,8 @@
                                 try {await solveQuiz(item.doc,task,chapter);}
                                 catch(error) {
                                     guard();
-                                    // 只放行已确定的作答适用性问题；验证、网络及提交异常保持原停止规则。
-                                    if(!run.skipUnanswerable || error.code!=='COURSE_MANUAL_ANSWER_REQUIRED' || context.submitting
-                                        || chapter.tasks.some(t=>t.submissionStarted&&t.status!=='done'))throw error;
+                                    if((run.protection.enabled && !run.skipUnanswerable) || error.code!=='COURSE_MANUAL_ANSWER_REQUIRED' || context.submitting
+                                        || chapter.tasks.some(t=>(t.submissionStarted||t.videoQuizUnconfirmed)&&t.status!=='done'))throw error;
                                     task.status='manual-pending';task.reason=error.message;
                                     if(error.requiresManualSave)task.requiresManualSave=true;
                                     task.manualQuestions=chapter.issues.slice(issueStart).map(issue=>({number:issue.number,reason:clean(issue.reason).slice(0,200)}));
@@ -1640,7 +1653,15 @@
                             }
                             break;
                             } catch(error) {
-                                if(error.code!=='COURSE_VERIFICATION_WAIT')throw error;
+                                if(error.code!=='COURSE_VERIFICATION_WAIT') {
+                                    guard();
+                                    // 超时和不可读框架交给章节层；其余任务失败先尝试本章后续任务。
+                                    if(!canContinueFailure(error,context,chapter) || ['COURSE_TIMEOUT','TIMEOUT','COURSE_FRAME_UNAVAILABLE'].includes(error.code))throw error;
+                                    recordFailure(error,chapter,task);
+                                    if(item.type==='video'){run.activeVideo?.pause();run.activeVideo=null;}
+                                    emit(`当前任务未完成：${error.message}；继续后续任务…`,'course-running');
+                                    break;
+                                }
                                 await verificationReady();guard();
                                 if(!item.node.isConnected||!courseFrameTree(owner).documents.includes(item.node.ownerDocument))throw new Error('核验期间任务页面已替换，请人工确认');
                                 if(task.submissionStarted||context.submitting||task.videoQuizUnconfirmed) {
@@ -1699,7 +1720,8 @@
                     const pending=()=>readCourseCatalog(owner)?.entries.find(item=>item.id===entry.id);
                     if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
-                        chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
+                        const failedTask=chapter.tasks.find(task=>task.status==='manual-pending'&&task.errorCode);
+                        chapter.status='manual-pending';chapter.reason=failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':chapter.tasks.some(task=>task.requiresManualSave)
                             ?'富文本答案已预填并同步到表单，等待人工保存或提交':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
                     }
@@ -1735,7 +1757,10 @@
                     save();
                     courseQueueRunStarted(run,owner);
                     watchdog=owner.defaultView.setInterval(()=>{
-                        try {guardRun(true);if(now()-run.lastSaved>2500)save();} catch(error) {api.stop(error.message,error);}
+                        try {guardRun(true);if(now()-run.lastSaved>2500)save();} catch(error) {
+                            if(error.code==='COURSE_FRAME_UNAVAILABLE' && canContinueFailure(error,run.chapter,report.chapters[run.chapterIndex]))return;
+                            api.stop(error.message,error);
+                        }
                     },limits.pollMs);
                     if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit){run.protection.triggered=true;run.protection.triggeredAt=now();save();throw courseFailureLimitError(run.protection.limit);}
                     if(run.pacing.restUntil!==null||run.queueContext&&run.learning.restEnabled&&run.pacing.activeMs>=run.learning.studyMinutes*60000)await waitForRest();
@@ -1778,25 +1803,33 @@
                             save();await processChapter(chapter,entry,location);
                         }
                         catch(error) {
-                            guardRun();
+                            const continueFailure=canContinueFailure(error,context,chapter);
+                            guardRun(false,continueFailure);
                             if(context.skipped) {
                                 chapter.status='skipped';chapter.reason='用户跳过本章节';
                                 for(const task of chapter.tasks.filter(task=>task.status==='running')) {task.status='skipped';task.reason=chapter.reason;}
-                            } else if(run.continueOnTimeout && ['COURSE_TIMEOUT','TIMEOUT'].includes(error.code) && !context.submitting
-                                && !chapter.tasks.some(task=>task.submissionStarted && task.status!=='done')) {
+                            } else if((run.continueOnTimeout || !run.protection.enabled) && ['COURSE_TIMEOUT','TIMEOUT'].includes(error.code) && !context.submitting
+                                && !chapter.tasks.some(task=>(task.submissionStarted||task.videoQuizUnconfirmed) && task.status!=='done')) {
                                 context.timedOut=true;chapter.status='timed-out';chapter.reason=error.message;
                                 chapter.issues.push({number:null,reason:error.message});
                                 for(const task of chapter.tasks.filter(task=>task.status==='running')) {task.status='timed-out';task.reason=error.message;}
                                 // 先结束章节、记录失败，再决定是否允许进入下一节。
+                            } else if(continueFailure) {
+                                context.failed=true;chapter.status='manual-pending';chapter.reason=error.message;
+                                recordFailure(error,chapter);
+                                for(const task of chapter.tasks.filter(task=>task.status==='running')) {
+                                    task.status='manual-pending';task.reason=error.message;
+                                }
                             } else throw error;
                             save();
                         } finally {
                             context.abort.abort();
-                            if(context.skipped || context.timedOut) run.activeVideo?.pause();
+                            if(context.skipped || context.timedOut || context.failed){run.activeVideo?.pause();run.activeVideo=null;}
                             run.chapter=null;
                             run.expected=null;run.expectedTab=null;run.navigating=false;
                             lease.setAttribute('data-can-skip','false');
                         }
+                        run.locating=true;
                         courseRecordChapterOutcome(run.protection,chapter,run.chapterIndex);
                         if(run.protection.enabled && run.protection.consecutiveFailures>=run.protection.limit) {
                             run.protection.triggered=true;run.protection.triggeredAt=now();save();

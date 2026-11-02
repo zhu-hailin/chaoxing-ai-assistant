@@ -183,7 +183,7 @@
         const q=f.api.extract().questions;const s=await f.api.prefill(q,f.api.normalize({answers:answers.filter(a=>q.some(item=>item.id===a.id))},q));assert(s.unverified===1 && s.filled===0,'未确认被计为成功');f.remove();
     });
     await test('字体单次映射、并发重入、保留事件和 HTML、重复解密幂等', async () => {
-        const f=await fixture();const style=f.d.createElement('style');style.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}";f.d.head.append(style);
+        const f=await fixture();const style=f.d.createElement('style');style.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}.font-cxsecret{font-family:font-cxsecret}";f.d.head.append(style);
         const root=f.d.createElement('div');root.className='font-cxsecret';root.innerHTML='<button type="button">一乙</button><span class="font-cxsecret">一</span>';f.d.body.append(root);
         let hits=0;const button=root.querySelector('button');button.onclick=()=>hits++;
         await Promise.all([f.api.ensureFontDecoded(),f.api.ensureFontDecoded()]);
@@ -192,7 +192,7 @@
         await f.api.ensureFontDecoded();assert(button.textContent==='乙丙','重复调用破坏文字');f.remove();
     });
     await test('字体未知映射保留全部原文与加密标记', async () => {
-        const f=await fixture();const style=f.d.createElement('style');style.textContent='@font-face{font-family:font-cxsecret;src:url("data:font/ttf;base64,AA==")}';f.d.head.append(style);
+        const f=await fixture();const style=f.d.createElement('style');style.textContent='@font-face{font-family:font-cxsecret;src:url("data:font/ttf;base64,AA==")}.font-cxsecret{font-family:font-cxsecret}';f.d.head.append(style);
         // 丁在自定义字体中有字形，但字体表缺少其 hash；这才属于未知映射。
         f.w.Typr.U.codeToGlyph=(_,c)=>[19968,19969,20057].includes(c)?c:0;
         f.w.md5=str=>'0'.repeat(24)+(str==='19968'?'aaaaaaaa':str==='20057'?'bbbbbbbb':'cccccccc');
@@ -201,7 +201,7 @@
         assert(rejected && root.textContent==='一丁' && root.classList.contains('font-cxsecret'),'失败部分替换原文');f.remove();
     });
     await test('加密容器内的题型标签和正常中文保持原文，仅转换自定义字体字形', async () => {
-        const f=await fixture();const style=f.d.createElement('style');style.textContent='@font-face{font-family:font-cxsecret;src:url("data:font/ttf;base64,AA==")}';f.d.head.append(style);
+        const f=await fixture();const style=f.d.createElement('style');style.textContent='@font-face{font-family:font-cxsecret;src:url("data:font/ttf;base64,AA==")}.font-cxsecret{font-family:font-cxsecret}';f.d.head.append(style);
         const root=f.d.createElement('div');root.className='font-cxsecret';root.innerHTML='<span class="newZy_TItle">【单选题】</span>局一乙，英文缩写（LAN）。';f.d.body.append(root);
         await f.api.ensureFontDecoded();
         assert(root.textContent==='【单选题】局乙丙，英文缩写（LAN）。','普通中文被错误处理');
@@ -244,6 +244,7 @@
         const image='<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="https://example.test/question.png"></div></div><textarea></textarea></div>';
         const f=await fixture({questions:image+choice('real','单选',[['A','甲'],['B','乙']])});
         try {
+            const style=f.d.createElement('style');style.textContent='.font-cxsecret{font-family:font-cxsecret}';f.d.head.append(style);
             const title=f.d.querySelectorAll('.fontLabel')[1];title.classList.add('font-cxsecret');const before=title.textContent;
             await f.api.runAnswerFlow();
             assert(f.api.controller.state.phase==='error' && f.api.controller.state.message.includes('CX-PAR-005'),'真实文字检查被绕过');
@@ -251,17 +252,17 @@
             assert(f.requests.length===0 && f.submits===0,'字体失败仍请求或提交');
         } finally { f.remove(); }
     });
-    await test('图片容器残留真实题文或未知标签仍要求解密', async () => {
+    await test('图片容器中的明文或未知题型标签可提取，已知乱码仍报告错误', async () => {
         for(const text of ['【简答题】坁坅','【简答题】请解方程','【教师自创题】']) {
             const f=await fixture({questions:`<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">${text}<img src="https://example.test/question.png"></div></div><textarea></textarea></div>`});
-            try { let failed=false;try{await f.api.ensureFontDecoded();}catch(error){failed=error.cxCode==='CX-PAR-005';}assert(failed,'过度放行 '+text); }
+            try { let failed=false;try{await f.api.ensureFontDecoded();}catch(error){failed=error.cxCode==='CX-PAR-005';}assert(failed===text.includes('坁坅'),'明文与乱码分类错误 '+text); }
             finally { f.remove(); }
         }
     });
     await test('混合测验有可解字体时只解真实文字，纯图片标签与节点保留', async () => {
         const f=await fixture({questions:'<div class="singleQuesId" data="image-only"><div class="Zy_TItle"><div class="fontLabel font-cxsecret">【简答题】<img src="https://example.test/question.png"></div></div><textarea></textarea></div>'+choice('real','单选',[['A','甲'],['B','乙']])});
         try {
-            const s=f.d.createElement('style');s.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}";f.d.head.append(s);
+            const s=f.d.createElement('style');s.textContent="@font-face{font-family:font-cxsecret;src:url('data:font/ttf;base64,AA==')}.font-cxsecret{font-family:font-cxsecret}";f.d.head.append(s);
             const titles=f.d.querySelectorAll('.fontLabel'),image=f.d.querySelector('img');titles[1].classList.add('font-cxsecret');titles[1].textContent='【单选题】一';
             await f.api.ensureFontDecoded();
             assert(titles[1].textContent==='【单选题】乙' && !titles[1].classList.contains('font-cxsecret'),'真实文字未解密');
@@ -270,7 +271,7 @@
     });
 
     await test('缺少字体资源阻止生成，但设置仍可用', async () => {
-        const f=await fixture();f.d.querySelector('.fontLabel').classList.add('font-cxsecret');await f.api.runAnswerFlow();
+        const f=await fixture();const style=f.d.createElement('style');style.textContent='.font-cxsecret{font-family:font-cxsecret}';f.d.head.append(style);f.d.querySelector('.fontLabel').classList.add('font-cxsecret');await f.api.runAnswerFlow();
         assert(!f.requests.length && !f.api.controller.state.busy && f.api.controller.state.phase==='error','字体错误未停止');
         f.d.getElementById('cx-ai-toolbar').shadowRoot.getElementById('settings').click();assert(!f.d.getElementById('cx-ai-study-root').shadowRoot.getElementById('panel').hidden,'设置失效');f.remove();
     });
@@ -286,9 +287,20 @@
         for(const condition of ['garbled','declared']) {
             const f=await fixture();f.d.querySelector('.testTit_status').textContent='已完成';const title=f.d.querySelector('.fontLabel');title.classList.add('font-cxsecret');
             if(condition==='garbled')title.append('坁坅');
-            else {const s=f.d.createElement('style');s.textContent="@font-face{font-family:'font-cxsecret';src:url('/unloaded-font.ttf')}";f.d.head.append(s);}
+            else {const s=f.d.createElement('style');s.textContent="@font-face{font-family:'font-cxsecret';src:url('/unloaded-font.ttf')}.font-cxsecret{font-family:font-cxsecret}";f.d.head.append(s);}
             await f.api.controller.extractOnly();assert(f.api.controller.state.phase==='error','错误放行未解密结果页');f.remove();
         }
+    });
+    await test('未完成英文题保留字体标记与引号，提取不调用字体加载或模型', async () => {
+        const f=await fixture({questions:choice('english','单选',[['A','ordinary English'],['B','another answer']])});
+        try {
+            const style=f.d.createElement('style');style.textContent='@font-face{font-family:CXChineseQuote;src:local("PingFangSC-Regular");unicode-range:U+2018-2019,U+201C-201D}.font-cxsecret{font-family:CXChineseQuote,Arial,sans-serif}';f.d.head.append(style);
+            const title=f.d.querySelector('.fontLabel');title.textContent='【单选题】What’s the correct word?';
+            const marked=[title,...f.d.querySelectorAll('.singleQuesId li')];marked.forEach(node=>node.classList.add('font-cxsecret'));
+            await f.api.controller.extractOnly();assert(f.api.controller.state.phase==='done',f.api.controller.state.message);
+            const data=f.api.extract();assert(data.total===1 && data.questions[0].question.includes('What’s'),'英文题干丢失');
+            assert(marked.every(node=>node.classList.contains('font-cxsecret')),'明文标记被修改');assert(f.requests.length===0 && f.submits===0,'提取触发请求或提交');
+        } finally {f.remove();}
     });
     await test('无标题时降级到首题前方；未知题型保留诊断，101题提取通过', async () => {
         const f=await fixture();f.d.querySelector('.ceyan_name').remove();f.d.getElementById('cx-ai-toolbar')?.remove();f.api.initQuizAssistant();

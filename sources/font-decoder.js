@@ -12,21 +12,43 @@
         const onlyType = new RegExp('^(?:\\d+\\s*[.．、]\\s*)?(?:【\\s*' + label + '\\s*】|\\[\\s*' + label + '\\s*\\]|（\\s*' + label + '\\s*）|\\(\\s*' + label + '\\s*\\))$');
         return !onlyType.test(text);
     }
-    async function ensureFontDecoded(doc = document, parseContext = {}) {
-        const roots = [...(parseContext.root?.matches('.font-cxsecret')?[parseContext.root]:[]),...(parseContext.root || doc).querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
-        if (!roots.length) return;
-        const styles = [...doc.querySelectorAll('style')];
-        const style = styles.find(el =>
-            /font-cxsecret/.test(el.textContent) && /base64,/.test(el.textContent));
-        const base64 = style?.textContent.match(/base64,([A-Za-z0-9+/=\s]+)["']/)?.[1].replace(/\s/g, '');
-        if (!base64) {
-            // 已批改结果页仍给明文题干加 font-cxsecret 类，却不再提供字体。
-            // 仅在已完成、没有字体声明且没有已知混淆字符时视为明文。
-            const completed = clean(doc.querySelector('#RightCon .testTit_status, .testTit_status')?.textContent) === '已完成';
-            const declaresSecretFont = styles.some(el => /@font-face[\s\S]*?font-cxsecret/.test(el.textContent));
-            if (completed && !declaresSecretFont && roots.every(root => !GARBLED.test(root.textContent))) return;
-        }
-        if (!base64) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+    function secretFontFaces(doc) {
+        const faces=[],seen=new Set(),view=doc.defaultView;
+        const visitSheet=sheet=>{
+            if(!sheet || sheet.disabled || seen.has(sheet))return;
+            seen.add(sheet);
+            if(sheet.media?.mediaText && view?.matchMedia && !view.matchMedia(sheet.media.mediaText).matches)return;
+            let rules;
+            // 跨域样式不可读时，只有实际使用混淆字体的正文会因缺少资源报错。
+            try {rules=sheet.cssRules;} catch {return;}
+            visitRules(rules);
+        };
+        const visitRules=rules=>{
+            for(const rule of rules || []) {
+                if(rule.type===5) {
+                    const family=rule.style.getPropertyValue('font-family').trim().replace(/^(['"])(.*)\1$/,'$2').toLowerCase();
+                    if(family!=='font-cxsecret')continue;
+                    const range=rule.style.getPropertyValue('unicode-range') || 'U+0-10FFFF';
+                    const ranges=range.split(',').map(part=>{
+                        const match=part.trim().match(/^U\+([0-9a-f?]+)(?:-([0-9a-f]+))?$/i);
+                        return match?[parseInt(match[1].replace(/\?/g,'0'),16),parseInt((match[2] || match[1]).replace(/\?/g,'f'),16)]:null;
+                    }).filter(Boolean);
+                    const src=rule.style.getPropertyValue('src');
+                    const base64=src.match(/url\(\s*(['"]?)data:[^,]*;base64,([A-Za-z0-9+/=\s]+)\1\s*\)/i)?.[2].replace(/\s/g,'');
+                    faces.push({ranges,base64});
+                } else if(rule.type===3) {
+                    if(!rule.media?.mediaText || !view?.matchMedia || view.matchMedia(rule.media.mediaText).matches)visitSheet(rule.styleSheet);
+                } else if(rule.cssRules) {
+                    if(rule.type===4 && view?.matchMedia && !view.matchMedia(rule.conditionText).matches)continue;
+                    if(rule.type===12 && view?.CSS?.supports && !view.CSS.supports(rule.conditionText))continue;
+                    visitRules(rule.cssRules);
+                }
+            }
+        };
+        for(const sheet of doc.styleSheets)visitSheet(sheet);
+        return faces;
+    }
+    function loadSecretFont(base64) {
         if (!fontCache.has(base64)) {
             const pending = Promise.resolve().then(() => {
                 if (typeof Typr === 'undefined' || typeof md5 !== 'function') throw createCxError('CX-CFG-006',{module:'parser',operation:'font'});
@@ -50,27 +72,55 @@
             fontCache.set(base64, pending);
             pending.catch(() => fontCache.delete(base64));
         }
-        const { mapping, encodedCodes } = await fontCache.get(base64);
-        // 先验证全部文本，再一次性替换，避免失败后重试二次解密已转换的字符。
-        const edits = new Map();
-        for (const root of roots.filter(root => root.classList.contains('font-cxsecret'))) {
-            const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-            let node;
-            while ((node = walker.nextNode())) {
-                if (edits.has(node) || node.parentElement?.closest('script,style')) continue;
-                const next = node.data.replace(/[\u4e00-\u9fa5]/g, char => {
-                    const code = char.charCodeAt(0);
-                    // 容器会同时包含题型标签和普通中文。没有自定义字形的字符
-                    // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
-                    if (!encodedCodes.has(code)) return char;
-                    const decoded = mapping.get(code);
-                    if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
-                    return decoded;
-                });
-                edits.set(node, next);
+        return fontCache.get(base64);
+    }
+    async function ensureFontDecoded(doc = document, parseContext = {}) {
+        const roots = [...(parseContext.root?.matches('.font-cxsecret')?[parseContext.root]:[]),...(parseContext.root || doc).querySelectorAll('.font-cxsecret')].filter(fontRootNeedsDecoding);
+        if (!roots.length) return;
+        const faces=secretFontFaces(doc),nodes=new Map(),decodedRoots=new Set(),resources=new Set();
+        const failure=()=>createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+        for(const root of roots) {
+            const walker=doc.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
+            while((node=walker.nextNode())) {
+                if(node.parentElement?.closest('script,style,noscript,template'))continue;
+                if(nodes.has(node)){if(nodes.get(node).size)decodedRoots.add(root);continue;}
+                const font=doc.defaultView?.getComputedStyle(node.parentElement).fontFamily || '';
+                const usesSecret=/(?:^|,)\s*(?:"font-cxsecret"|'font-cxsecret'|font-cxsecret)\s*(?:,|$)/i.test(font);
+                const codes=new Map();nodes.set(node,codes);
+                if(usesSecret)for(const char of new Set(node.data.match(/[\u4e00-\u9fa5]/g) || [])) {
+                    const code=char.charCodeAt(0);
+                    if(!faces.length)throw failure();
+                    const matching=faces.filter(face=>face.ranges.some(([start,end])=>code>=start && code<=end));
+                    if(!matching.length)continue;
+                    const sources=new Set(matching.map(face=>face.base64));
+                    if(sources.size!==1 || sources.has(undefined))throw failure();
+                    const base64=matching[0].base64;codes.set(code,base64);resources.add(base64);
+                }
+                if(!codes.size && GARBLED.test(node.data))throw failure();
+                if(codes.size)decodedRoots.add(root);
             }
         }
+        if(!resources.size)return;
+        const fonts=new Map(await Promise.all([...resources].map(async base64=>[base64,await loadSecretFont(base64)])));
+        const activeRoots=[...decodedRoots].filter(root=>root.classList.contains('font-cxsecret'));
+        // 先验证全部文本，再一次性替换，避免失败后重试二次解密已转换的字符。
+        const edits = new Map();
+        for (const [node,codes] of nodes) {
+            if(!codes.size || !activeRoots.some(root=>root.contains(node)))continue;
+            const next = node.data.replace(/[\u4e00-\u9fa5]/g, char => {
+                const code = char.charCodeAt(0);
+                if(!codes.has(code))return char;
+                const {mapping,encodedCodes}=fonts.get(codes.get(code));
+                // 容器会同时包含题型标签和普通中文。没有自定义字形的字符
+                // 使用系统回退字体显示，必须原样保留，不能当作缺失映射。
+                if (!encodedCodes.has(code)) return char;
+                const decoded = mapping.get(code);
+                if (decoded === undefined) throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
+                return decoded;
+            });
+            edits.set(node, next);
+        }
         for (const [node, text] of edits) node.data = text;
-        roots.forEach(root => root.classList.remove('font-cxsecret'));
+        activeRoots.forEach(root => root.classList.remove('font-cxsecret'));
     }
 
