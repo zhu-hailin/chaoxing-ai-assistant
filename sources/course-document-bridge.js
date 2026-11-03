@@ -1,7 +1,10 @@
     // 仅控制已确认的超星 PPT 阅读器；不交换账户、资源地址、Key 或任务上报。
     const COURSE_DOCUMENT_CHANNEL = 'cx-ai-document-v1';
     // Reader origins are distinct from permitted course senders; both still require their own path/window checks.
-    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com', ...COURSE_STUDY_HOSTS.map(host => `https://${host}`)];
+    const COURSE_DOCUMENT_ORIGINS = ['https://pan-yz.chaoxing.com', 'https://mooc1.chaoxing.com', 'https://mooc1.xuexitong.com', 'https://mooc1-2.chaoxing.com'];
+    function isCourseDocumentOrigin(origin) {
+        return origin === 'https://pan-yz.chaoxing.com' || isCourseStudyOrigin(origin);
+    }
     const COURSE_DOCUMENT_MAILBOX = 'cx-ai-ppt-request:';
     function courseDocumentStorageAvailable() {
         return typeof GM_addValueChangeListener==='function' && typeof GM_removeValueChangeListener==='function'
@@ -11,7 +14,7 @@
         if (!frame?.matches('iframe[id="panView"]') || !frame.closest('[id="img"].imglook')) return false;
         try {
             const url = new URL(frame.getAttribute('src'),frame.ownerDocument.baseURI);
-            return COURSE_DOCUMENT_ORIGINS.includes(url.origin) && /^\/(?:mooc-ans\/screen\/file|screen\/v2\/file_)/.test(url.pathname);
+            return isCourseDocumentOrigin(url.origin) && /^\/(?:mooc-ans\/screen\/file|screen\/v2\/file_)/.test(url.pathname);
         } catch { return false; }
     }
     function courseDocumentBridgeRequest(frame, op, signal, timeout = 30000) {
@@ -20,6 +23,8 @@
         // postMessage 的发送者是执行脚本的 window，并非目标 iframe 所属文档。
         const view=window,child=frame.contentWindow,id=crypto.randomUUID();
         const originalSrc=frame.getAttribute('src'),key=COURSE_DOCUMENT_MAILBOX+id;
+        // Keep existing reader redirect destinations and add this verified frame's exact origin.
+        const targetOrigins=new Set([...COURSE_DOCUMENT_ORIGINS,new URL(originalSrc,frame.ownerDocument.baseURI).origin]);
         return new Promise((resolve,reject)=>{
             let timer,retry,listener,settled=false,attempt=0;
             const current=()=>frame.isConnected && frame.getAttribute('src')===originalSrc;
@@ -40,7 +45,7 @@
                 finish(null,state);
             };
             const receive=event=>{
-                if(event.source===child && COURSE_DOCUMENT_ORIGINS.includes(event.origin))accept(event.data);
+                if(event.source===child && isCourseDocumentOrigin(event.origin))accept(event.data);
             };
             view.addEventListener('message',receive);signal?.addEventListener('abort',abort,{once:true});
             if(signal?.aborted){abort();return;}
@@ -52,7 +57,7 @@
                 try {
                     const request={channel:COURSE_DOCUMENT_CHANNEL,kind:'request',id,op,attempt:++attempt};
                     if(listener!==undefined)GM_setValue(key,request);
-                    for(const origin of COURSE_DOCUMENT_ORIGINS){
+                    for(const origin of targetOrigins){
                         if(settled)break;
                         // bind 本身不执行滚动；随机信箱只发送给此 iframe，不使用文件名匹配。
                         if(listener!==undefined)child.postMessage({channel:COURSE_DOCUMENT_CHANNEL,kind:'bind',id},origin);
@@ -78,7 +83,7 @@
     function initCourseDocumentBridge(doc = document) {
         const view=doc.defaultView;
         let url;try{url=new URL(doc.URL);}catch{return;}
-        if(view===view.parent || !COURSE_DOCUMENT_ORIGINS.includes(url.origin) || !/^\/(?:screen\/v2\/file_|mooc-ans\/screen\/file)/.test(url.pathname))return;
+        if(view===view.parent || !isCourseDocumentOrigin(url.origin) || !/^\/(?:screen\/v2\/file_|mooc-ans\/screen\/file)/.test(url.pathname))return;
         const responses=new Map(),mailboxes=new Map(),targetIds=new WeakMap();let targetSequence=0;
         const valid=data=>data?.channel===COURSE_DOCUMENT_CHANNEL && typeof data.id==='string' && /^[\w-]{1,100}$/.test(data.id);
         const operate=(data,respond)=>{
@@ -137,7 +142,7 @@
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.2');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.3');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{

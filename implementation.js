@@ -15,7 +15,7 @@
 
     function initQuizAssistant(doc = document) {
         if (!doc.body || !hasQuestionNodes(doc)) return;
-        initCredentialSettings();
+        initializeAssistantFeature('凭据设置',initCredentialSettings);
         if (!controller) controller = createAssistantController();
         createAssistantPanel(doc, controller);
         mountQuizToolbar(doc, controller);
@@ -94,9 +94,17 @@
         mountCourseHomeChapterEntry(doc);
         refreshCourseSidebar();renderRunState(controller.state);
     }
+    const assistantInitializationFailures = new Set();
+    function initializeAssistantFeature(stage, initialize) {
+        try { initialize(); }
+        catch (error) {
+            if (assistantInitializationFailures.has(stage)) return;
+            assistantInitializationFailures.add(stage);
+            const diagnostic=recordCxDiagnostic(error,{module:'system',operation:'initialize'});
+            console.error(`[学习通AI助手] 初始化失败：${stage}`,diagnostic);
+        }
+    }
     function startQuizObserver() {
-        initOtherFeatures(document);
-        startAssistantUpdateCheck();
         let scheduled = false;
         const refreshNavigation = () => {
             refreshQuestionNavigation();
@@ -108,11 +116,11 @@
             scheduled = true;
             setTimeout(() => {
                 scheduled = false;
-                initQuizAssistant();
-                initStudyAssistant();
-                initCourseHomeAssistant();
-                initCourseListAssistant();
-                refreshNavigation();
+                initializeAssistantFeature('测验入口',initQuizAssistant);
+                initializeAssistantFeature('学习页入口',initStudyAssistant);
+                initializeAssistantFeature('课程主页入口',initCourseHomeAssistant);
+                initializeAssistantFeature('课程列表入口',initCourseListAssistant);
+                initializeAssistantFeature('题目导航',refreshNavigation);
                 ensureFontDecoded().catch(error => {
                     if (controller && !controller.state.busy) controller.report(`字体解密失败：${assistantErrorMessage(error,{module:'parser',operation:'font'})}`, 'error');
                 });
@@ -131,6 +139,8 @@
         const frameLoaded = event => { if (event.target?.tagName === 'IFRAME') refresh(); };
         document.addEventListener('load', frameLoaded, true);
         refresh();
+        initializeAssistantFeature('页面偏好',()=>initOtherFeatures(document));
+        initializeAssistantFeature('更新检查',startAssistantUpdateCheck);
         window.addEventListener('pagehide', () => {
             observer.disconnect();
             document.removeEventListener('load', frameLoaded, true);
@@ -138,10 +148,10 @@
             if (owner && owner !== document) owner.defaultView.setTimeout(() => owner.dispatchEvent(new owner.defaultView.Event('cx-ai-quiz-navigation-refresh')), 0);
         }, { once: true });
     }
-    initCredentialSettings();
-    initCourseDocumentBridge();
-    initCourseHomeLaunchTransport();
-    initCourseListTransport();
-    initCourseQueueTransport();
+    initializeAssistantFeature('凭据设置',initCredentialSettings);
+    initializeAssistantFeature('文档通信',initCourseDocumentBridge);
+    initializeAssistantFeature('课程启动通信',initCourseHomeLaunchTransport);
+    initializeAssistantFeature('课程列表通信',initCourseListTransport);
+    initializeAssistantFeature('课程队列通信',initCourseQueueTransport);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();

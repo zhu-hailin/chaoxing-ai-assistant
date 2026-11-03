@@ -10,7 +10,7 @@ async function test(name, run) {
     try { await run(); logs.push(`PASS ${name}`); }
     catch (error) { failures.push(`${name}: ${error.stack}`); }
 }
-function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account') {
+function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=mock-course&clazzid=mock-class&cpi=mock-account', script = source) {
     const dom = new JSDOM(`<div id="mainid"><h1>章节</h1><div id="prev_tab" style="padding:0 100px"><div id="dct1">${type}</div></div><iframe id="iframe"></iframe></div>`, { url, runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
     const requests = [], updateRequests = [];
@@ -23,10 +23,27 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
         } else requests.push(request);
         return {abort(){request.onabort?.();}};
     };
-    w.eval(source);
+    w.eval(script);
     return { dom, w, requests, updateRequests, close() { w.dispatchEvent(new w.Event('pagehide')); w.close(); } };
 }
 (async () => {
+    for (const host of ['mooc1-gray.chaoxing.com','mooc1-42.chaoxing.com','mooc2-ans.chaoxing.com','mooc3-gray.xuexitong.com']) await test(`${host} 使用同一课程入口识别规则`, async () => {
+        const f=fixture('视频',`https://${host}/mycourse/studentstudy`);
+        try { await delay(); assert(f.w.document.getElementById('cx-ai-study-toolbar')); }
+        finally { f.close(); }
+    });
+    for (const host of ['mooc1-gray.chaoxing.com.evil.example','evilchaoxing.com','i.chaoxing.com','mooc1-gray.evil.chaoxing.com']) await test(`${host} 不获得课程页能力`, async () => {
+        const f=fixture('视频',`https://${host}/mycourse/studentstudy`);
+        try { await delay(); assert.equal(f.w.document.getElementById('cx-ai-study-root'),null); }
+        finally { f.close(); }
+    });
+    await test('页面偏好初始化异常不阻断学习入口', async () => {
+        const script=source.replace("()=>initOtherFeatures(document)","()=>{throw new Error('fixture preference failure');}");
+        assert.notEqual(script,source);
+        const f=fixture('视频',undefined,script);
+        try { await delay(); assert(f.w.document.getElementById('cx-ai-study-toolbar')); }
+        finally { f.close(); }
+    });
     for (const type of ['视频', '资料']) await test(`${type}页内容上方助手入口，设置可打开关闭，无题目时禁止分析`, async () => {
         const f = fixture(type);
         try {
@@ -94,13 +111,15 @@ function fixture(type, url = 'https://mooc1.chaoxing.com/mycourse/studentstudy?c
         } finally { f.close(); }
     });
     await test('顶部入口打开嵌套测验助手，可提取和分析；测验仅保留生成按钮', async () => {
-        const f = fixture('章节测验');
+        const f = fixture('章节测验','https://mooc1-gray.chaoxing.com/mycourse/studentstudy');
         try {
             await delay();
             const d = f.w.document;
             const card = d.getElementById('iframe').contentWindow;
             card.document.body.innerHTML = '<iframe id="quiz-frame"></iframe>';
-            const quiz = card.document.getElementById('quiz-frame').contentWindow;
+            const middle = card.document.getElementById('quiz-frame').contentWindow;
+            middle.document.body.innerHTML = '<iframe id="third-frame"></iframe>';
+            const quiz = middle.document.getElementById('third-frame').contentWindow;
             quiz.document.body.innerHTML = `<div class="CeYan"><div class="ceyan_name"><h3>测验</h3></div><div class="singleQuesId" data="1"><div class="Zy_TItle"><div class="fontLabel">【单选题】请选择甲</div></div><ul class="Zy_ulTop"><li><span class="num_option" data="A">A</span><a class="after">甲</a></li><li><span class="num_option" data="B">B</span><a class="after">乙</a></li></ul><input type="hidden" name="answer1"></div></div>`;
             const requests = [];
             quiz.GM_getValue = withModelFixture((key, fallback) => key === 'deepseek_api_key' ? 'mock-key' : fallback);

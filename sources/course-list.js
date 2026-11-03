@@ -21,7 +21,7 @@
         try {
             const url=new URL(raw),context=courseURLContext(url);
             if(url.protocol!=='https:'||url.username||url.password||url.hash
-                ||!['mooc1.chaoxing.com','mooc2-ans.chaoxing.com'].includes(url.hostname)
+                ||!isCourseStudyHost(url.hostname)
                 ||url.pathname!=='/visit/stucoursemiddle'||context.conflict
                 ||![context.course,context.classroom,context.student].every(value=>/^\d+$/.test(value))
                 ||identity&&!sameCourseHomeIdentity(context,identity))return null;

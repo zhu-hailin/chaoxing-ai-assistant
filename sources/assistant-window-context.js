@@ -128,15 +128,15 @@
     const PANEL_WIDTH = 640;
     function studyOwnerDocument(doc = document) {
         let view = doc?.defaultView;
-        try {
-            for (let depth = 0; view && depth < 12; depth++) {
+        for (let depth = 0; view && depth < 12; depth++) {
+            try {
                 const candidate = view.document;
                 const url = new URL(pageURL(candidate));
                 if (view === view.top && isCourseStudyURL(url) && candidate.querySelector('#mainid #iframe')) return candidate;
-                if (view === view.parent) break;
-                view = view.parent;
-            }
-        } catch { /* 独立或跨域测验保留自身入口。 */ }
+            } catch { /* 中间层跨域时继续向上查找；不读取其文档。 */ }
+            try { if (view === view.parent) break; view = view.parent; }
+            catch { break; }
+        }
         return null;
     }
     const settingsButton = () => studyOwnerDocument()?.getElementById('cx-ai-study-toolbar')?.shadowRoot?.getElementById('settings') || (toolbarView || studyToolbarView)?.shadow.getElementById('settings') || document.getElementById('cx-ai-course-home-toolbar')?.shadowRoot?.querySelector('button');
