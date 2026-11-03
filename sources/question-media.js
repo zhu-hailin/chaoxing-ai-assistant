@@ -407,7 +407,8 @@
     }
     function toAIQuestion(question) {
         return { id:question.id, number:question.number, groupId:question.groupId,
-            ...(question.parentQuestionId?{parentQuestionId:question.parentQuestionId}:{}),type:question.type, question:question.question, instructions:question.instructions || '',
+            ...(question.parentQuestionId?{parentQuestionId:question.parentQuestionId}:{}),
+            ...(question.ueditorBlankGroup?{blankSlotNumber:question.blankSlotNumber,blankSlotCount:question.blankSlotCount}:{}),type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
             imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [],

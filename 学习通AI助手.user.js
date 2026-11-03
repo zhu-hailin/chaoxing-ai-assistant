@@ -5,7 +5,7 @@
 // @icon         data:image/png;base64,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
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.33.3
+// @version      1.33.4
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2917,7 +2917,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.33.3';
+    const ASSISTANT_VERSION = '1.33.4';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2966,7 +2966,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.33.3', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.33.4', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -3151,6 +3151,7 @@ Typr["U"] = {
             ...(answerFeedback.length ? ['answerFeedback 中的先前答案组合已被平台明确判错，请结合题干、材料和反馈重新推理，不能把错误答案当作正确示例；整组判错不代表每个子题都错，没有逐题反馈时应重新核对各题。'] : []),
             '格式：{"answers":[{"id":"原题ID","answer":["选项key或文字答案"],"reason":"中文解析；计算与推导题给出完整的必要解题步骤"}]}。',
             'matching 按第一组题项顺序返回第二组字母数组，每行一个，数量必须准确，按选项规则允许重复；single / judge 只返回一个选项 key；multiple 返回所有正确 key；blank / essay 返回一条文字。',
+            ...(questions.some(q=>q.ueditorBlankGroup)?['具有相同 parentQuestionId 且带 blankSlotNumber 的条目属于同一道多空题。请整体推理，再为每个条目原样保留 id，仅返回该空的一条答案；全部空位都必须返回，不将多个空合并到一个答案，也不更改空号。']:[]),
             '分析材料完整的选择判断、填空、文字问答、数学物理计算推导、公式计算和 SQL/编程题。是否能自动填写由程序独立判断，不因富文本编辑器或不可写控件省略答案。',
             '直接给出解答；题目涉及手写、拍照、上传附件、录音录像、抄写、绘图、思维导图或标注时，提供可用的文字、公式、代码、图示说明或完成步骤。答案最终的使用和提交形式由用户处理，无需先判断作答适用性或返回 answerPolicy。',
             '选择题的选项可以只有图片；按 options[].imageIds 与 imageManifest.sources.optionKey 读取对应选项，返回原选项 key，不按图片发送顺序重新编号。',
@@ -3543,7 +3544,7 @@ Typr["U"] = {
         const revision=task.cacheRevision=(task.cacheRevision || 0)+1,epoch=analysisCacheEpoch;
         const snapshot=task.requestSnapshot || questionAnswerSnapshot(task.snapshot);
         const answers=[...task.resultsByQuestion.values()].map(entry=>({id:entry.id,answer:[...entry.answer],reason:entry.reason || ''}));
-        const usage=Object.fromEntries(task.batches.filter(record=>record.status==='success').map(record=>[record.questions[0].id,record.restoredUsage || analysisRequestUsage(record)]));
+        const usage=Object.fromEntries(task.batches.filter(record=>record.status==='success').flatMap(record=>record.questions.map(q=>[q.id,record.restoredUsage || analysisRequestUsage(record)])));
         const digests=Object.fromEntries(task.imageDigests || []);
         const identity=await analysisCacheIdentity(snapshot);
         if(!identity || revision!==task.cacheRevision || epoch!==analysisCacheEpoch || get(KEY_ANALYSIS_CACHE_ENABLED,false)!==true || controller?.task!==task || task.status==='stale')return;
@@ -3577,13 +3578,15 @@ Typr["U"] = {
             task.requestSnapshot=snapshot;task.status='restored';task.restoredReadOnly=true;task.restoredIdentity=identity;
             task.restoredMediaDigests=saved.digests && typeof saved.digests==='object'?saved.digests:{};
             task.resultsByQuestion=new Map(answers.map(entry=>[entry.id,entry]));
-            task.batches=snapshot.questions.map(q=>{
-                const answer=task.resultsByQuestion.get(q.id),storedUsage=saved.usage?.[q.id],restoredUsage={model:typeof storedUsage?.model==='string'?storedUsage.model.slice(0,300):''};
+            task.batches=splitQuestionBatches(snapshot.questions).map(questions=>{
+                const complete=questions.every(q=>task.resultsByQuestion.has(q.id));
+                if(!complete)for(const q of questions)task.resultsByQuestion.delete(q.id);
+                const entries=complete?questions.map(q=>task.resultsByQuestion.get(q.id)):[],storedUsage=saved.usage?.[questions[0].id],restoredUsage={model:typeof storedUsage?.model==='string'?storedUsage.model.slice(0,300):''};
                 for(const field of ['attempts','promptTokens','completionTokens','totalTokens','reasoningTokens'])
                     if(Number.isSafeInteger(storedUsage?.[field])&&storedUsage[field]>=0)restoredUsage[field]=storedUsage[field];
-                return {questions:[q],status:answer?'success':'failed',evidence:{},result:answer?{answers:[answer],mediaAnalysis:[]}:null,
+                return {questions,status:complete?'success':'failed',evidence:{},result:complete?{answers:entries,mediaAnalysis:[]}:null,
                     model:typeof restoredUsage?.model==='string'?restoredUsage.model:'',restoredUsage:restoredUsage && typeof restoredUsage==='object'?restoredUsage:null,
-                    error:answer?null:'尚未分析',errorCode:answer?null:'CX-RES-003'};
+                    error:complete?null:'尚未完整分析',errorCode:complete?null:'CX-RES-003'};
             });
             ctl.task=task;ctl.last=null;root.checkCurrent=()=>checkAnalysisTask(task);
             renderAnalysisProgress(task,true);ctl.report('已恢复结果（只读）','done');
@@ -3702,6 +3705,13 @@ Typr["U"] = {
         }));
         return JSON.stringify({questions, materials:graph.materials, media:graph.media, relations:graph.relations});
     }
+    function questionUEditorNodes(ueditor) {
+        if(!ueditor?.valid)return [];
+        if(ueditor.multiple)return ueditor.slots.flatMap(slot=>[slot.row,...questionUEditorNodes(slot.ueditor)]);
+        const activation=ueditor.activation;
+        return [ueditor.input,ueditor.form,ueditor.container,ueditor.iframe,ueditor.body,ueditor.nativeBlank?.row,
+            ...(activation?[activation.entry,activation.shell,activation.holder,activation.row]:[])];
+    }
     function questionBindingNodes(binding) {
         return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
             ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()],
@@ -3709,7 +3719,7 @@ Typr["U"] = {
             binding.mooc2?.savedInput,...(binding.mooc2?.records || []).flatMap(record=>[record.marker,record.content]),
             binding.chapterRows?.savedInput,...(binding.chapterRows?.records || []).flatMap(record=>[record.label,record.content,record.clear,record.marker]),
             ...(binding.choiceInputs || []),binding.choiceForm,
-            ...(binding.ueditor?.valid?[binding.ueditor.input,binding.ueditor.form,binding.ueditor.container,binding.ueditor.iframe,binding.ueditor.body]:[])].filter(Boolean))];
+            ...questionUEditorNodes(binding.ueditor)].filter(Boolean))];
     }
     function createQuestionSnapshot(graph, runtime = {}) {
         if (graph?.schemaVersion !== 3) throw questionContextError('CX-PAR-008', '题目快照结构不匹配');
@@ -4813,7 +4823,84 @@ Typr["U"] = {
             &&before.savedInput===after.savedInput&&before.records.length===after.records.length
             &&before.records.every((record,index)=>['key','value','marker','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
     }
-    function readQuestionUEditor(node,id) {
+    function readQuestionUEditorBlanks(node,id,candidates) {
+        const invalid=reason=>({valid:false,diagnostics:[`UEditor：${reason}`]});
+        // Only the native blank rows and explicit visible blank numbers establish slot order.
+        // Editor IDs and UE registry order are never used to infer the blank number.
+        const owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
+        const rows=[...node.querySelectorAll('.blankItemDiv')].filter(row=>owner(row)===node);
+        const inputs=textInputs(node);
+        if(!/^\d+$/.test(String(id))||!node.matches('.singleQuesId')||node.id!==`question${id}`||node.getAttribute('data')!==String(id)
+            ||node.ownerDocument.querySelectorAll(`[id="question${id}"]`).length!==1
+            ||node.ownerDocument.querySelectorAll(`.singleQuesId[data="${id}"]`).length!==1)
+            return invalid('多空题的原生题目身份无法唯一对应');
+        if(rows.length!==candidates.length||inputs.length!==candidates.length
+            ||inputs.some(input=>!candidates.includes(input))||node.querySelectorAll('iframe').length!==candidates.length
+            ||node.querySelectorAll('.edui-editor').length!==candidates.length)
+            return invalid('多空题的空位、答案字段或编辑器数量不一致');
+        const slots=[],numbers=new Set();
+        for(const [index,row] of rows.entries()) {
+            const fields=[...row.querySelectorAll('textarea')],input=fields[0];
+            const labelText=element=>{
+                if(element.nodeType===3)return element.textContent;
+                if(element.nodeType!==1||element.matches('.blankItemInp,.edui-editor,textarea,iframe,script,style')||!questionNodeActive(element))return '';
+                return [...element.childNodes].map(labelText).join('');
+            };
+            const label=clean(labelText(row)).replace(/\s/g,'');
+            const match=/^第([1-9]\d*)空[:：]?$/.exec(label);
+            if(!questionNodeActive(row)||rows.some(other=>other!==row&&(row.contains(other)||other.contains(row)))
+                ||fields.length!==1||!candidates.includes(input)||input.closest('.blankItemDiv')!==row
+                ||!input.id.startsWith('answerEditor')||input.name!==input.id
+                ||!match||!Number.isSafeInteger(Number(match[1]))||numbers.has(Number(match[1])))
+                return invalid(`第${index+1}空的原生编号或答案字段无法唯一对应`);
+            const number=Number(match[1]);numbers.add(number);
+            const ueditor=readQuestionUEditor(node,id,input);
+            if(!ueditor?.valid)return invalid(`第${number}空：${ueditor?.diagnostics?.map(reason=>reason.replace(/^UEditor：/,'')).join('；')||'编辑器关联无法确认'}`);
+            slots.push({id:input.id,number,domIndex:index,text:`第${number}空（本题共${rows.length}空，仅返回此空答案）`,
+                label,row,control:input,ueditor});
+        }
+        slots.sort((a,b)=>a.number-b.number);
+        if(slots.some((slot,index)=>slot.number!==index+1))return invalid('原生空号不连续，无法确定答案顺序');
+        return {valid:true,multiple:true,diagnostics:[],slots};
+    }
+    function questionUEditorForInput(ueditor,input) {
+        if(!ueditor?.valid)return null;
+        return ueditor.multiple?ueditor.slots.find(slot=>slot.control===input)?.ueditor||null:ueditor.input===input?ueditor:null;
+    }
+    function readQuestionUEditorActivation(node,input,container,iframe,diagnostics=[]) {
+        // A native entry is bound by its field and exact local container, never by question number.
+        const reject=reason=>{diagnostics.push(reason);return null;};
+        const row=input.closest('.blankItemDiv'),shell=input.closest('.textDIV'),holder=shell?.parentElement;
+        if(!row)return reject('未找到原生空位容器');
+        if(!holder?.matches('.blankItemInp')||holder.closest('.blankItemDiv')!==row)
+            return reject('编辑区域不在同一原生答题框内');
+        if(!node.contains(row)||!shell.contains(container)||!shell.contains(iframe))
+            return reject('答案字段与编辑器不在同一作答区域');
+        if(holder.querySelectorAll(':scope > .textDIV').length!==1)return reject('原生编辑区域不唯一');
+        const entries=[...holder.querySelectorAll(':scope > .InpDIV')],entry=entries[0];
+        if(entries.length!==1)return reject(`原生展开入口数量为${entries.length}，无法唯一关联`);
+        const suffix=/^answerEditor(\d+)$/.exec(input.id)?.[1];
+        if(!suffix||entry.id!==`inpDiv${suffix}`)return reject('原生入口 ID 与答案字段不一致');
+        if(entry.ownerDocument.querySelectorAll(`[id="${entry.id}"]`).length!==1)return reject('原生展开入口 ID 重复');
+        if(typeof entry.click!=='function')return reject('原生展开动作不可用');
+        if(entry.hasAttribute('disabled')||entry.getAttribute('aria-disabled')==='true')return reject('原生展开入口已禁用');
+        if(!questionNodeActive(holder))return reject('答题框容器不可操作');
+        // Only the confirmed textDIV display:none state may defer activation.
+        for(let element=iframe;element;element=element.parentElement) {
+            const style=element.ownerDocument.defaultView.getComputedStyle(element);
+            if(element.matches('[hidden],[inert],[aria-hidden="true"]'))return reject('编辑器祖先带有隐藏或禁用标记');
+            if(['hidden','collapse'].includes(style.visibility))return reject('编辑器祖先的 visibility 不可见');
+            if(style.display==='none'&&element!==shell)return reject('原生编辑区域以外仍有隐藏祖先');
+        }
+        if(!courseElementVisible(iframe)&&(!questionNodeActive(entry)||!courseElementVisible(entry)))
+            return reject('原生展开入口当前不可见或不可操作');
+        return {entry,shell,holder,row,click:entry.click};
+    }
+    function sameQuestionUEditorActivation(before,after) {
+        if(!before||!after)return !before&&!after;
+        return ['entry','shell','holder','row','click'].every(key=>before[key]===after[key]);
+    }
+    function readQuestionUEditor(node,id,slotInput=null,allowBlankSlots=false) {
         // 只读取已存在的实例；不调用 UE.getEditor，不按 uid 或题号顺序猜测实例。
         try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
         catch{return null;}
@@ -4836,8 +4923,15 @@ Typr["U"] = {
                 &&(hasStructure||instances.some(editor=>editor.key===input.id)));
             if(!candidates.length)return null;
             detected=true;
-            if(candidates.length!==1)return invalid('答案字段与编辑器无法唯一对应');
-            const input=candidates[0],form=input.form,mode=/^answerEditor\d+$/.test(input.id)?'answerEditor':/^answer\d+$/.test(input.id)?'answer':null;
+            if(!slotInput&&allowBlankSlots&&node.querySelector('.blankItemDiv')) {
+                const layout=readQuestionUEditorBlanks(node,id,candidates);
+                if(layout.valid)return layout.slots.length===1?{...layout.slots[0].ueditor,nativeBlank:layout.slots[0]}:layout;
+                // Preserve the prior single-editor path for layouts without a reliable native label.
+                if(candidates.length!==1)return layout;
+            }
+            if(!slotInput&&candidates.length!==1)return allowBlankSlots?readQuestionUEditorBlanks(node,id,candidates):invalid('答案字段与编辑器无法唯一对应');
+            if(slotInput&&!candidates.includes(slotInput))return invalid('空位答案字段已变化');
+            const input=slotInput||candidates[0],form=input.form,mode=/^answerEditor\d+$/.test(input.id)?'answerEditor':/^answer\d+$/.test(input.id)?'answer':null;
             if(!mode)return invalid('答案字段命名格式不受支持');
             if(!/^\d+$/.test(String(id)))return invalid('题目缺少可靠的原生数字 ID');
             if(!node.isConnected||!input.isConnected||owner(input)!==node)return invalid('答案字段不属于当前题目或页面已替换');
@@ -4858,7 +4952,8 @@ Typr["U"] = {
             if(!registry||typeof registry!=='object')return invalid('未找到已存在的编辑器实例');
             const matches=instances.filter(editor=>editor.key===input.id);
             if(matches.length!==1)return invalid(matches.length?'编辑器与题目无法唯一对应':'未找到与答案字段对应的编辑器实例');
-            const editor=matches[0],frames=[...node.querySelectorAll('iframe')];
+            const frameRoot=slotInput?input.closest('.blankItemDiv'):node;
+            const editor=matches[0],frames=[...(frameRoot?.querySelectorAll('iframe')||[])];
             if(![1,true].includes(editor.isReady))return invalid('编辑器实例未就绪');
             if('textarea' in editor&&!same(editor.textarea,input))return invalid('编辑器与原生 textarea 关联不一致');
             if(!same(editor.form,form))return invalid('编辑器与答案字段的表单归属不一致');
@@ -4870,17 +4965,27 @@ Typr["U"] = {
             if(container.closest('form')!==form)return invalid('编辑器容器与答案字段的表单归属不一致');
             if(!same(container,editor.container)||!same(inner,editor.document)||!same(body,editor.body)
                 ||!same(inner?.defaultView?.frameElement,iframe)||!body?.isConnected)return invalid('编辑器文档、正文或 iframe 关联已失效');
-            if(body.contentEditable!=='true'||editor.options?.readonly===true||!courseElementVisible(iframe)
-                ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true')return invalid('编辑器不可见、已禁用或只读');
+            if(body.contentEditable!=='true'||editor.options?.readonly===true
+                ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true')return invalid('编辑器已禁用或只读');
+            // Bind the same native blank entry for both single- and multi-slot questions.
+            // Keep the descriptor even while expanded so native collapse does not lose its identity.
+            const activationDiagnostics=[];
+            const activation=readQuestionUEditorActivation(node,input,container,iframe,activationDiagnostics);
+            if(!courseElementVisible(iframe)&&!activation)return invalid(`编辑器不可见：${activationDiagnostics[0]||'原生展开入口尚未就绪'}`);
             if(instances.filter(other=>other===editor).length!==1||instances.some(other=>other!==editor
                 &&(other.key===input.id||same(other.iframe,iframe)||same(other.container,container)||same(other.body,body)||same(other.document,inner))))return invalid('编辑器实例或文档被重复注册或跨题共享');
             return {valid:true,diagnostics:[],id:String(id),mode,nativeQuestionId:mode==='answer'?node.getAttribute('data'):null,registry,editor,input,form,iframe,document:inner,body,container,
-                key:input.id,name:input.name,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
+                key:input.id,name:input.name,activation,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
         }catch{return detected?invalid('编辑器实例或文档关联无法安全读取'):null;}
     }
     function sameQuestionUEditor(before,after) {
         if(!before||!after)return !before&&!after;
         if(!before.valid||!after.valid)return before.valid===after.valid;
+        if(before.multiple||after.multiple)return before.multiple===after.multiple&&before.slots.length===after.slots.length
+            &&before.slots.every((slot,index)=>{const live=after.slots[index];return ['id','number','domIndex','label','row','control'].every(key=>slot[key]===live[key])&&sameQuestionUEditor(slot.ueditor,live.ueditor);});
+        if(Boolean(before.nativeBlank)!==Boolean(after.nativeBlank))return false;
+        if(before.nativeBlank&&['id','number','domIndex','label','row','control'].some(key=>before.nativeBlank[key]!==after.nativeBlank[key]))return false;
+        if(!sameQuestionUEditorActivation(before.activation,after.activation))return false;
         return ['id','mode','nativeQuestionId','registry','editor','input','form','iframe','document','body','container','key','name','setContent','getContent','sync']
             .every(key=>before[key]===after[key]);
     }
@@ -4994,7 +5099,7 @@ Typr["U"] = {
         const radios = native.filter(input => input.type === 'radio');
         const radioGroupIsolated = !radios.length || radios.every(input => input.name && input.name === radios[0].name && [...node.ownerDocument.getElementsByName(input.name)].filter(other => other.type === 'radio' && other.form === input.form).every(other => node.contains(other)));
         const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
-        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id);
+        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id,null,canonicalType({typeLabel,question})==='blank');
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const shared = readQuestionSharedMaterials(node, group, groupId, local.graphHints || {});
         const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials,matching);
@@ -5015,7 +5120,7 @@ Typr["U"] = {
         const chapterEvidence=writer==='chapter-choice'&&adapter!=='video-quiz'?JSON.stringify([...optionTargets].map(([key,row])=>
             [key,row.getAttribute('onclick'),[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')].map(input=>[input.type,input.name,input.value,input.id])])):null;
         return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, sharedMedia, sharedMaterialUnreadable:shared.unreadable, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, matching, chapterRows, chapterEvidence,ueditor,sharedMaterials:shared.materials,
-            choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:local.graphHints || {} } };
+            choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:ueditor?.valid&&(ueditor.multiple||ueditor.nativeBlank)?{...(local.graphHints||{}),slots:ueditor.multiple?ueditor.slots:[ueditor.nativeBlank]}:local.graphHints || {} } };
     }
     registerPageAdapter({
         id:'chaoxing-mooc2-work',
@@ -5097,7 +5202,9 @@ Typr["U"] = {
         const nativeCompatible = type === 'multiple' ? raw.controls.checkboxes === raw.options.length : raw.controls.radios === raw.options.length;
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
         if(['blank','essay'].includes(type)&&raw.binding.ueditor)prefill=raw.binding.ueditor.valid
-            &&raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input;
+            &&(raw.binding.ueditor.multiple?type==='blank'&&raw.binding.inputs.length===raw.binding.ueditor.slots.length
+                &&raw.binding.inputs.every(input=>questionUEditorForInput(raw.binding.ueditor,input))
+                :raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input);
         if(type==='matching'){prefill=raw.binding.matching?.valid===true;if(!prefill)diagnostics.push('连线题行号、控件、Chosen 或原生保存字段未可靠对应，暂不预填');}
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
@@ -5112,11 +5219,11 @@ Typr["U"] = {
         const submittedReview = textAnswer && raw.controls.editableTextInputs === 0 && !raw.controls.richText && isSubmittedHomeworkView(raw.binding.node);
         if (submittedReview) diagnostics.push('答案已提交，当前页面仅供查看，暂不预填');
         else {
-            if (textAnswer && raw.controls.textInputs !== 1) diagnostics.push('多个或缺失文本框，暂不自动预填');
+            if (textAnswer && raw.controls.textInputs !== 1 && !(prefill&&raw.binding.ueditor?.multiple)) diagnostics.push('多个或缺失文本框，暂不自动预填');
             if (textAnswer && raw.controls.editableTextInputs === 0) diagnostics.push('文本控件不可编辑');
         }
         if(raw.binding.ueditor&&!prefill)diagnostics.push(...raw.binding.ueditor.diagnostics);
-        if(raw.binding.ueditor?.valid&&(raw.binding.inputs.length!==1||raw.binding.inputs[0]!==raw.binding.ueditor.input))
+        if(raw.binding.ueditor?.valid&&!raw.binding.ueditor.multiple&&(raw.binding.inputs.length!==1||raw.binding.inputs[0]!==raw.binding.ueditor.input))
             diagnostics.push('UEditor：题目内文本答案控件无法唯一对应');
         if (type === 'unknown') { diagnostics.push('未识别题型，保留原始题目供核对'); prefill = false; }
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
@@ -5309,7 +5416,7 @@ Typr["U"] = {
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         if(binding.matching)for(const row of binding.matching.rows)add(row.select,'select',binding.canPrefill,{matchingRow:row.index});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
-            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&binding.ueditor?.valid&&binding.ueditor.input===input));
+            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&questionUEditorForInput(binding.ueditor,input)));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
             if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
             if (target.tagName === 'CANVAS' && [...(binding.imageNodes || new Map()).values()].includes(target)) continue;
@@ -5372,7 +5479,9 @@ Typr["U"] = {
             for (const unit of matched.responseUnits) {
                 if (!composite || unit.id === original.id) continue;
                 const nodes = unit.controlIds.map(id => parsedControls.runtime.get(id)).filter(Boolean);
-                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:'none', type:unit.type,
+                const slot=binding.ueditor?.multiple?binding.ueditor.slots.find(item=>nodes.length===1&&item.control===nodes[0]):null;
+                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:slot?'ueditor':'none', type:unit.type,
+                    ...(slot?{ueditor:slot.ueditor,ueditorSlot:slot.number,ueditorSlotCount:binding.ueditor.slots.length}:{}),
                     canPrefill:unit.relationStatus === 'confirmed'});
             }
             const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
@@ -5408,6 +5517,8 @@ Typr["U"] = {
                         controls:textUnit ? {...parent.controls, textInputs:count, editableTextInputs:confirmed ? count : 0, richText:parent.controls.richText || 0} : parent.controls,
                         diagnostics:parent.diagnostics.filter(value => value !== '多个或缺失文本框，暂不自动预填'),
                         capabilities:{analyze:parent.capabilities.analyze, prefill:confirmed}, responseUnitId:unit.id};
+                    const slotBinding=graph.bindings.get(unit.id);
+                    if(slotBinding?.ueditorSlot)Object.assign(question,{ueditorBlankGroup:parent.id,blankSlotNumber:slotBinding.ueditorSlot,blankSlotCount:slotBinding.ueditorSlotCount});
                     question.answerPolicy = questionLocalAnswerPolicy(question);
                 } else question = {...parent, capabilities:{...parent.capabilities, prefill:parent.capabilities.prefill && confirmed}};
                 questions.push(question); bindings.set(unit.id, graph.bindings.get(unit.id) || graph.bindings.get(parent.id));
@@ -5826,7 +5937,8 @@ Typr["U"] = {
     }
     function toAIQuestion(question) {
         return { id:question.id, number:question.number, groupId:question.groupId,
-            ...(question.parentQuestionId?{parentQuestionId:question.parentQuestionId}:{}),type:question.type, question:question.question, instructions:question.instructions || '',
+            ...(question.parentQuestionId?{parentQuestionId:question.parentQuestionId}:{}),
+            ...(question.ueditorBlankGroup?{blankSlotNumber:question.blankSlotNumber,blankSlotCount:question.blankSlotCount}:{}),type:question.type, question:question.question, instructions:question.instructions || '',
             options:question.options.map(option => ({ key:option.key, text:option.text,
                 ...(option.imageIds?.length ? {imageIds:option.imageIds} : {}) })),
             imageIds:question.imageIds || [], contextImageIds:question.contextImageIds || [],
@@ -5909,6 +6021,9 @@ Typr["U"] = {
     }
     function questionActionDisabled(node) {
         return !node || node.disabled || node.readOnly || node.hasAttribute('disabled') || node.matches('.disabled,.x-item-disabled') || node.getAttribute('aria-disabled')==='true';
+    }
+    function questionActionLabel(question) {
+        return `第${question?.number||'?'}题${question?.blankSlotNumber?`第${question.blankSlotNumber}空`:''}`;
     }
     function questionUEText(value) {
         return String(value??'').replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/[\u200b\ufeff]/g,'')
@@ -6104,16 +6219,25 @@ Typr["U"] = {
         const supplied=new Map(),summary={filled:0,already:0,skipped:0,unverified:0,details:[],perUnit:[],perQuestion:[]};
         const plan={snapshotId:fence.snapshotId || fence.lifecycle?.snapshotId,actions:[]},units=[];
         const failUnit=(question,entry,reason)=>{
-            summary.skipped++;summary.details.push(`第${question?.number || entry?.number || '?'}题：${reason}`);
-            summary.perUnit.push({responseUnitId:String(entry?.id || ''),questionId:projection.parentByUnit.get(entry?.id) || entry?.id,status:'skipped',reason});
+            summary.skipped++;summary.details.push(`${questionActionLabel(question||entry)}：${reason}`);
+            summary.perUnit.push({responseUnitId:String(entry?.id || ''),questionId:projection.parentByUnit.get(entry?.id) || entry?.id,status:'skipped',
+                reason:question?.blankSlotNumber?`第${question.blankSlotNumber}空：${reason}`:reason});
         };
         for(const entry of answers || []) {
             if(!entry || supplied.has(entry.id))throw questionActionError('CX-RES-006','答案编号重复或缺失');
             supplied.set(entry.id,entry);
         }
-        for(const entry of supplied.values()) {
+        const incompleteBlankGroups=new Set();
+        for(const parent of graph.questions)if(graph.bindings.get(parent.id)?.ueditor?.multiple) {
+            if(parent.responseUnits.some(unit=>{const answer=supplied.get(unit.id)?.answer;return !Array.isArray(answer)||answer.length!==1||typeof answer[0]!=='string'||!answer[0].trim();}))
+                incompleteBlankGroups.add(parent.id);
+        }
+        const responseOrder=new Map(projection.questions.map((question,index)=>[question.id,index]));
+        const orderedEntries=[...supplied.values()].sort((a,b)=>(responseOrder.get(a.id)??Infinity)-(responseOrder.get(b.id)??Infinity));
+        for(const entry of orderedEntries) {
             const current=liveQuestions.get(entry.id),question=questions.get(entry.id) || current,binding=projection.bindings.get(entry.id);
             if(!question || !current || !binding?.node){failUnit(question,entry,'无有效答案或题目不存在');continue;}
+            if(incompleteBlankGroups.has(projection.parentByUnit.get(entry.id))){failUnit(question,entry,'多空题答案未完整对应全部空位，整题未填写');continue;}
             const policy=questionPrefillPolicy(current,entry);
             if(policy.status!=='auto'){failUnit(question,entry,`${policy.reason || '需人工处理'}，跳过`);continue;}
             if(!Array.isArray(entry.answer) || !entry.answer.length){failUnit(question,entry,`${entry.reason || '无有效答案，需人工核对'}`);continue;}
@@ -6162,6 +6286,7 @@ Typr["U"] = {
                         if(!questionUEVerified(unit)){failUnit(question,entry,'已有富文本作答，未覆盖');continue;}
                     }else {
                         unit.html=questionUEAnswerHTML(unit.value,doc);
+                        if(binding.ueditor.activation)unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'activate-richtext',expectedState:'native-blank-entry'});
                         unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill-richtext',value:unit.value,expectedState:'empty'});
                     }
                     units.push(unit);plan.actions.push(...unit.actions);continue;
@@ -6226,7 +6351,7 @@ Typr["U"] = {
             }
             if(unit.chapterRows&&!sameChapterRowChoiceBindings(unit.chapterRows,questionActionChapterRows(binding,unit.question,live.parseContext)))
                 throw questionActionError('CX-CTL-006','旧版无 input 选项关联已变化');
-            if(binding.writer==='ueditor'&&!sameQuestionUEditor(binding.ueditor,readQuestionUEditor(binding.node,unit.question.parentQuestionId||unit.question.id)))
+            if(binding.writer==='ueditor'&&!sameQuestionUEditor(binding.ueditor,readQuestionUEditor(binding.node,unit.question.parentQuestionId||unit.question.id,binding.ueditorSlot?binding.ueditor.input:null,Boolean(binding.ueditor.nativeBlank))))
                 throw questionActionError('CX-CTL-006','UEditor 实例或 DOM 关联已变化');
             if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
             if(binding.mooc2 && (questionActionDisabled(binding.mooc2.savedInput) || binding.mooc2.records.some(record=>questionActionDisabled(record.marker))))
@@ -6234,18 +6359,31 @@ Typr["U"] = {
             if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
         };
         const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
-        const result=(unit,status)=>{
-            summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status});if(unit===activeUnit)activeRecorded=true;
+        const result=(unit,status,reason='')=>{
+            summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status,
+                ...(reason?{reason:unit.question.blankSlotNumber?`第${unit.question.blankSlotNumber}空：${reason}`:reason}
+                    :status==='unverified'&&unit.question.blankSlotNumber?{reason:`第${unit.question.blankSlotNumber}空写入状态待核对`}:{})});if(unit===activeUnit)activeRecorded=true;
             if(unit.binding.writer==='ueditor'&&['filled','already'].includes(status)) {
                 summary.requiresManualSave=true;
             }
         };
         const finishSummary=()=>{
+            const multiParents=live.graph.questions.filter(parent=>live.graph.bindings.get(parent.id)?.ueditor?.multiple);
+            for(const parent of multiParents) {
+                if(!summary.perUnit.some(item=>item.questionId===parent.id))continue;
+                for(const expected of parent.responseUnits)if(!summary.perUnit.some(item=>item.responseUnitId===expected.id)) {
+                    const slot=live.projection.bindings.get(expected.id)?.ueditorSlot;
+                    summary.skipped++;summary.perUnit.push({responseUnitId:expected.id,questionId:parent.id,status:'skipped',reason:`第${slot||'?'}空未执行填写，请人工核对`});
+                }
+            }
             summary.perQuestion=[...new Set(summary.perUnit.map(item=>item.questionId))].map(id=>{
                 const items=summary.perUnit.filter(item=>item.questionId===id),statuses=items.map(item=>item.status);
-                return {questionId:id,status:statuses.includes('skipped')?'skipped':statuses.includes('unverified')?'unverified':statuses.every(value=>value==='already')?'already':'filled',
+                return {questionId:id,status:multiParents.some(parent=>parent.id===id)&&statuses.includes('unverified')?'unverified':statuses.includes('skipped')?'skipped':statuses.includes('unverified')?'unverified':statuses.every(value=>value==='already')?'already':'filled',
                     reason:items.filter(item=>item.reason).map(item=>item.reason).join('；')};
             });
+            // Execution callers compare the existing counters with response-unit counts.
+            // Only presentation uses questionCounts, so a three-slot parent displays as one question.
+            if(multiParents.length)summary.questionCounts=Object.fromEntries(['filled','already','skipped','unverified'].map(status=>[status,summary.perQuestion.filter(item=>item.status===status).length]));
             return summary;
         };
         for(const unit of live.units)for(const type of ['input','change','click'])unit.binding.node.addEventListener(type,onEdit,true);
@@ -6285,8 +6423,22 @@ Typr["U"] = {
                 }
                 if(unit.binding.writer==='ueditor') {
                     if(unit.actions.length) {
+                        if(!courseElementVisible(unit.binding.ueditor.iframe)) {
+                            const activation=unit.binding.ueditor.activation;
+                            if(activation) {
+                                write(()=>{validateUnit(unit);activation.click.call(activation.entry);});
+                                await waitFor(()=>{validateUnit(unit);return courseElementVisible(unit.binding.ueditor.iframe);},1000);
+                                validateUnit(unit);
+                            }
+                            if(!courseElementVisible(unit.binding.ueditor.iframe)) {
+                                const reason='原生答题框未展开，未写入，已停止后续填写';
+                                result(unit,'skipped',reason);summary.details.push(`${questionActionLabel(unit.question)}：${reason}`);break;
+                            }
+                        }
                         write(()=>{
-                            validateUnit(unit);activeWrites++;
+                            validateUnit(unit);
+                            if(!courseElementVisible(unit.binding.ueditor.iframe))throw questionActionError('CX-CTL-004','原生编辑器已收起，未继续写入');
+                            activeWrites++;
                             unit.binding.ueditor.editor.setContent(unit.html,false);
                             validateUnit(unit,false);
                             unit.binding.ueditor.editor.sync();
@@ -6295,7 +6447,7 @@ Typr["U"] = {
                     await waitFor(()=>{validateUnit(unit,false);return questionUEVerified(unit);},1000);
                     validateUnit(unit,false);
                     if(questionUEVerified(unit))result(unit,unit.actions.length?'filled':'already');
-                    else {result(unit,'unverified');summary.details.push(`第${unit.question.number}题：富文本或 textarea 同步未确认，已停止后续填写，请人工检查`);break;}
+                    else {result(unit,'unverified');summary.details.push(`${questionActionLabel(unit.question)}：富文本或 textarea 同步未确认，已停止后续填写，请人工检查`);break;}
                     continue;
                 }
                 if(!unit.actions.length){
@@ -6353,7 +6505,7 @@ Typr["U"] = {
             }
             return finishSummary();
         } catch(error) {
-            if(activeUnit&&activeWrites&&!activeRecorded){result(activeUnit,'unverified');summary.details.push(`第${activeUnit.question.number}题：已发生部分填写，后续动作已停止，请核对`);}
+            if(activeUnit&&activeWrites&&!activeRecorded){result(activeUnit,'unverified');summary.details.push(`${questionActionLabel(activeUnit.question)}：已发生部分填写，后续动作已停止，请核对`);}
             error.prefillSummary={...finishSummary(),details:[...summary.details]};
             if(typeof recordCxDiagnostic==='function')recordCxDiagnostic(error,{module:'actions',operation:'prefill',taskId:live.snapshot.lifecycle?.taskId});
             throw error;
@@ -7241,7 +7393,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.3');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.4');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -13504,11 +13656,32 @@ Typr["U"] = {
             if(!entries.length)return null;
             const restricted=entries.find(a=>a.answerPolicy?.status==='manual')||entries.find(a=>a.answerPolicy?.status==='uncertain');
             return {id:q.id,number:q.number,type:q.type,
-                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${i+1}. ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
+                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${working.requestUnits.bindings.get(id)?.ueditorSlot?`第${working.requestUnits.bindings.get(id).ueditorSlot}空`:`${i+1}.`} ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
                 reason:ids.flatMap((id,i)=>byId.get(id)?.reason?[`${i+1}. ${byId.get(id).reason}`]:[]).join('\n\n') || restricted?.answerPolicy?.reason || '按作答区域分别分析',
                 ...((restricted || entries[0])?.answerPolicy?{answerPolicy:(restricted || entries[0]).answerPolicy}:{}),responseUnitIds:ids};
         }).filter(Boolean);
-        return {...result,questionAnswers,responseUnitCount:working.questions.length};
+        const projected={...result,questionAnswers,responseUnitCount:working.questions.length};
+        if(working.questions.some(question=>question.ueditorBlankGroup)&&result.analysisProgress) {
+            const parents=working.sourceQuestions||snapshot.questions;
+            const skippedIds=new Set((result.skippedQuestions||[]).map(item=>item.id));
+            projected.evidence={...result.evidence};
+            for(const parent of parents)if(working.graph.bindings.get(parent.id)?.ueditor?.multiple) {
+                const ids=working.requestUnits.unitsByQuestion.get(parent.id)||[];
+                const sources=[...(result.evidence?.[parent.id]||[]),...ids.flatMap(id=>result.evidence?.[id]||[])];
+                if(sources.length)projected.evidence[parent.id]=[...new Map(sources.map(source=>[JSON.stringify(source),source])).values()];
+            }
+            const states=parents.map(parent=>{
+                const ids=working.requestUnits.unitsByQuestion.get(parent.id)||[parent.id];
+                if(ids.every(id=>byId.get(id)?.answer?.length))return 'success';
+                const units=ids.map(id=>result.analysisStates?.[id]?.status||(skippedIds.has(id)?'skipped':'pending'));
+                return ['running','preparing','retry-wait','pending','ready','failed','cancelled','skipped'].find(status=>units.includes(status))||'pending';
+            });
+            const count=status=>states.filter(value=>value===status).length;
+            projected.analyzedCount=count('success');
+            projected.analysisProgress={...result.analysisProgress,total:parents.length,completed:count('success'),running:count('running'),
+                waiting:count('pending')+count('ready')+count('preparing'),retryWaiting:count('retry-wait'),failed:count('failed'),cancelled:count('cancelled'),skipped:count('skipped')};
+        }
+        return projected;
     }
     function assistantErrorMessage(error,context={}) {
         const batchIndex=error?.batchIndex,batchCount=error?.batchCount;
@@ -13534,7 +13707,8 @@ Typr["U"] = {
         return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,snapshot:snapshot.rootSnapshot || snapshot,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
-        const counts=[[s.filled,'已填'],[s.already,'已有答案'],[s.skipped,'跳过'],[s.unverified,'待检查']]
+        const displayed=s.questionCounts||s;
+        const counts=[[displayed.filled,'已填'],[displayed.already,'已有答案'],[displayed.skipped,'跳过'],[displayed.unverified,'待检查']]
             .filter(([count])=>count>0).map(([count,label])=>`${label} ${count} 题`);
         return (counts.join('，') || '未填写答案')+(s.requiresManualSave?'，请手动保存或提交':'')
             +(s.details.length?'\n'+s.details.slice(0,5).join('\n'):'');
@@ -14568,7 +14742,7 @@ Typr["U"] = {
           #course-verification-open{flex:none;border:0;background:transparent;color:var(--accent);padding:2px 0;font-size:12px;white-space:nowrap}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.33.3</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
+          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAIEklEQVR42u2XWYyeZRXHf+d5t+/7Zt87MEtn2kIZ2boIiNACYkTwAmPGEC5MTIhoNNELRIPKpBGMJhg1IHGroVwoaQnBRA2mIAitaADL1ukAnel0ZjpLpzPT+Wa+5d2e48U300WWVG+84Vy+y3n+5zzn/M/5w4f2fzZ5vxf9/bud/n7Yswf27Dmolac77Lm5HTAVHx+R0z4+n54zKlU9C5jrgGNg+8CAu+r8/Q7ePjDgOqbyz1mRipxTBkRVRURs05a7vt3d3bVlbGxs/4mX//IMlBbg8IQj8F2rZoegICuZURlQ5D4jNlWASzrANjVu+tS2tb1rt4+Ojh2Yf+WB+1XViIgC+h5Atrv9u9UB6PjYd37y2LNHNbWJvvDSIX1w59P6rR8+NtF75d2PwievBDCymuoBY06FsX1rzxV3PXLXD34/8eDOvbrvpUFNbKJ7nh/XzmvufRBgQNXAdvddwa866bjqnp8+8tyUji9rFEeLkWqYqKpVDXVmLq/3/+KppPeGHbtgyzojUMnsJb091927676H/xRPzi6qaqSqmkZJKUmTfDRZ0HDX32a08+p7HjrzLICVm/pMTp2em7u33f6Ve7735a9v3Hhe7EZF98hU0ewfzIvREM9Rbar3k2u3XmBu/vS1l59wW255Y9+hP0J1zW13f3/vb3985/W3XreBmpwkg6N52T84J/sGl8WAUXC82oZkY99FV705Ud18ctz10a5jcDQSgE23/uihTNvWr5Iu8MCOz9n5+Uh6myzd9RFjswnFMGVyIUZE6G1x6FvbFE2GTvCFr+18DdV018/v2Hx+kIaHjs75Q5MJvW0+TbUuWVfwPZhcDnj7uKG21tdvDjxucGuJ51771atP3n2nAViOgy00X5qmSRqKRbK+4DrCG6Ml/vF2kWKkXNSRYev6HLE1PH1gxq9xSK/cdu1lV227ZnOdS7r3XzN+OTFcvbGKmqxhZDrkzweWGJ4OMUbI+oIoYm0S0XJ5uhwHWwBcgCTVUqlQcHxUXRccRwhj5YoLcrQ3JiSpMrWQUJqJqK9yaK3zKMcYtZpahXKMaavzKCfK60dKGANdLT7dLT4ttYbRk4rrgOeCggkLy45NtXgKAIpBDIigCtaC5wjjsxGvj0W01jqsqXdpqnGYXkyZno9Y0w6KNaqVjppbTqjJuWzdkGV+qXJlh8ZDLlsb0NiYwSrYlQY0xqCIOQVAjGJET/WFCKSqZALh4xurKEeWtyZD3p4MOb/Jo7PZw3dBVVAUz6lEXAiVF4eKZHxh3ZqA9WsCGqsNw/O68m3FuYjirJS/CxAnaKQenqZntKVwIp/y1mSZxhqHpmqHhvaAKLYMT4dU16+ym1COYWQ6orc94NK1WeLE8s5UiLVKZ7OLEwTISoCiKaF1Kcd6GkBofcnPH6c2yBF4kHoQp8qG9oCanEdqlVJkOXo8JE6hq9kjlwFVRRWyAXQ2exyZiXAEfN/Q0eiRDQyt9Q7DJ5SMB4EHjpcjPz9LjH8agOO4lBfGcdbWI1Jx7DrC8FTIm2MRngM9bT6dzT65wHBkukxduUIoFqUYwlIp5eKuDIWyZfpkwuBEmcA1rI88XC9Aowr/urlGwrEJjLhnZCBKNDUKmqBaqYE4tly2NuDiziyLRcvwTMRbkyECtNU5VAeQKqBCxquw+eujZXKB0NPqs7Ejw/xSimMsoVYOFwBNiRMwcXIaALJaf5VCcR0hGziVkhWlrsawuSYDwMKS5fBkmUIExggohHHl7w3nBcSpcuR4RL5o8V3h4m4fteDFqyVuViaROQMABhE5NTLzywkvDyXsk5QLOz1aaw2dTULGUxpqhI9uyFIwlXYVIOtBapXDUyFt9Q6XdGeoy7kkuEzMpQwdS/F8panJRYycjvc0D1SqyaBYheHjlum8YtUwU1aMTXFIqPKFmzYH9LQAFlTBGChElo4ml47WLFPzcGA04bWxGNeznFhWrAqtdUp9QyXHesY0dgHUWgFIFPIlWC4pqTpYBSNKa6MgTo75fMrDe8tc0KrcdmMVge9grdJUZXj+sMPO50oaiytVOQdjDEuLlkK5woDFCJbKK2QEqNrTAALfsUtJrN3N8M+DCU88Mw/GURGkJueg4hF4ZXraPRrrAvYPxwxPjmuxUBAjcO+uo7x6rIq2RldcSSlNJSTWY3G5rCfzsYiATVNiG2hvG7w6FGqtZ+wpAHWZcu7G6y+VI28esC8eetaUyyGOAIitzVpcR21rVx8HR6oNTiKtDRkZWXZk3x+eRFC23nKH1tdVcWy2SFiK1NWCnR07KAqyVKpQXmrh1+NDtGcX9NabNsmBF56qml7pDKHrjlu23PjZR/NpQ0OhWMQxhjS1oBBFZcKlOVzPpyZjaW2q06DhvGR5bsLp6V4DIowcmSDX0JnG+Rl3du6kLJeFJInwso14QQYxguMYrLXkcjnqvMXFV55+4osc/c2TsgJCobWXbF8LXlohbqhMpCS0ud5P3OBmGvriONrk+LV9dQ3VpqO9zg6N5K2mKRvXN5hjUyfN4mJBk2hp0HfdA0m4MFQc/uteNDAgilS2RWJHKB08AbPDrC5UMGBEdlj0PbbFsy3nXvilvlxNy+2dPeu/MT5yWFSha916xkdHflY8efx3yTu/PAgUPlAHCKgOGNhh5exdflDeRyQA/fC4SdFViNdscdddFAAkwwcj+PvLp47otw7sqQiC97Q+PXeN8a4ABgz9ux35z6gGKhvyB4md/0oZnZv6OTNje9IPheb/Yv8G+SfcWs8Po4kAAAAASUVORK5CYII=" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.33.4</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-haspopup="dialog" aria-controls="about" aria-expanded="false" title="项目介绍">?</button>
@@ -15314,8 +15488,20 @@ Typr["U"] = {
     }
 
     // 分析任务、材料准备、并发调度接入、结果合并与恢复。
-    // 保留调用入口；所有题目独立请求，不再按学科或题型共享输出预算。
-    function splitQuestionBatches(questions) { return questions.map(question=>[question]); }
+    // 普通题独立请求；已确认的多空编辑器按原题一次求解，答案仍按作答区域 ID 返回。
+    function splitQuestionBatches(questions) {
+        const batches=[],groups=new Map();
+        for(const question of questions) {
+            if(!question.ueditorBlankGroup){batches.push([question]);continue;}
+            let batch=groups.get(question.ueditorBlankGroup);
+            if(!batch){batch=[];groups.set(question.ueditorBlankGroup,batch);batches.push(batch);}
+            batch.push(question);
+        }
+        return batches;
+    }
+    function analysisRecordSelected(record,questionIds) {
+        return !questionIds||record.questions.some(question=>questionIds.has(question.id));
+    }
     function analysisConfiguration(settings) {
         return {...modelConfigurationSignature(settings),credentialFingerprint:endpointFingerprint(settings.key || '')};
     }
@@ -15410,15 +15596,15 @@ Typr["U"] = {
         const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies,task.resultsByQuestion));
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
-        const total=(task.requestSnapshot||task.snapshot).questions.length;
-        const count=status=>task.batches.filter(record=>record.status===status).length;
+        const total=result.analysisProgress.total;
+        const grouped=(task.requestSnapshot||task.snapshot).questions.some(question=>question.ueditorBlankGroup);
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.33.3',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.33.4',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
-            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
-                running:count('running'),waiting:task.batches.length?count('pending')+count('ready')+count('preparing'):total-skipped.size,retryWaiting:count('retry-wait'),
-                failed:count('failed'),skipped:skipped.size,cancelled:count('cancelled')}});
+            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{...result.analysisProgress,status:task.status,completed:result.analyzedCount,total,
+                waiting:!task.batches.length&&!grouped?total-skipped.size:result.analysisProgress.waiting,
+                skipped:grouped?result.analysisProgress.skipped:skipped.size}});
     }
     function retryWait(signal) {
         return analysisDelay(2000,signal);
@@ -15469,7 +15655,7 @@ Typr["U"] = {
             .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
         const resultsByQuestion=progress?.resultsByQuestion || new Map();
         if(progress)progress.batches=records;
-        const selected=records.filter(record=>record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)));
+        const selected=records.filter(record=>record.status!=='success' && analysisRecordSelected(record,questionIds));
         const gate=progress?.retryGate || {notBefore:0,failures:0,paused:false};
         let searchTail=Promise.resolve();
         try {
@@ -15477,15 +15663,18 @@ Typr["U"] = {
             const policies=await prepareAnswerPolicies(pending,settings,prepared,{signal:abort.signal,progress,report,check,retry});
             check();
             const skippedQuestions=analysisSkipped(snapshot,settings,policies),skipped=new Map(skippedQuestions.map(item=>[item.id,item]));
-            for(const record of selected)if(skipped.has(record.questions[0].id)) {
-                record.status='skipped';record.error=skipped.get(record.questions[0].id).reason;
+            for(const record of selected) {
+                const blocked=record.questions.map(q=>skipped.get(q.id)).find(Boolean);
+                if(!blocked)continue;
+                record.status='skipped';record.error=blocked.reason;
+                for(const q of record.questions)if(!skipped.has(q.id)){const item={...blocked,id:q.id};skipped.set(q.id,item);skippedQuestions.push(item);}
             }
             if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
-            for(const record of selected)record.materialReady=questionImageIds(record.questions[0]).every(id=>prepared.has(id));
-            await runAnalysisQueue(selected.filter(record=>!skipped.has(record.questions[0].id)),{
+            for(const record of selected)record.materialReady=record.questions.flatMap(questionImageIds).every(id=>prepared.has(id));
+            await runAnalysisQueue(selected.filter(record=>!record.questions.some(q=>skipped.has(q.id))),{
                 concurrency:progress?.concurrency ?? settings.analysisConcurrency,signal:abort.signal,check,gate,retryTransient,
                 preparationConcurrency:2,prepare:async record=>{
-                    const question=record.questions[0],ids=new Set(questionImageIds(question));
+                    const ids=new Set(record.questions.flatMap(questionImageIds));
                     if([...ids].some(id=>snapshot.media.filter(item=>item.id===id).length!==1))throw createCxError('CX-PAR-004',{module:'media',operation:'prepare-media'});
                     await retry(()=>prepareQuestionMedia(snapshot.media.filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,
                         {signal:abort.signal,prepared,contentCache,imageNodes,concurrency:1}),'preparing-images');
@@ -15498,9 +15687,8 @@ Typr["U"] = {
                 },
                 onSuccess:record=>{
                     check();
-                    const answer=record.result.answers[0];
-                    resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
-                    if(progress)for(const id of questionImageIds(record.questions[0])) {
+                    for(const answer of record.result.answers)resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
+                    if(progress)for(const id of new Set(record.questions.flatMap(questionImageIds))) {
                         const digest=prepared.get(id)?.digest;
                         if(/^[a-f0-9]{64}$/.test(digest || '')) {
                             progress.imageDigests.set(id,digest);
@@ -15513,7 +15701,7 @@ Typr["U"] = {
                     const question=record.questions[0],model=resolveQuestionModel(settings.model,question);record.model=model;
                     const config={...settings,model,signal:abort.signal};
                     record.phase='solve';record.restoredUsage=null;
-                    assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,[question],record.evidence,prepared));
+                    assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,record.questions,record.evidence,prepared));
                     if(settings.search && !record.evidence[question.id]) {
                         const previous=searchTail;let release;
                         searchTail=new Promise(resolve=>{release=resolve;});
@@ -15521,18 +15709,20 @@ Typr["U"] = {
                             await previous;await waitAnalysisGate(gate,abort.signal,check);
                             report(`正在检索第 ${question.number} 题…`,'searching');
                             const found=await getWebEvidence([question],settings.key,model,message=>{check();report(message,'searching');},prepared,abort.signal);
-                            check();record.evidence={[question.id]:found[question.id]};
+                            check();record.evidence=Object.fromEntries(record.questions.map(q=>[q.id,found[question.id]]));
                         } finally {release();}
                     }
                     await waitAnalysisGate(gate,abort.signal,check);
                     report(`正在分析第 ${question.number} 题…`,'generating');
                     record.requestAttempts=(record.requestAttempts || 0)+1;
-                    const result=await askConfiguredModel(config,[question],record.evidence,prepared,abort.signal);
+                    const result=await askConfiguredModel(config,record.questions,record.evidence,prepared,abort.signal);
                     check();
-                    if(result.answers.length!==1 || result.answers[0].id!==question.id)throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
-                    if(!result.answers[0].answer.length) {
+                    if(result.answers.length!==record.questions.length||new Set(result.answers.map(a=>a.id)).size!==record.questions.length
+                        ||record.questions.some(q=>!result.answers.some(a=>a.id===q.id)))throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
+                    const missing=result.answers.find(answer=>!answer.answer.length);
+                    if(missing) {
                         const error=createCxError('CX-RES-003',{module:'analysis',operation:'answers'});
-                        error.analysisReason=result.answers[0].reason || error.message;throw error;
+                        error.analysisReason=(record.questions.length>1?'多空题答案未完整返回：':'')+(missing.reason||error.message);throw error;
                     }
                     return result;
                 }
@@ -15584,7 +15774,7 @@ Typr["U"] = {
             task.settings=Object.freeze({...settings});task.configuration=analysisConfiguration(settings);task.configurationChanged=false;
             task.autoPrefill=false;
             task.snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(task.snapshot.doc || document):[];
-            for(const record of task.batches)if(record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)))record.evidence={};
+            for(const record of task.batches)if(record.status!=='success' && analysisRecordSelected(record,questionIds))record.evidence={};
         }
         task.abortController=new AbortController();
         await executeAnalysisTask(task,{questionIds});
@@ -15610,7 +15800,7 @@ Typr["U"] = {
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true,questionIds});
             checkSnapshot(task.snapshot);task.status=result.analysisComplete?'complete':'failed';renderAnalysisProgress(task,true);
             if(!result.analysisComplete) {
-                ctl.report(`已完成 ${result.analyzedCount}/${task.requestSnapshot.questions.length} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
+                ctl.report(`已完成 ${result.analyzedCount}/${result.analysisProgress.total} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
             }
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('模型未返回有效答案，请核对题目与模型结果');ctl.report(`本次未生成有效答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
             if(task.restoredReadOnly){ctl.report('已保留恢复结果','done');return;}
@@ -15636,7 +15826,7 @@ Typr["U"] = {
             renderAnalysisProgress(task);
             if(error.prefillSummary)ctl.output({...ctl.result,prefill:error.prefillSummary});
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
-            const prefill=error.prefillSummary?`；已确认填写 ${error.prefillSummary.filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
+            const prefill=error.prefillSummary?`；已确认填写 ${(error.prefillSummary.questionCounts||error.prefillSummary).filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
             ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
                 task.status==='stopped'?'stopped':'error');
         } finally {

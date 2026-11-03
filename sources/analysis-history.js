@@ -46,7 +46,7 @@
         const revision=task.cacheRevision=(task.cacheRevision || 0)+1,epoch=analysisCacheEpoch;
         const snapshot=task.requestSnapshot || questionAnswerSnapshot(task.snapshot);
         const answers=[...task.resultsByQuestion.values()].map(entry=>({id:entry.id,answer:[...entry.answer],reason:entry.reason || ''}));
-        const usage=Object.fromEntries(task.batches.filter(record=>record.status==='success').map(record=>[record.questions[0].id,record.restoredUsage || analysisRequestUsage(record)]));
+        const usage=Object.fromEntries(task.batches.filter(record=>record.status==='success').flatMap(record=>record.questions.map(q=>[q.id,record.restoredUsage || analysisRequestUsage(record)])));
         const digests=Object.fromEntries(task.imageDigests || []);
         const identity=await analysisCacheIdentity(snapshot);
         if(!identity || revision!==task.cacheRevision || epoch!==analysisCacheEpoch || get(KEY_ANALYSIS_CACHE_ENABLED,false)!==true || controller?.task!==task || task.status==='stale')return;
@@ -80,13 +80,15 @@
             task.requestSnapshot=snapshot;task.status='restored';task.restoredReadOnly=true;task.restoredIdentity=identity;
             task.restoredMediaDigests=saved.digests && typeof saved.digests==='object'?saved.digests:{};
             task.resultsByQuestion=new Map(answers.map(entry=>[entry.id,entry]));
-            task.batches=snapshot.questions.map(q=>{
-                const answer=task.resultsByQuestion.get(q.id),storedUsage=saved.usage?.[q.id],restoredUsage={model:typeof storedUsage?.model==='string'?storedUsage.model.slice(0,300):''};
+            task.batches=splitQuestionBatches(snapshot.questions).map(questions=>{
+                const complete=questions.every(q=>task.resultsByQuestion.has(q.id));
+                if(!complete)for(const q of questions)task.resultsByQuestion.delete(q.id);
+                const entries=complete?questions.map(q=>task.resultsByQuestion.get(q.id)):[],storedUsage=saved.usage?.[questions[0].id],restoredUsage={model:typeof storedUsage?.model==='string'?storedUsage.model.slice(0,300):''};
                 for(const field of ['attempts','promptTokens','completionTokens','totalTokens','reasoningTokens'])
                     if(Number.isSafeInteger(storedUsage?.[field])&&storedUsage[field]>=0)restoredUsage[field]=storedUsage[field];
-                return {questions:[q],status:answer?'success':'failed',evidence:{},result:answer?{answers:[answer],mediaAnalysis:[]}:null,
+                return {questions,status:complete?'success':'failed',evidence:{},result:complete?{answers:entries,mediaAnalysis:[]}:null,
                     model:typeof restoredUsage?.model==='string'?restoredUsage.model:'',restoredUsage:restoredUsage && typeof restoredUsage==='object'?restoredUsage:null,
-                    error:answer?null:'尚未分析',errorCode:answer?null:'CX-RES-003'};
+                    error:complete?null:'尚未完整分析',errorCode:complete?null:'CX-RES-003'};
             });
             ctl.task=task;ctl.last=null;root.checkCurrent=()=>checkAnalysisTask(task);
             renderAnalysisProgress(task,true);ctl.report('已恢复结果（只读）','done');

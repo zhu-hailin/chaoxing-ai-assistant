@@ -45,6 +45,7 @@ paths += ['tests/errors-dom.cjs', 'tests/question-context-dom.cjs',
 paths += ['tests/' + name + '.json' for name in ['results', 'study-results', 'parser-results',
           'media-results', 'course-runner-results', 'course-preview-results', 'analysis-task-results']]
 paths += ['tests/v132-repairs-dom.cjs']
+paths += ['tests/ueditor-multiple-blanks-dom.cjs']
 if args.skip_readme:
     paths.remove("README.md")
 # Paused candidate notes and unused screenshot working sets stay local.
