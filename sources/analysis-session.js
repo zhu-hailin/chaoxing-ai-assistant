@@ -1,6 +1,18 @@
     // 分析任务、材料准备、并发调度接入、结果合并与恢复。
-    // 保留调用入口；所有题目独立请求，不再按学科或题型共享输出预算。
-    function splitQuestionBatches(questions) { return questions.map(question=>[question]); }
+    // 普通题独立请求；已确认的多空编辑器按原题一次求解，答案仍按作答区域 ID 返回。
+    function splitQuestionBatches(questions) {
+        const batches=[],groups=new Map();
+        for(const question of questions) {
+            if(!question.ueditorBlankGroup){batches.push([question]);continue;}
+            let batch=groups.get(question.ueditorBlankGroup);
+            if(!batch){batch=[];groups.set(question.ueditorBlankGroup,batch);batches.push(batch);}
+            batch.push(question);
+        }
+        return batches;
+    }
+    function analysisRecordSelected(record,questionIds) {
+        return !questionIds||record.questions.some(question=>questionIds.has(question.id));
+    }
     function analysisConfiguration(settings) {
         return {...modelConfigurationSignature(settings),credentialFingerprint:endpointFingerprint(settings.key || '')};
     }
@@ -95,15 +107,15 @@
         const result=questionResultProjection(task.requestSnapshot||task.snapshot,collectBatchResults(task.requestSnapshot||task.snapshot,task.batches,task.skippedQuestions,complete,task.answerPolicies,task.resultsByQuestion));
         const {answers,...details}=result;
         const skipped=new Set(task.skippedQuestions.map(item=>item.id));
-        const total=(task.requestSnapshot||task.snapshot).questions.length;
-        const count=status=>task.batches.filter(record=>record.status===status).length;
+        const total=result.analysisProgress.total;
+        const grouped=(task.requestSnapshot||task.snapshot).questions.some(question=>question.ueditorBlankGroup);
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.33.3',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.33.4',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
-            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{status:task.status,completed:result.analyzedCount,total,
-                running:count('running'),waiting:task.batches.length?count('pending')+count('ready')+count('preparing'):total-skipped.size,retryWaiting:count('retry-wait'),
-                failed:count('failed'),skipped:skipped.size,cancelled:count('cancelled')}});
+            ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{...result.analysisProgress,status:task.status,completed:result.analyzedCount,total,
+                waiting:!task.batches.length&&!grouped?total-skipped.size:result.analysisProgress.waiting,
+                skipped:grouped?result.analysisProgress.skipped:skipped.size}});
     }
     function retryWait(signal) {
         return analysisDelay(2000,signal);
@@ -154,7 +166,7 @@
             .map(questions=>({questions,status:'pending',evidence:{},result:null,error:null}));
         const resultsByQuestion=progress?.resultsByQuestion || new Map();
         if(progress)progress.batches=records;
-        const selected=records.filter(record=>record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)));
+        const selected=records.filter(record=>record.status!=='success' && analysisRecordSelected(record,questionIds));
         const gate=progress?.retryGate || {notBefore:0,failures:0,paused:false};
         let searchTail=Promise.resolve();
         try {
@@ -162,15 +174,18 @@
             const policies=await prepareAnswerPolicies(pending,settings,prepared,{signal:abort.signal,progress,report,check,retry});
             check();
             const skippedQuestions=analysisSkipped(snapshot,settings,policies),skipped=new Map(skippedQuestions.map(item=>[item.id,item]));
-            for(const record of selected)if(skipped.has(record.questions[0].id)) {
-                record.status='skipped';record.error=skipped.get(record.questions[0].id).reason;
+            for(const record of selected) {
+                const blocked=record.questions.map(q=>skipped.get(q.id)).find(Boolean);
+                if(!blocked)continue;
+                record.status='skipped';record.error=blocked.reason;
+                for(const q of record.questions)if(!skipped.has(q.id)){const item={...blocked,id:q.id};skipped.set(q.id,item);skippedQuestions.push(item);}
             }
             if(progress){progress.skippedQuestions=skippedQuestions;progress.status='running';}
-            for(const record of selected)record.materialReady=questionImageIds(record.questions[0]).every(id=>prepared.has(id));
-            await runAnalysisQueue(selected.filter(record=>!skipped.has(record.questions[0].id)),{
+            for(const record of selected)record.materialReady=record.questions.flatMap(questionImageIds).every(id=>prepared.has(id));
+            await runAnalysisQueue(selected.filter(record=>!record.questions.some(q=>skipped.has(q.id))),{
                 concurrency:progress?.concurrency ?? settings.analysisConcurrency,signal:abort.signal,check,gate,retryTransient,
                 preparationConcurrency:2,prepare:async record=>{
-                    const question=record.questions[0],ids=new Set(questionImageIds(question));
+                    const ids=new Set(record.questions.flatMap(questionImageIds));
                     if([...ids].some(id=>snapshot.media.filter(item=>item.id===id).length!==1))throw createCxError('CX-PAR-004',{module:'media',operation:'prepare-media'});
                     await retry(()=>prepareQuestionMedia(snapshot.media.filter(item=>ids.has(item.id)),report,check,snapshot.doc || document,
                         {signal:abort.signal,prepared,contentCache,imageNodes,concurrency:1}),'preparing-images');
@@ -183,9 +198,8 @@
                 },
                 onSuccess:record=>{
                     check();
-                    const answer=record.result.answers[0];
-                    resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
-                    if(progress)for(const id of questionImageIds(record.questions[0])) {
+                    for(const answer of record.result.answers)resultsByQuestion.set(answer.id,{...answer,answer:[...answer.answer]});
+                    if(progress)for(const id of new Set(record.questions.flatMap(questionImageIds))) {
                         const digest=prepared.get(id)?.digest;
                         if(/^[a-f0-9]{64}$/.test(digest || '')) {
                             progress.imageDigests.set(id,digest);
@@ -198,7 +212,7 @@
                     const question=record.questions[0],model=resolveQuestionModel(settings.model,question);record.model=model;
                     const config={...settings,model,signal:abort.signal};
                     record.phase='solve';record.restoredUsage=null;
-                    assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,[question],record.evidence,prepared));
+                    assertConfiguredRequestSize(config,buildConfiguredAnswerPayload(config,record.questions,record.evidence,prepared));
                     if(settings.search && !record.evidence[question.id]) {
                         const previous=searchTail;let release;
                         searchTail=new Promise(resolve=>{release=resolve;});
@@ -206,18 +220,20 @@
                             await previous;await waitAnalysisGate(gate,abort.signal,check);
                             report(`正在检索第 ${question.number} 题…`,'searching');
                             const found=await getWebEvidence([question],settings.key,model,message=>{check();report(message,'searching');},prepared,abort.signal);
-                            check();record.evidence={[question.id]:found[question.id]};
+                            check();record.evidence=Object.fromEntries(record.questions.map(q=>[q.id,found[question.id]]));
                         } finally {release();}
                     }
                     await waitAnalysisGate(gate,abort.signal,check);
                     report(`正在分析第 ${question.number} 题…`,'generating');
                     record.requestAttempts=(record.requestAttempts || 0)+1;
-                    const result=await askConfiguredModel(config,[question],record.evidence,prepared,abort.signal);
+                    const result=await askConfiguredModel(config,record.questions,record.evidence,prepared,abort.signal);
                     check();
-                    if(result.answers.length!==1 || result.answers[0].id!==question.id)throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
-                    if(!result.answers[0].answer.length) {
+                    if(result.answers.length!==record.questions.length||new Set(result.answers.map(a=>a.id)).size!==record.questions.length
+                        ||record.questions.some(q=>!result.answers.some(a=>a.id===q.id)))throw createCxError('CX-RES-006',{module:'analysis',operation:'answers'});
+                    const missing=result.answers.find(answer=>!answer.answer.length);
+                    if(missing) {
                         const error=createCxError('CX-RES-003',{module:'analysis',operation:'answers'});
-                        error.analysisReason=result.answers[0].reason || error.message;throw error;
+                        error.analysisReason=(record.questions.length>1?'多空题答案未完整返回：':'')+(missing.reason||error.message);throw error;
                     }
                     return result;
                 }
@@ -269,7 +285,7 @@
             task.settings=Object.freeze({...settings});task.configuration=analysisConfiguration(settings);task.configurationChanged=false;
             task.autoPrefill=false;
             task.snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(task.snapshot.doc || document):[];
-            for(const record of task.batches)if(record.status!=='success' && (!questionIds || questionIds.has(record.questions[0].id)))record.evidence={};
+            for(const record of task.batches)if(record.status!=='success' && analysisRecordSelected(record,questionIds))record.evidence={};
         }
         task.abortController=new AbortController();
         await executeAnalysisTask(task,{questionIds});
@@ -295,7 +311,7 @@
                 {progress:task,onBatchComplete:()=>renderAnalysisProgress(task),retryTransient:true,questionIds});
             checkSnapshot(task.snapshot);task.status=result.analysisComplete?'complete':'failed';renderAnalysisProgress(task,true);
             if(!result.analysisComplete) {
-                ctl.report(`已完成 ${result.analyzedCount}/${task.requestSnapshot.questions.length} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
+                ctl.report(`已完成 ${result.analyzedCount}/${result.analysisProgress.total} 题，${result.analysisFailures.length} 道未完成，可重试未完成题目`,'done');return;
             }
             if(!result.analyzedCount){if(!result.manualCount && !result.uncertainCount)throw new Error('模型未返回有效答案，请核对题目与模型结果');ctl.report(`本次未生成有效答案；${result.manualCount} 道需人工处理，${result.uncertainCount} 道需人工确认。`+(result.skippedQuestions.some(q=>q.answerPolicy?.category==='images')?'所选模型不支持图片或图片材料未能读取，请核对。':''),'done');return;}
             if(task.restoredReadOnly){ctl.report('已保留恢复结果','done');return;}
@@ -321,7 +337,7 @@
             renderAnalysisProgress(task);
             if(error.prefillSummary)ctl.output({...ctl.result,prefill:error.prefillSummary});
             const completed=task.batches.filter(item=>item.status==='success').reduce((n,item)=>n+item.questions.length,0);
-            const prefill=error.prefillSummary?`；已确认填写 ${error.prefillSummary.filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
+            const prefill=error.prefillSummary?`；已确认填写 ${(error.prefillSummary.questionCounts||error.prefillSummary).filled} 道，停止时正在处理的题目请核对，已写入内容保留`:'';
             ctl.report(`${task.status==='stopped'?'已停止分析':task.status==='stale'?'题目或图片已变化，请重新分析':'操作中止：'+assistantErrorMessage(error,{module:'analysis',operation:'solve',taskId:task.diagnosticTaskId})}；保留 ${completed} 道已分析结果${prefill}`,
                 task.status==='stopped'?'stopped':'error');
         } finally {

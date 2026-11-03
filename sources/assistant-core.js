@@ -5,7 +5,7 @@
 // @icon         __ASSISTANT_ICON__
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.33.3
+// @version      1.33.4
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -65,7 +65,7 @@
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.33.3';
+    const ASSISTANT_VERSION = '1.33.4';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -114,7 +114,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.33.3', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.33.4', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -299,6 +299,7 @@
             ...(answerFeedback.length ? ['answerFeedback 中的先前答案组合已被平台明确判错，请结合题干、材料和反馈重新推理，不能把错误答案当作正确示例；整组判错不代表每个子题都错，没有逐题反馈时应重新核对各题。'] : []),
             '格式：{"answers":[{"id":"原题ID","answer":["选项key或文字答案"],"reason":"中文解析；计算与推导题给出完整的必要解题步骤"}]}。',
             'matching 按第一组题项顺序返回第二组字母数组，每行一个，数量必须准确，按选项规则允许重复；single / judge 只返回一个选项 key；multiple 返回所有正确 key；blank / essay 返回一条文字。',
+            ...(questions.some(q=>q.ueditorBlankGroup)?['具有相同 parentQuestionId 且带 blankSlotNumber 的条目属于同一道多空题。请整体推理，再为每个条目原样保留 id，仅返回该空的一条答案；全部空位都必须返回，不将多个空合并到一个答案，也不更改空号。']:[]),
             '分析材料完整的选择判断、填空、文字问答、数学物理计算推导、公式计算和 SQL/编程题。是否能自动填写由程序独立判断，不因富文本编辑器或不可写控件省略答案。',
             '直接给出解答；题目涉及手写、拍照、上传附件、录音录像、抄写、绘图、思维导图或标注时，提供可用的文字、公式、代码、图示说明或完成步骤。答案最终的使用和提交形式由用户处理，无需先判断作答适用性或返回 answerPolicy。',
             '选择题的选项可以只有图片；按 options[].imageIds 与 imageManifest.sources.optionKey 读取对应选项，返回原选项 key，不按图片发送顺序重新编号。',

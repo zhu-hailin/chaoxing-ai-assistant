@@ -73,6 +73,13 @@
         }));
         return JSON.stringify({questions, materials:graph.materials, media:graph.media, relations:graph.relations});
     }
+    function questionUEditorNodes(ueditor) {
+        if(!ueditor?.valid)return [];
+        if(ueditor.multiple)return ueditor.slots.flatMap(slot=>[slot.row,...questionUEditorNodes(slot.ueditor)]);
+        const activation=ueditor.activation;
+        return [ueditor.input,ueditor.form,ueditor.container,ueditor.iframe,ueditor.body,ueditor.nativeBlank?.row,
+            ...(activation?[activation.entry,activation.shell,activation.holder,activation.row]:[])];
+    }
     function questionBindingNodes(binding) {
         return [...new Set([binding.node, binding.stem, ...(binding.inputs || []),
             ...[...(binding.optionTargets || new Map()).values()], ...[...(binding.imageNodes || new Map()).values()],
@@ -80,7 +87,7 @@
             binding.mooc2?.savedInput,...(binding.mooc2?.records || []).flatMap(record=>[record.marker,record.content]),
             binding.chapterRows?.savedInput,...(binding.chapterRows?.records || []).flatMap(record=>[record.label,record.content,record.clear,record.marker]),
             ...(binding.choiceInputs || []),binding.choiceForm,
-            ...(binding.ueditor?.valid?[binding.ueditor.input,binding.ueditor.form,binding.ueditor.container,binding.ueditor.iframe,binding.ueditor.body]:[])].filter(Boolean))];
+            ...questionUEditorNodes(binding.ueditor)].filter(Boolean))];
     }
     function createQuestionSnapshot(graph, runtime = {}) {
         if (graph?.schemaVersion !== 3) throw questionContextError('CX-PAR-008', '题目快照结构不匹配');

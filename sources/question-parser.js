@@ -266,7 +266,84 @@
             &&before.savedInput===after.savedInput&&before.records.length===after.records.length
             &&before.records.every((record,index)=>['key','value','marker','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
     }
-    function readQuestionUEditor(node,id) {
+    function readQuestionUEditorBlanks(node,id,candidates) {
+        const invalid=reason=>({valid:false,diagnostics:[`UEditor：${reason}`]});
+        // Only the native blank rows and explicit visible blank numbers establish slot order.
+        // Editor IDs and UE registry order are never used to infer the blank number.
+        const owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
+        const rows=[...node.querySelectorAll('.blankItemDiv')].filter(row=>owner(row)===node);
+        const inputs=textInputs(node);
+        if(!/^\d+$/.test(String(id))||!node.matches('.singleQuesId')||node.id!==`question${id}`||node.getAttribute('data')!==String(id)
+            ||node.ownerDocument.querySelectorAll(`[id="question${id}"]`).length!==1
+            ||node.ownerDocument.querySelectorAll(`.singleQuesId[data="${id}"]`).length!==1)
+            return invalid('多空题的原生题目身份无法唯一对应');
+        if(rows.length!==candidates.length||inputs.length!==candidates.length
+            ||inputs.some(input=>!candidates.includes(input))||node.querySelectorAll('iframe').length!==candidates.length
+            ||node.querySelectorAll('.edui-editor').length!==candidates.length)
+            return invalid('多空题的空位、答案字段或编辑器数量不一致');
+        const slots=[],numbers=new Set();
+        for(const [index,row] of rows.entries()) {
+            const fields=[...row.querySelectorAll('textarea')],input=fields[0];
+            const labelText=element=>{
+                if(element.nodeType===3)return element.textContent;
+                if(element.nodeType!==1||element.matches('.blankItemInp,.edui-editor,textarea,iframe,script,style')||!questionNodeActive(element))return '';
+                return [...element.childNodes].map(labelText).join('');
+            };
+            const label=clean(labelText(row)).replace(/\s/g,'');
+            const match=/^第([1-9]\d*)空[:：]?$/.exec(label);
+            if(!questionNodeActive(row)||rows.some(other=>other!==row&&(row.contains(other)||other.contains(row)))
+                ||fields.length!==1||!candidates.includes(input)||input.closest('.blankItemDiv')!==row
+                ||!input.id.startsWith('answerEditor')||input.name!==input.id
+                ||!match||!Number.isSafeInteger(Number(match[1]))||numbers.has(Number(match[1])))
+                return invalid(`第${index+1}空的原生编号或答案字段无法唯一对应`);
+            const number=Number(match[1]);numbers.add(number);
+            const ueditor=readQuestionUEditor(node,id,input);
+            if(!ueditor?.valid)return invalid(`第${number}空：${ueditor?.diagnostics?.map(reason=>reason.replace(/^UEditor：/,'')).join('；')||'编辑器关联无法确认'}`);
+            slots.push({id:input.id,number,domIndex:index,text:`第${number}空（本题共${rows.length}空，仅返回此空答案）`,
+                label,row,control:input,ueditor});
+        }
+        slots.sort((a,b)=>a.number-b.number);
+        if(slots.some((slot,index)=>slot.number!==index+1))return invalid('原生空号不连续，无法确定答案顺序');
+        return {valid:true,multiple:true,diagnostics:[],slots};
+    }
+    function questionUEditorForInput(ueditor,input) {
+        if(!ueditor?.valid)return null;
+        return ueditor.multiple?ueditor.slots.find(slot=>slot.control===input)?.ueditor||null:ueditor.input===input?ueditor:null;
+    }
+    function readQuestionUEditorActivation(node,input,container,iframe,diagnostics=[]) {
+        // A native entry is bound by its field and exact local container, never by question number.
+        const reject=reason=>{diagnostics.push(reason);return null;};
+        const row=input.closest('.blankItemDiv'),shell=input.closest('.textDIV'),holder=shell?.parentElement;
+        if(!row)return reject('未找到原生空位容器');
+        if(!holder?.matches('.blankItemInp')||holder.closest('.blankItemDiv')!==row)
+            return reject('编辑区域不在同一原生答题框内');
+        if(!node.contains(row)||!shell.contains(container)||!shell.contains(iframe))
+            return reject('答案字段与编辑器不在同一作答区域');
+        if(holder.querySelectorAll(':scope > .textDIV').length!==1)return reject('原生编辑区域不唯一');
+        const entries=[...holder.querySelectorAll(':scope > .InpDIV')],entry=entries[0];
+        if(entries.length!==1)return reject(`原生展开入口数量为${entries.length}，无法唯一关联`);
+        const suffix=/^answerEditor(\d+)$/.exec(input.id)?.[1];
+        if(!suffix||entry.id!==`inpDiv${suffix}`)return reject('原生入口 ID 与答案字段不一致');
+        if(entry.ownerDocument.querySelectorAll(`[id="${entry.id}"]`).length!==1)return reject('原生展开入口 ID 重复');
+        if(typeof entry.click!=='function')return reject('原生展开动作不可用');
+        if(entry.hasAttribute('disabled')||entry.getAttribute('aria-disabled')==='true')return reject('原生展开入口已禁用');
+        if(!questionNodeActive(holder))return reject('答题框容器不可操作');
+        // Only the confirmed textDIV display:none state may defer activation.
+        for(let element=iframe;element;element=element.parentElement) {
+            const style=element.ownerDocument.defaultView.getComputedStyle(element);
+            if(element.matches('[hidden],[inert],[aria-hidden="true"]'))return reject('编辑器祖先带有隐藏或禁用标记');
+            if(['hidden','collapse'].includes(style.visibility))return reject('编辑器祖先的 visibility 不可见');
+            if(style.display==='none'&&element!==shell)return reject('原生编辑区域以外仍有隐藏祖先');
+        }
+        if(!courseElementVisible(iframe)&&(!questionNodeActive(entry)||!courseElementVisible(entry)))
+            return reject('原生展开入口当前不可见或不可操作');
+        return {entry,shell,holder,row,click:entry.click};
+    }
+    function sameQuestionUEditorActivation(before,after) {
+        if(!before||!after)return !before&&!after;
+        return ['entry','shell','holder','row','click'].every(key=>before[key]===after[key]);
+    }
+    function readQuestionUEditor(node,id,slotInput=null,allowBlankSlots=false) {
         // 只读取已存在的实例；不调用 UE.getEditor，不按 uid 或题号顺序猜测实例。
         try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
         catch{return null;}
@@ -289,8 +366,15 @@
                 &&(hasStructure||instances.some(editor=>editor.key===input.id)));
             if(!candidates.length)return null;
             detected=true;
-            if(candidates.length!==1)return invalid('答案字段与编辑器无法唯一对应');
-            const input=candidates[0],form=input.form,mode=/^answerEditor\d+$/.test(input.id)?'answerEditor':/^answer\d+$/.test(input.id)?'answer':null;
+            if(!slotInput&&allowBlankSlots&&node.querySelector('.blankItemDiv')) {
+                const layout=readQuestionUEditorBlanks(node,id,candidates);
+                if(layout.valid)return layout.slots.length===1?{...layout.slots[0].ueditor,nativeBlank:layout.slots[0]}:layout;
+                // Preserve the prior single-editor path for layouts without a reliable native label.
+                if(candidates.length!==1)return layout;
+            }
+            if(!slotInput&&candidates.length!==1)return allowBlankSlots?readQuestionUEditorBlanks(node,id,candidates):invalid('答案字段与编辑器无法唯一对应');
+            if(slotInput&&!candidates.includes(slotInput))return invalid('空位答案字段已变化');
+            const input=slotInput||candidates[0],form=input.form,mode=/^answerEditor\d+$/.test(input.id)?'answerEditor':/^answer\d+$/.test(input.id)?'answer':null;
             if(!mode)return invalid('答案字段命名格式不受支持');
             if(!/^\d+$/.test(String(id)))return invalid('题目缺少可靠的原生数字 ID');
             if(!node.isConnected||!input.isConnected||owner(input)!==node)return invalid('答案字段不属于当前题目或页面已替换');
@@ -311,7 +395,8 @@
             if(!registry||typeof registry!=='object')return invalid('未找到已存在的编辑器实例');
             const matches=instances.filter(editor=>editor.key===input.id);
             if(matches.length!==1)return invalid(matches.length?'编辑器与题目无法唯一对应':'未找到与答案字段对应的编辑器实例');
-            const editor=matches[0],frames=[...node.querySelectorAll('iframe')];
+            const frameRoot=slotInput?input.closest('.blankItemDiv'):node;
+            const editor=matches[0],frames=[...(frameRoot?.querySelectorAll('iframe')||[])];
             if(![1,true].includes(editor.isReady))return invalid('编辑器实例未就绪');
             if('textarea' in editor&&!same(editor.textarea,input))return invalid('编辑器与原生 textarea 关联不一致');
             if(!same(editor.form,form))return invalid('编辑器与答案字段的表单归属不一致');
@@ -323,17 +408,27 @@
             if(container.closest('form')!==form)return invalid('编辑器容器与答案字段的表单归属不一致');
             if(!same(container,editor.container)||!same(inner,editor.document)||!same(body,editor.body)
                 ||!same(inner?.defaultView?.frameElement,iframe)||!body?.isConnected)return invalid('编辑器文档、正文或 iframe 关联已失效');
-            if(body.contentEditable!=='true'||editor.options?.readonly===true||!courseElementVisible(iframe)
-                ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true')return invalid('编辑器不可见、已禁用或只读');
+            if(body.contentEditable!=='true'||editor.options?.readonly===true
+                ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true')return invalid('编辑器已禁用或只读');
+            // Bind the same native blank entry for both single- and multi-slot questions.
+            // Keep the descriptor even while expanded so native collapse does not lose its identity.
+            const activationDiagnostics=[];
+            const activation=readQuestionUEditorActivation(node,input,container,iframe,activationDiagnostics);
+            if(!courseElementVisible(iframe)&&!activation)return invalid(`编辑器不可见：${activationDiagnostics[0]||'原生展开入口尚未就绪'}`);
             if(instances.filter(other=>other===editor).length!==1||instances.some(other=>other!==editor
                 &&(other.key===input.id||same(other.iframe,iframe)||same(other.container,container)||same(other.body,body)||same(other.document,inner))))return invalid('编辑器实例或文档被重复注册或跨题共享');
             return {valid:true,diagnostics:[],id:String(id),mode,nativeQuestionId:mode==='answer'?node.getAttribute('data'):null,registry,editor,input,form,iframe,document:inner,body,container,
-                key:input.id,name:input.name,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
+                key:input.id,name:input.name,activation,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
         }catch{return detected?invalid('编辑器实例或文档关联无法安全读取'):null;}
     }
     function sameQuestionUEditor(before,after) {
         if(!before||!after)return !before&&!after;
         if(!before.valid||!after.valid)return before.valid===after.valid;
+        if(before.multiple||after.multiple)return before.multiple===after.multiple&&before.slots.length===after.slots.length
+            &&before.slots.every((slot,index)=>{const live=after.slots[index];return ['id','number','domIndex','label','row','control'].every(key=>slot[key]===live[key])&&sameQuestionUEditor(slot.ueditor,live.ueditor);});
+        if(Boolean(before.nativeBlank)!==Boolean(after.nativeBlank))return false;
+        if(before.nativeBlank&&['id','number','domIndex','label','row','control'].some(key=>before.nativeBlank[key]!==after.nativeBlank[key]))return false;
+        if(!sameQuestionUEditorActivation(before.activation,after.activation))return false;
         return ['id','mode','nativeQuestionId','registry','editor','input','form','iframe','document','body','container','key','name','setContent','getContent','sync']
             .every(key=>before[key]===after[key]);
     }
@@ -447,7 +542,7 @@
         const radios = native.filter(input => input.type === 'radio');
         const radioGroupIsolated = !radios.length || radios.every(input => input.name && input.name === radios[0].name && [...node.ownerDocument.getElementsByName(input.name)].filter(other => other.type === 'radio' && other.form === input.form).every(other => node.contains(other)));
         const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
-        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id);
+        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id,null,canonicalType({typeLabel,question})==='blank');
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const shared = readQuestionSharedMaterials(node, group, groupId, local.graphHints || {});
         const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials,matching);
@@ -468,7 +563,7 @@
         const chapterEvidence=writer==='chapter-choice'&&adapter!=='video-quiz'?JSON.stringify([...optionTargets].map(([key,row])=>
             [key,row.getAttribute('onclick'),[...row.querySelectorAll('input[type="radio"],input[type="checkbox"]')].map(input=>[input.type,input.name,input.value,input.id])])):null;
         return { id, number:index + 1, adapter, groupId, question, instructions, typeLabel, options, controls, media, sharedMedia, sharedMaterialUnreadable:shared.unreadable, unboundOptionImages, binding: { node, stem, group, inputs, optionTargets, imageNodes, writer, mooc2, matching, chapterRows, chapterEvidence,ueditor,sharedMaterials:shared.materials,
-            choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:local.graphHints || {} } };
+            choiceInputs:chapterEvidence===null?[]:native,choiceForm:chapterEvidence===null?null:node.closest('form'),adapterHints:ueditor?.valid&&(ueditor.multiple||ueditor.nativeBlank)?{...(local.graphHints||{}),slots:ueditor.multiple?ueditor.slots:[ueditor.nativeBlank]}:local.graphHints || {} } };
     }
     registerPageAdapter({
         id:'chaoxing-mooc2-work',
@@ -550,7 +645,9 @@
         const nativeCompatible = type === 'multiple' ? raw.controls.checkboxes === raw.options.length : raw.controls.radios === raw.options.length;
         let prefill = choice ? raw.options.length > 0 && uniqueOptions && (!native || (nativeCompatible && (type === 'multiple' || raw.controls.radioGroupIsolated))) : ['blank','essay'].includes(type) && raw.controls.textInputs === 1 && raw.controls.editableTextInputs === 1 && raw.controls.richText === 0;
         if(['blank','essay'].includes(type)&&raw.binding.ueditor)prefill=raw.binding.ueditor.valid
-            &&raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input;
+            &&(raw.binding.ueditor.multiple?type==='blank'&&raw.binding.inputs.length===raw.binding.ueditor.slots.length
+                &&raw.binding.inputs.every(input=>questionUEditorForInput(raw.binding.ueditor,input))
+                :raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input);
         if(type==='matching'){prefill=raw.binding.matching?.valid===true;if(!prefill)diagnostics.push('连线题行号、控件、Chosen 或原生保存字段未可靠对应，暂不预填');}
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
@@ -565,11 +662,11 @@
         const submittedReview = textAnswer && raw.controls.editableTextInputs === 0 && !raw.controls.richText && isSubmittedHomeworkView(raw.binding.node);
         if (submittedReview) diagnostics.push('答案已提交，当前页面仅供查看，暂不预填');
         else {
-            if (textAnswer && raw.controls.textInputs !== 1) diagnostics.push('多个或缺失文本框，暂不自动预填');
+            if (textAnswer && raw.controls.textInputs !== 1 && !(prefill&&raw.binding.ueditor?.multiple)) diagnostics.push('多个或缺失文本框，暂不自动预填');
             if (textAnswer && raw.controls.editableTextInputs === 0) diagnostics.push('文本控件不可编辑');
         }
         if(raw.binding.ueditor&&!prefill)diagnostics.push(...raw.binding.ueditor.diagnostics);
-        if(raw.binding.ueditor?.valid&&(raw.binding.inputs.length!==1||raw.binding.inputs[0]!==raw.binding.ueditor.input))
+        if(raw.binding.ueditor?.valid&&!raw.binding.ueditor.multiple&&(raw.binding.inputs.length!==1||raw.binding.inputs[0]!==raw.binding.ueditor.input))
             diagnostics.push('UEditor：题目内文本答案控件无法唯一对应');
         if (type === 'unknown') { diagnostics.push('未识别题型，保留原始题目供核对'); prefill = false; }
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
@@ -762,7 +859,7 @@
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         if(binding.matching)for(const row of binding.matching.rows)add(row.select,'select',binding.canPrefill,{matchingRow:row.index});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
-            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&binding.ueditor?.valid&&binding.ueditor.input===input));
+            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&questionUEditorForInput(binding.ueditor,input)));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
             if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
             if (target.tagName === 'CANVAS' && [...(binding.imageNodes || new Map()).values()].includes(target)) continue;
@@ -825,7 +922,9 @@
             for (const unit of matched.responseUnits) {
                 if (!composite || unit.id === original.id) continue;
                 const nodes = unit.controlIds.map(id => parsedControls.runtime.get(id)).filter(Boolean);
-                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:'none', type:unit.type,
+                const slot=binding.ueditor?.multiple?binding.ueditor.slots.find(item=>nodes.length===1&&item.control===nodes[0]):null;
+                bindings.set(unit.id, {...binding, inputs:nodes, optionTargets:new Map(), writer:slot?'ueditor':'none', type:unit.type,
+                    ...(slot?{ueditor:slot.ueditor,ueditorSlot:slot.number,ueditorSlotCount:binding.ueditor.slots.length}:{}),
                     canPrefill:unit.relationStatus === 'confirmed'});
             }
             const confirmed = matched.responseUnits.filter(unit => unit.relationStatus === 'confirmed').length;
@@ -861,6 +960,8 @@
                         controls:textUnit ? {...parent.controls, textInputs:count, editableTextInputs:confirmed ? count : 0, richText:parent.controls.richText || 0} : parent.controls,
                         diagnostics:parent.diagnostics.filter(value => value !== '多个或缺失文本框，暂不自动预填'),
                         capabilities:{analyze:parent.capabilities.analyze, prefill:confirmed}, responseUnitId:unit.id};
+                    const slotBinding=graph.bindings.get(unit.id);
+                    if(slotBinding?.ueditorSlot)Object.assign(question,{ueditorBlankGroup:parent.id,blankSlotNumber:slotBinding.ueditorSlot,blankSlotCount:slotBinding.ueditorSlotCount});
                     question.answerPolicy = questionLocalAnswerPolicy(question);
                 } else question = {...parent, capabilities:{...parent.capabilities, prefill:parent.capabilities.prefill && confirmed}};
                 questions.push(question); bindings.set(unit.id, graph.bindings.get(unit.id) || graph.bindings.get(parent.id));

@@ -66,11 +66,32 @@
             if(!entries.length)return null;
             const restricted=entries.find(a=>a.answerPolicy?.status==='manual')||entries.find(a=>a.answerPolicy?.status==='uncertain');
             return {id:q.id,number:q.number,type:q.type,
-                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${i+1}. ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
+                answer:entries.some(a=>a.answer.length)?[ids.flatMap((id,i)=>byId.get(id)?.answer.length?[`${working.requestUnits.bindings.get(id)?.ueditorSlot?`第${working.requestUnits.bindings.get(id).ueditorSlot}空`:`${i+1}.`} ${byId.get(id).answer.join('；')}`]:[]).join('\n')]:[],
                 reason:ids.flatMap((id,i)=>byId.get(id)?.reason?[`${i+1}. ${byId.get(id).reason}`]:[]).join('\n\n') || restricted?.answerPolicy?.reason || '按作答区域分别分析',
                 ...((restricted || entries[0])?.answerPolicy?{answerPolicy:(restricted || entries[0]).answerPolicy}:{}),responseUnitIds:ids};
         }).filter(Boolean);
-        return {...result,questionAnswers,responseUnitCount:working.questions.length};
+        const projected={...result,questionAnswers,responseUnitCount:working.questions.length};
+        if(working.questions.some(question=>question.ueditorBlankGroup)&&result.analysisProgress) {
+            const parents=working.sourceQuestions||snapshot.questions;
+            const skippedIds=new Set((result.skippedQuestions||[]).map(item=>item.id));
+            projected.evidence={...result.evidence};
+            for(const parent of parents)if(working.graph.bindings.get(parent.id)?.ueditor?.multiple) {
+                const ids=working.requestUnits.unitsByQuestion.get(parent.id)||[];
+                const sources=[...(result.evidence?.[parent.id]||[]),...ids.flatMap(id=>result.evidence?.[id]||[])];
+                if(sources.length)projected.evidence[parent.id]=[...new Map(sources.map(source=>[JSON.stringify(source),source])).values()];
+            }
+            const states=parents.map(parent=>{
+                const ids=working.requestUnits.unitsByQuestion.get(parent.id)||[parent.id];
+                if(ids.every(id=>byId.get(id)?.answer?.length))return 'success';
+                const units=ids.map(id=>result.analysisStates?.[id]?.status||(skippedIds.has(id)?'skipped':'pending'));
+                return ['running','preparing','retry-wait','pending','ready','failed','cancelled','skipped'].find(status=>units.includes(status))||'pending';
+            });
+            const count=status=>states.filter(value=>value===status).length;
+            projected.analyzedCount=count('success');
+            projected.analysisProgress={...result.analysisProgress,total:parents.length,completed:count('success'),running:count('running'),
+                waiting:count('pending')+count('ready')+count('preparing'),retryWaiting:count('retry-wait'),failed:count('failed'),cancelled:count('cancelled'),skipped:count('skipped')};
+        }
+        return projected;
     }
     function assistantErrorMessage(error,context={}) {
         const batchIndex=error?.batchIndex,batchCount=error?.batchCount;
@@ -96,7 +117,8 @@
         return prefill(snapshot.questions, answers, () => checkSnapshot(snapshot), snapshot.doc || document, {...options,snapshot:snapshot.rootSnapshot || snapshot,parseContext:snapshot.parseContext});
     }
     function summaryText(s) {
-        const counts=[[s.filled,'已填'],[s.already,'已有答案'],[s.skipped,'跳过'],[s.unverified,'待检查']]
+        const displayed=s.questionCounts||s;
+        const counts=[[displayed.filled,'已填'],[displayed.already,'已有答案'],[displayed.skipped,'跳过'],[displayed.unverified,'待检查']]
             .filter(([count])=>count>0).map(([count,label])=>`${label} ${count} 题`);
         return (counts.join('，') || '未填写答案')+(s.requiresManualSave?'，请手动保存或提交':'')
             +(s.details.length?'\n'+s.details.slice(0,5).join('\n'):'');

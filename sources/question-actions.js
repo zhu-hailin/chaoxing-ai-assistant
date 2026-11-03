@@ -7,6 +7,9 @@
     function questionActionDisabled(node) {
         return !node || node.disabled || node.readOnly || node.hasAttribute('disabled') || node.matches('.disabled,.x-item-disabled') || node.getAttribute('aria-disabled')==='true';
     }
+    function questionActionLabel(question) {
+        return `第${question?.number||'?'}题${question?.blankSlotNumber?`第${question.blankSlotNumber}空`:''}`;
+    }
     function questionUEText(value) {
         return String(value??'').replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/[\u200b\ufeff]/g,'')
             .replace(/[\t\f\v ]+/g,' ').replace(/ *\n */g,'\n').trim();
@@ -201,16 +204,25 @@
         const supplied=new Map(),summary={filled:0,already:0,skipped:0,unverified:0,details:[],perUnit:[],perQuestion:[]};
         const plan={snapshotId:fence.snapshotId || fence.lifecycle?.snapshotId,actions:[]},units=[];
         const failUnit=(question,entry,reason)=>{
-            summary.skipped++;summary.details.push(`第${question?.number || entry?.number || '?'}题：${reason}`);
-            summary.perUnit.push({responseUnitId:String(entry?.id || ''),questionId:projection.parentByUnit.get(entry?.id) || entry?.id,status:'skipped',reason});
+            summary.skipped++;summary.details.push(`${questionActionLabel(question||entry)}：${reason}`);
+            summary.perUnit.push({responseUnitId:String(entry?.id || ''),questionId:projection.parentByUnit.get(entry?.id) || entry?.id,status:'skipped',
+                reason:question?.blankSlotNumber?`第${question.blankSlotNumber}空：${reason}`:reason});
         };
         for(const entry of answers || []) {
             if(!entry || supplied.has(entry.id))throw questionActionError('CX-RES-006','答案编号重复或缺失');
             supplied.set(entry.id,entry);
         }
-        for(const entry of supplied.values()) {
+        const incompleteBlankGroups=new Set();
+        for(const parent of graph.questions)if(graph.bindings.get(parent.id)?.ueditor?.multiple) {
+            if(parent.responseUnits.some(unit=>{const answer=supplied.get(unit.id)?.answer;return !Array.isArray(answer)||answer.length!==1||typeof answer[0]!=='string'||!answer[0].trim();}))
+                incompleteBlankGroups.add(parent.id);
+        }
+        const responseOrder=new Map(projection.questions.map((question,index)=>[question.id,index]));
+        const orderedEntries=[...supplied.values()].sort((a,b)=>(responseOrder.get(a.id)??Infinity)-(responseOrder.get(b.id)??Infinity));
+        for(const entry of orderedEntries) {
             const current=liveQuestions.get(entry.id),question=questions.get(entry.id) || current,binding=projection.bindings.get(entry.id);
             if(!question || !current || !binding?.node){failUnit(question,entry,'无有效答案或题目不存在');continue;}
+            if(incompleteBlankGroups.has(projection.parentByUnit.get(entry.id))){failUnit(question,entry,'多空题答案未完整对应全部空位，整题未填写');continue;}
             const policy=questionPrefillPolicy(current,entry);
             if(policy.status!=='auto'){failUnit(question,entry,`${policy.reason || '需人工处理'}，跳过`);continue;}
             if(!Array.isArray(entry.answer) || !entry.answer.length){failUnit(question,entry,`${entry.reason || '无有效答案，需人工核对'}`);continue;}
@@ -259,6 +271,7 @@
                         if(!questionUEVerified(unit)){failUnit(question,entry,'已有富文本作答，未覆盖');continue;}
                     }else {
                         unit.html=questionUEAnswerHTML(unit.value,doc);
+                        if(binding.ueditor.activation)unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'activate-richtext',expectedState:'native-blank-entry'});
                         unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill-richtext',value:unit.value,expectedState:'empty'});
                     }
                     units.push(unit);plan.actions.push(...unit.actions);continue;
@@ -323,7 +336,7 @@
             }
             if(unit.chapterRows&&!sameChapterRowChoiceBindings(unit.chapterRows,questionActionChapterRows(binding,unit.question,live.parseContext)))
                 throw questionActionError('CX-CTL-006','旧版无 input 选项关联已变化');
-            if(binding.writer==='ueditor'&&!sameQuestionUEditor(binding.ueditor,readQuestionUEditor(binding.node,unit.question.parentQuestionId||unit.question.id)))
+            if(binding.writer==='ueditor'&&!sameQuestionUEditor(binding.ueditor,readQuestionUEditor(binding.node,unit.question.parentQuestionId||unit.question.id,binding.ueditorSlot?binding.ueditor.input:null,Boolean(binding.ueditor.nativeBlank))))
                 throw questionActionError('CX-CTL-006','UEditor 实例或 DOM 关联已变化');
             if(state && !questionActionSameState(questionActionState(binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs),unit.state))throw questionActionError('CX-EXE-004','用户已修改作答内容，已停止自动填写');
             if(binding.mooc2 && (questionActionDisabled(binding.mooc2.savedInput) || binding.mooc2.records.some(record=>questionActionDisabled(record.marker))))
@@ -331,18 +344,31 @@
             if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
         };
         const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
-        const result=(unit,status)=>{
-            summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status});if(unit===activeUnit)activeRecorded=true;
+        const result=(unit,status,reason='')=>{
+            summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status,
+                ...(reason?{reason:unit.question.blankSlotNumber?`第${unit.question.blankSlotNumber}空：${reason}`:reason}
+                    :status==='unverified'&&unit.question.blankSlotNumber?{reason:`第${unit.question.blankSlotNumber}空写入状态待核对`}:{})});if(unit===activeUnit)activeRecorded=true;
             if(unit.binding.writer==='ueditor'&&['filled','already'].includes(status)) {
                 summary.requiresManualSave=true;
             }
         };
         const finishSummary=()=>{
+            const multiParents=live.graph.questions.filter(parent=>live.graph.bindings.get(parent.id)?.ueditor?.multiple);
+            for(const parent of multiParents) {
+                if(!summary.perUnit.some(item=>item.questionId===parent.id))continue;
+                for(const expected of parent.responseUnits)if(!summary.perUnit.some(item=>item.responseUnitId===expected.id)) {
+                    const slot=live.projection.bindings.get(expected.id)?.ueditorSlot;
+                    summary.skipped++;summary.perUnit.push({responseUnitId:expected.id,questionId:parent.id,status:'skipped',reason:`第${slot||'?'}空未执行填写，请人工核对`});
+                }
+            }
             summary.perQuestion=[...new Set(summary.perUnit.map(item=>item.questionId))].map(id=>{
                 const items=summary.perUnit.filter(item=>item.questionId===id),statuses=items.map(item=>item.status);
-                return {questionId:id,status:statuses.includes('skipped')?'skipped':statuses.includes('unverified')?'unverified':statuses.every(value=>value==='already')?'already':'filled',
+                return {questionId:id,status:multiParents.some(parent=>parent.id===id)&&statuses.includes('unverified')?'unverified':statuses.includes('skipped')?'skipped':statuses.includes('unverified')?'unverified':statuses.every(value=>value==='already')?'already':'filled',
                     reason:items.filter(item=>item.reason).map(item=>item.reason).join('；')};
             });
+            // Execution callers compare the existing counters with response-unit counts.
+            // Only presentation uses questionCounts, so a three-slot parent displays as one question.
+            if(multiParents.length)summary.questionCounts=Object.fromEntries(['filled','already','skipped','unverified'].map(status=>[status,summary.perQuestion.filter(item=>item.status===status).length]));
             return summary;
         };
         for(const unit of live.units)for(const type of ['input','change','click'])unit.binding.node.addEventListener(type,onEdit,true);
@@ -382,8 +408,22 @@
                 }
                 if(unit.binding.writer==='ueditor') {
                     if(unit.actions.length) {
+                        if(!courseElementVisible(unit.binding.ueditor.iframe)) {
+                            const activation=unit.binding.ueditor.activation;
+                            if(activation) {
+                                write(()=>{validateUnit(unit);activation.click.call(activation.entry);});
+                                await waitFor(()=>{validateUnit(unit);return courseElementVisible(unit.binding.ueditor.iframe);},1000);
+                                validateUnit(unit);
+                            }
+                            if(!courseElementVisible(unit.binding.ueditor.iframe)) {
+                                const reason='原生答题框未展开，未写入，已停止后续填写';
+                                result(unit,'skipped',reason);summary.details.push(`${questionActionLabel(unit.question)}：${reason}`);break;
+                            }
+                        }
                         write(()=>{
-                            validateUnit(unit);activeWrites++;
+                            validateUnit(unit);
+                            if(!courseElementVisible(unit.binding.ueditor.iframe))throw questionActionError('CX-CTL-004','原生编辑器已收起，未继续写入');
+                            activeWrites++;
                             unit.binding.ueditor.editor.setContent(unit.html,false);
                             validateUnit(unit,false);
                             unit.binding.ueditor.editor.sync();
@@ -392,7 +432,7 @@
                     await waitFor(()=>{validateUnit(unit,false);return questionUEVerified(unit);},1000);
                     validateUnit(unit,false);
                     if(questionUEVerified(unit))result(unit,unit.actions.length?'filled':'already');
-                    else {result(unit,'unverified');summary.details.push(`第${unit.question.number}题：富文本或 textarea 同步未确认，已停止后续填写，请人工检查`);break;}
+                    else {result(unit,'unverified');summary.details.push(`${questionActionLabel(unit.question)}：富文本或 textarea 同步未确认，已停止后续填写，请人工检查`);break;}
                     continue;
                 }
                 if(!unit.actions.length){
@@ -450,7 +490,7 @@
             }
             return finishSummary();
         } catch(error) {
-            if(activeUnit&&activeWrites&&!activeRecorded){result(activeUnit,'unverified');summary.details.push(`第${activeUnit.question.number}题：已发生部分填写，后续动作已停止，请核对`);}
+            if(activeUnit&&activeWrites&&!activeRecorded){result(activeUnit,'unverified');summary.details.push(`${questionActionLabel(activeUnit.question)}：已发生部分填写，后续动作已停止，请核对`);}
             error.prefillSummary={...finishSummary(),details:[...summary.details]};
             if(typeof recordCxDiagnostic==='function')recordCxDiagnostic(error,{module:'actions',operation:'prefill',taskId:live.snapshot.lifecycle?.taskId});
             throw error;
