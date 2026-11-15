@@ -5,7 +5,7 @@
 // @icon         __ASSISTANT_ICON__
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.33.4
+// @version      1.34
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -65,7 +65,7 @@
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.33.4';
+    const ASSISTANT_VERSION = '1.34';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -80,11 +80,15 @@
     const set = (key, value) => GM_setValue(key, value);
 
     function detectType(title) {
-        if (/连线|匹配题/.test(title)) return 'matching';
-        if (title.includes('单选题')) return 'single';
-        if (title.includes('多选题')) return 'multiple';
-        if (title.includes('判断题')) return 'judge';
-        if (title.includes('填空题')) return 'blank';
+        if (/连线|匹配/.test(title)) return 'matching';
+        if (/多选|多项选择/.test(title)) return 'multiple';
+        if (/单选|单项选择/.test(title)) return 'single';
+        if (/判断|是非/.test(title)) return 'judge';
+        if (/完[型形]填空/.test(title)) return 'single';
+        if (/填空/.test(title)) return 'blank';
+        if (/简答|问答|论述|名词解释/.test(title)) return 'essay';
+        if (/阅读理解/.test(title)) return 'single';
+        if (/排序|排列/.test(title)) return 'sort';
         return 'unknown';
     }
 
@@ -114,7 +118,7 @@
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.33.4', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.34', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -188,6 +192,46 @@
         return fetchConfiguredModels({provider:'deepseek',key});
     }
 
+    const JUDGE_POSITIVE = /^(?:正确|对|是|√|✓|T|true|right|yes)$/i;
+    const JUDGE_NEGATIVE = /^(?:错误|错|否|×|✗|✘|F|false|wrong|no)$/i;
+    function questionOptionKeys(question) {
+        return [...new Set((question.options || []).map(option => option.key).filter(key => key || key === 0).map(key => String(key)))];
+    }
+    function splitChoiceAnswerTokens(values, allowed, unique=true) {
+        const tokens = [];
+        for (const value of values) {
+            const trimmed = String(value).trim();
+            if (!trimmed) continue;
+            if (allowed.has(trimmed)) { tokens.push(trimmed); continue; }
+            const parts = trimmed.split(/[,，、;；|/\s]+/).map(part => part.trim()).filter(Boolean);
+            if (parts.length > 1 && parts.every(part => allowed.has(part))) { tokens.push(...parts); continue; }
+            if (/^[A-Za-z]+$/.test(trimmed)) {
+                const letters = [...trimmed.toUpperCase()];
+                if (!allowed.has(trimmed) && !allowed.has(trimmed.toUpperCase()) && letters.every(letter => allowed.has(letter))) {
+                    tokens.push(...letters); continue;
+                }
+            }
+            return null;
+        }
+        return unique?[...new Set(tokens)]:tokens;
+    }
+    function mapJudgeAnswer(value, options) {
+        const trimmed = clean(value);
+        if (!trimmed) return null;
+        const allowed = new Set(options.map(option => option.key));
+        if (allowed.has(trimmed)) return trimmed;
+        const ignoreCase = options.filter(option => String(option.key).toLowerCase() === trimmed.toLowerCase());
+        if (ignoreCase.length === 1) return ignoreCase[0].key;
+        const polarity = JUDGE_POSITIVE.test(trimmed) ? 'positive' : JUDGE_NEGATIVE.test(trimmed) ? 'negative' : null;
+        if (!polarity) return null;
+        const mapped = options.filter(option => {
+            const text = clean(option.text), key = String(option.key);
+            return polarity === 'positive'
+                ? JUDGE_POSITIVE.test(text) || JUDGE_POSITIVE.test(key) || key === 'true'
+                : JUDGE_NEGATIVE.test(text) || JUDGE_NEGATIVE.test(key) || key === 'false';
+        });
+        return mapped.length === 1 ? mapped[0].key : null;
+    }
     function normalize(raw, questions) {
         const context={...requestContextForResponse(raw),module:'model',operation:'answers'};
         if (!raw || !Array.isArray(raw.answers)) throw createCxError('CX-RES-002',context,{legacyCode:'BAD_RESPONSE'});
@@ -205,14 +249,39 @@
         return questions.map(q => {
             const item = answers.get(q.id);
             let answer = item?.answer;
-            let valid = q.type !== 'unknown' && Array.isArray(answer) && answer.every(x => typeof x === 'string');
+            let valid = Array.isArray(answer) && answer.every(x => typeof x === 'string');
             if (valid) {
-                answer = answer.map(x => x.trim());
-                const allowed = new Set(q.options.map(o => o.key));
-                if (!['blank','essay'].includes(q.type) && answer.some(x => !allowed.has(x))) valid = false;
-                if (['single', 'judge', 'blank', 'essay'].includes(q.type) && (answer.length !== 1 || !answer[0])) valid = false;
-                if(q.type==='matching'&&answer.length!==q.responseUnits?.[0]?.controlIds?.length)valid=false;
-                if (q.type === 'multiple' && (!answer.length || new Set(answer).size !== answer.length)) valid = false;
+                answer = answer.map(x => x.trim()).filter(Boolean);
+                const allowed = new Set(questionOptionKeys(q));
+                if (q.type === 'judge') {
+                    const mapped = answer.length ? mapJudgeAnswer(answer.length === 1 ? answer[0] : answer.join(''), q.options || []) : null;
+                    answer = mapped ? [mapped] : [];
+                    valid = answer.length === 1;
+                } else if (['single','multiple'].includes(q.type)) {
+                    const tokens = splitChoiceAnswerTokens(answer, allowed);
+                    answer = tokens || [];
+                    valid = Boolean(tokens) && answer.length > 0 && answer.every(key => allowed.has(key));
+                    if (q.type === 'single') valid = valid && answer.length === 1;
+                    if (q.type === 'multiple') valid = valid && new Set(answer).size === answer.length;
+                } else if (['blank','essay'].includes(q.type)) {
+                    valid = answer.length === 1 && Boolean(answer[0]);
+                } else if (q.type === 'matching') {
+                    valid = answer.length === (q.responseUnits?.[0]?.controlIds?.length || 0) && answer.every(key => allowed.has(key));
+                } else if (q.type === 'sort') {
+                    if(allowed.size){
+                        const tokens=splitChoiceAnswerTokens(answer,allowed,false);
+                        valid=Boolean(tokens)&&tokens.length===allowed.size&&new Set(tokens).size===allowed.size;
+                        answer=tokens||[];
+                    }else{
+                        valid=answer.length>0;
+                        answer=[answer.join('\n')];
+                    }
+                } else if (q.type === 'unknown') {
+                    const tokens = allowed.size ? splitChoiceAnswerTokens(answer, allowed) : null;
+                    if (tokens?.length) answer = tokens;
+                    else if (allowed.size) valid = false;
+                    if (valid) valid = answer.length > 0;
+                } else if (answer.some(x => allowed.size && !allowed.has(x))) valid = false;
             }
             return {
                 id: q.id,
@@ -299,6 +368,7 @@
             ...(answerFeedback.length ? ['answerFeedback 中的先前答案组合已被平台明确判错，请结合题干、材料和反馈重新推理，不能把错误答案当作正确示例；整组判错不代表每个子题都错，没有逐题反馈时应重新核对各题。'] : []),
             '格式：{"answers":[{"id":"原题ID","answer":["选项key或文字答案"],"reason":"中文解析；计算与推导题给出完整的必要解题步骤"}]}。',
             'matching 按第一组题项顺序返回第二组字母数组，每行一个，数量必须准确，按选项规则允许重复；single / judge 只返回一个选项 key；multiple 返回所有正确 key；blank / essay 返回一条文字。',
+            'sort 按正确顺序返回全部选项 key，不重复、不遗漏；没有选项时返回一条排序文字。',
             ...(questions.some(q=>q.ueditorBlankGroup)?['具有相同 parentQuestionId 且带 blankSlotNumber 的条目属于同一道多空题。请整体推理，再为每个条目原样保留 id，仅返回该空的一条答案；全部空位都必须返回，不将多个空合并到一个答案，也不更改空号。']:[]),
             '分析材料完整的选择判断、填空、文字问答、数学物理计算推导、公式计算和 SQL/编程题。是否能自动填写由程序独立判断，不因富文本编辑器或不可写控件省略答案。',
             '直接给出解答；题目涉及手写、拍照、上传附件、录音录像、抄写、绘图、思维导图或标注时，提供可用的文字、公式、代码、图示说明或完成步骤。答案最终的使用和提交形式由用户处理，无需先判断作答适用性或返回 answerPolicy。',

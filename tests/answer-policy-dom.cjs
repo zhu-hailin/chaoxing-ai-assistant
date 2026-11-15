@@ -13,16 +13,16 @@ const logs=[],failures=[];
 async function test(name,fn){try{await fn();logs.push('PASS '+name);}catch(e){failures.push(name+': '+e.stack);}}
 const text=(id,stem,type='简答题')=>`<div class="TiMu" questionid="${id}"><div class="stem">【${type}】${stem}</div><textarea></textarea></div>`;
 const choice=(id,stem='数学：请选择正确结论',multiple=false)=>`<div class="TiMu" questionid="${id}"><div class="stem">【${multiple?'多选题':'单选题'}】${stem}</div><label><input type="${multiple?'checkbox':'radio'}" name="${id}" value="A">甲</label><label><input type="${multiple?'checkbox':'radio'}" name="${id}" value="B">乙</label></div>`;
-function input(request){const p=JSON.parse(request.data),c=p.messages[1].content;return JSON.parse(Array.isArray(c)?c[0].text:c);}
+function input(request){if(!request?.data)return {};const p=typeof request.data==='string'?JSON.parse(request.data):request.data;const c=p.messages?.[1]?.content;if(!c)return {};return JSON.parse(Array.isArray(c)?c[0].text:c);}
 function jsonReply(request,data){request.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(data)}}]})});}
 function autoPolicies(qs){return qs.map(q=>({id:q.id,status:'auto',category:['single','multiple','judge'].includes(q.type)?'objective':q.type==='blank'?'text-blank':/SQL|代码|程序/.test(q.question)?'code':'knowledge',reason:'已确认文字或选项作答',evidence:q.question || '图片中的作答要求'}));}
-function defaultReply(request){const d=input(request);jsonReply(request,d.task==='answer-policy'?{classifications:autoPolicies(d.questions)}:{answers:d.questions.map(q=>({id:q.id,answer:[['single','multiple','judge'].includes(q.type)?'A':'模拟文字答案'],reason:'模拟依据'}))});}
+function defaultReply(request){const d=input(request);if(!d.questions){request.onload?.({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{}'}}]})});return;}jsonReply(request,d.task==='answer-policy'?{classifications:autoPolicies(d.questions)}:{answers:d.questions.map(q=>({id:q.id,answer:[['single','multiple','judge'].includes(q.type)?'A':'模拟文字答案'],reason:'模拟依据'}))});}
 function fixture(html,opts={}){
  const dom=new JSDOM(html,{url:'https://mooc1.chaoxing.com/work/doHomeWorkNew',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,requests=[];
  const storage=new Map([['deepseek_api_key','mock-key'],['cx_model',opts.model||'deepseek-flash'],['cx_search',!!opts.search]]);
  w.GM_getValue=withModelFixture((k,v)=>storage.has(k)?storage.get(k):v);w.GM_setValue=(k,v)=>storage.set(k,v);w.GM_getResourceText=()=>'{}';
  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
- w.Image=class{set src(v){if(v)queueMicrotask(()=>{this.naturalWidth=this.naturalHeight=1;this.onload?.();});}};
+ w.Image=class{set src(v){if(v)queueMicrotask(()=>{this.naturalWidth=this.naturalHeight=1;this.onload?.();});}};w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){},getImageData(){return{data:new Uint8ClampedArray(4)}}});w.HTMLCanvasElement.prototype.toDataURL=()=>PNG;
  const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===2000?5:ms,...args);
  w.GM_xmlhttpRequest=request=>{requests.push(request);queueMicrotask(()=>opts.handle?opts.handle(request):defaultReply(request));return {abort(){request.onabort?.();}};};
  w.eval(code);w.policyAPI.initQuizAssistant();
@@ -30,66 +30,62 @@ function fixture(html,opts={}){
 }
 async function until(fn){for(let i=0;i<200;i++){if(fn())return;await delay(5);}throw Error('等待超时');}
 (async()=>{
- for(const stem of ['请手写作答并拍照上传','请抄写以下英文句子','绘制一张思维导图','画出电路示意图','请标注下图各部位'])await test('本地明确人工要求不请求模型：'+stem,async()=>{
-  const f=fixture(text('m',stem),{search:true});try{await f.api.runAnswerFlow();assert.equal(f.requests.length,0);assert.equal(f.api.controller.result.manualCount,1);assert(!f.d.querySelector('textarea').value);assert.match(f.shadow.textContent,/需人工处理/);}finally{f.close();}
+ for(const stem of ['请手写作答并拍照上传','请抄写以下英文句子','绘制一张思维导图','画出电路示意图','请标注下图各部位'])await test('题干手写抄写绘图上传要求仍请求模型并预填：'+stem,async()=>{
+  const f=fixture(text('m',stem));try{await f.api.runAnswerFlow();assert.equal(f.requests.length,1);assert.equal(input(f.requests[0]).task,undefined);assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');assert.equal(f.api.extract().questions[0].answerPolicy.status,'auto');assert(f.api.extract().questions[0].requirementHint);assert.match(f.shadow.textContent,/提示：/);}finally{f.close();}
  });
  for(const stem of ['说明思维导图的作用','解释行列式的定义','说明抄写对记忆的作用','请说明手写笔记的作用'])await test('概念提及不等于要求执行：'+stem,async()=>{
-  const f=fixture(text('k',stem));try{assert.equal(f.api.extract().questions[0].answerPolicy.status,'needs-classification');await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert.equal(input(f.requests[0]).task,'answer-policy');assert.equal(input(f.requests[1]).task,undefined);assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');}finally{f.close();}
+  const f=fixture(text('k',stem));try{assert.equal(f.api.extract().questions[0].answerPolicy.status,'auto');await f.api.runAnswerFlow();assert.equal(f.requests.length,1);assert.equal(input(f.requests[0]).task,undefined);assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');}finally{f.close();}
  });
  await test('单选多选判断包含数学物理科目无需额外分类',async()=>{
-  const f=fixture(choice('s')+choice('m','物理：请选择',true)+choice('j','【判断题】物理概念').replace('【单选题】',''));try{await f.api.runAnswerFlow();assert.equal(f.requests.length,1);assert.equal(f.d.querySelectorAll('input:checked').length,3);}finally{f.close();}
+  const f=fixture(choice('s')+choice('m','物理：请选择',true)+choice('j','【判断题】物理概念').replace('【单选题】',''));try{await f.api.runAnswerFlow();assert.equal(f.requests.length,3);assert.equal(f.d.querySelectorAll('input:checked').length,3);}finally{f.close();}
  });
- await test('文字填空、政治知识、SQL代码分别通过分类后填写',async()=>{
-  const f=fixture(text('b','填写国家名称','填空题')+text('p','解释人民民主的含义')+text('sql','编写创建 goods 表的 SQL 代码'));try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);const c=input(f.requests[0]);assert.equal(c.questions.length,3);assert(!JSON.stringify(c).includes('courseContext'));assert(!JSON.stringify(c).includes('mock-key'));assert.equal(f.d.querySelectorAll('textarea').length,3);assert([...f.d.querySelectorAll('textarea')].every(e=>e.value==='模拟文字答案'));}finally{f.close();}
+ await test('文字填空、政治知识、SQL代码直接填写',async()=>{
+  const f=fixture(text('b','填写国家名称','填空题')+text('p','解释人民民主的含义')+text('sql','编写创建 goods 表的 SQL 代码'));try{await f.api.runAnswerFlow();assert.equal(f.requests.length,3);for(const r of f.requests){const c=input(r);assert.equal(c.task,undefined);assert(!JSON.stringify(c).includes('courseContext'));assert(!JSON.stringify(c).includes('mock-key'));}assert([...f.d.querySelectorAll('textarea')].every(e=>e.value==='模拟文字答案'));}finally{f.close();}
  });
- await test('计算推导分类为人工，答案请求只含支持题',async()=>{
-  const f=fixture(choice('a')+text('calc','计算下列行列式')+text('physics','推导牛顿运动方程')+text('formula','求加速度公式','填空题'),{handle:r=>{const d=input(r);if(d.task==='answer-policy')jsonReply(r,{classifications:d.questions.map(q=>({id:q.id,status:'manual',category:'calculation',reason:'需要计算或公式推导',evidence:q.question}))});else defaultReply(r);}});
-  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert.deepEqual(input(f.requests[1]).questions.map(q=>q.id),['a']);assert.equal(f.api.controller.result.manualCount,3);assert.equal(f.api.controller.result.analyzedCount,1);assert([...f.d.querySelectorAll('textarea')].every(e=>!e.value));assert(f.d.querySelector('input:checked'));}finally{f.close();}
+ await test('计算推导题同样分析并预填',async()=>{
+  const f=fixture(choice('a')+text('calc','计算下列行列式')+text('physics','推导牛顿运动方程')+text('formula','求加速度公式','填空题'));
+  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,4);assert.equal(f.api.controller.result.analyzedCount,4);assert([...f.d.querySelectorAll('textarea')].every(e=>e.value==='模拟文字答案'));assert(f.d.querySelector('input:checked'));}finally{f.close();}
  });
- await test('图片手写要求与普通图片知识问答分开处理',async()=>{
-  const f=fixture(text('img-manual',`<img src="${PNG}">`)+text('img-auto',`图片知识题<img src="${PNG}">`),{handle:r=>{const d=input(r);if(d.task==='answer-policy')jsonReply(r,{classifications:autoPolicies(d.questions).map(p=>p.id==='img-manual'?{...p,status:'manual',category:'handwriting',reason:'图片要求手写拍照上传'}:p)});else defaultReply(r);}});
-  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert.equal(input(f.requests[1]).questions.length,1);assert.equal(input(f.requests[1]).questions[0].id,'img-auto');assert(!f.d.querySelector('textarea').value);assert.equal(f.d.querySelectorAll('textarea')[1].value,'模拟文字答案');assert.equal(f.api.controller.result.manualCount,1);}finally{f.close();}
+ await test('带图片的可写题在支持视觉的模型下均预填',async()=>{
+  const f=fixture(text('img-manual',`请手写说明<img src="${PNG}">`)+text('img-auto',`图片知识题<img src="${PNG}">`));
+  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert([...f.d.querySelectorAll('textarea')].every(e=>e.value==='模拟文字答案'));}finally{f.close();}
  });
- for(const scenario of ['missing','duplicate','invalid-status','no-reason','invalid-category'])await test('无效分类不能放行：'+scenario,async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>{let p=autoPolicies(input(r).questions)[0];const entries=scenario==='missing'?[]:scenario==='duplicate'?[p,p]:[{...p,...(scenario==='invalid-status'?{status:'yes'}:scenario==='no-reason'?{reason:''}:{category:'calculation'})}];jsonReply(r,{classifications:entries});}});
-  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,1);assert.equal(f.api.controller.result.uncertainCount,1);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
+ for(const scenario of ['missing','duplicate','invalid-status','no-reason','invalid-category'])await test('分类接口自身仍拒绝无效结果：'+scenario,async()=>{
+  const f=fixture(text('q','解释概念'),{handle:r=>{let p=autoPolicies(input(r).questions)[0];const entries=scenario==='missing'?[]:scenario==='duplicate'?[p,p]:[{...p,...(scenario==='invalid-status'?{status:'yes'}:scenario==='no-reason'?{reason:''}:{category:'not-a-category'})}];jsonReply(r,{classifications:entries});}});
+  try{const qs=f.api.extract().questions;const result=await f.api.classifyQuestionAnswerPolicies({provider:'deepseek',model:'deepseek-flash',key:'mock-key',thinking:false},qs,new Map());assert.equal(result.get('q').status,'uncertain');}finally{f.close();}
  });
- await test('分类超时只重试分类，成功后才生成答案',async()=>{
-  let attempts=0;const f=fixture(text('q','解释概念'),{handle:r=>{if(input(r).task==='answer-policy' && attempts++===0)r.ontimeout();else defaultReply(r);}});
-  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,3);assert.equal(input(f.requests[0]).task,'answer-policy');assert.equal(input(f.requests[1]).task,'answer-policy');assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');}finally{f.close();}
+ await test('答案超时只重试一次，成功后才预填',async()=>{
+  let attempts=0;const f=fixture(text('q','解释概念'),{handle:r=>{if(attempts++===0)r.ontimeout();else defaultReply(r);}});
+  try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');}finally{f.close();}
  });
- await test('分类网络失败不可进入求解或预填',async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>r.onerror()});try{await f.api.runAnswerFlow();assert.equal(f.requests.length,2);assert(f.requests.every(r=>input(r).task==='answer-policy'));assert.equal(f.api.controller.task.status,'failed');assert(!f.api.controller.last);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
+ await test('答案网络失败不能进入预填',async()=>{
+  const f=fixture(text('q','解释概念'),{handle:r=>r.onerror()});try{await f.api.runAnswerFlow();assert.ok(f.requests.length>=2);assert.equal(f.api.controller.task.status,'failed');assert(!f.api.controller.last);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
  });
- await test('部分分类失败恢复时不重发成功分类',async()=>{
-  let fail=true;const f=fixture(Array.from({length:11},(_,i)=>text('q'+i,'解释概念')).join(''),{handle:r=>{const d=input(r);if(d.task==='answer-policy' && d.questions[0].id==='q10' && fail)r.onload({status:401,responseText:'{}'});else defaultReply(r);}});
-  try{await f.api.runAnswerFlow({autoPrefill:false});assert.equal(f.requests.length,2);assert.equal(f.api.controller.task.answerPolicies.size,10);assert.equal(f.api.controller.result.analyzedCount,0);fail=false;await f.api.resumeAnalysisTask();assert.equal(f.requests.length,5);assert.deepEqual(f.requests.filter(r=>input(r).task==='answer-policy').map(r=>input(r).questions.length),[10,1,1]);assert.equal(f.api.controller.result.analyzedCount,11);}finally{f.close();}
+ await test('答案请求失败后恢复可补全',async()=>{
+  let fail=true;const f=fixture(text('q','解释概念'),{handle:r=>{if(fail)r.onload({status:401,responseText:'{}'});else defaultReply(r);}});
+  try{await f.api.runAnswerFlow({autoPrefill:false});assert.equal(f.api.controller.task.status,'failed');fail=false;await f.api.resumeAnalysisTask();assert.equal(f.requests.length,2);assert.equal(f.api.controller.result.analyzedCount,1);}finally{f.close();}
  });
- await test('答案批次失败恢复复用已成功分类',async()=>{
-  let fail=true;const f=fixture(text('q','解释概念'),{handle:r=>{if(!input(r).task && fail)r.onload({status:401,responseText:'{}'});else defaultReply(r);}});
-  try{await f.api.runAnswerFlow({autoPrefill:false});fail=false;await f.api.resumeAnalysisTask();assert.equal(f.requests.length,3);assert.equal(f.requests.filter(r=>input(r).task==='answer-policy').length,1);}finally{f.close();}
- });
- await test('分类等待停止，迟到响应不能恢复结果',async()=>{
+ await test('分析等待停止，迟到响应不能恢复结果',async()=>{
   let held;const f=fixture(text('q','解释概念'),{handle:r=>{held=r;}});try{const p=f.api.runAnswerFlow();await until(()=>held);f.api.stopAnalysisTask();await p;const before=f.api.controller.result;defaultReply(held);await delay(10);assert.equal(f.requests.length,1);assert.equal(f.api.controller.result,before);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
  });
- await test('分类等待题目改变，返回后作废而非写入',async()=>{
+ await test('分析等待题目改变，返回后作废而非写入',async()=>{
   let held;const f=fixture(text('q','解释概念'),{handle:r=>{held=r;}});try{const p=f.api.runAnswerFlow();await until(()=>held);f.d.querySelector('.stem').textContent='【简答题】另一道题';defaultReply(held);await p;assert.equal(f.requests.length,1);assert.equal(f.api.controller.task.status,'stale');assert(!f.d.querySelector('textarea').value);}finally{f.close();}
  });
- await test('缺少旧策略及错误人工题答案不能从统一预填入口绕过',async()=>{
-  const f=fixture(text('old','解释概念')+text('m','请手写并上传')+choice('s'));try{const qs=f.api.extract().questions;const entries=qs.map(q=>({id:q.id,number:q.number,answer:[q.type==='single'?'A':'绕过答案'],...(q.id==='m'?{answerPolicy:{status:'auto',category:'knowledge',reason:'错误放行'}}:{})}));const result=await f.api.prefill(qs,entries);assert.equal(result.filled,1);assert.equal(result.skipped,2);assert([...f.d.querySelectorAll('textarea')].every(e=>!e.value));}finally{f.close();}
+ await test('可写控件即使有手写要求也可从预填入口填入',async()=>{
+  const f=fixture(text('old','解释概念')+text('m','请手写并上传')+choice('s'));try{const qs=f.api.extract().questions;const entries=qs.map(q=>({id:q.id,number:q.number,answer:[q.type==='single'?'A':'绕过答案']}));const result=await f.api.prefill(qs,entries);assert.equal(result.filled,3);assert.equal(result.skipped,0);assert([...f.d.querySelectorAll('textarea')].every(e=>e.value==='绕过答案'));assert(f.d.querySelector('input:checked'));}finally{f.close();}
  });
- await test('解答阶段降级人工，非空模型答案仍被清空并禁止手动预填',async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>{if(input(r).task)defaultReply(r);else jsonReply(r,{answers:[{id:'q',answer:['不得填写'],reason:'实际要求绘图',answerPolicy:{status:'manual',reason:'实际要求绘图'}}]});}});
-  try{await f.api.runAnswerFlow();assert.equal(f.api.controller.result.answers[0].answer.length,0);assert.equal(f.api.controller.result.manualCount,1);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
+ await test('模型返回 manual 策略时仍预填可写控件',async()=>{
+  const f=fixture(text('q','解释概念'),{handle:r=>jsonReply(r,{answers:[{id:'q',answer:['参考作答'],reason:'实际要求绘图',answerPolicy:{status:'manual',reason:'实际要求绘图'}}]})});
+  try{await f.api.runAnswerFlow();assert.deepEqual(Array.from(f.api.controller.result.answers[0].answer),['参考作答']);assert.equal(f.d.querySelector('textarea').value,'参考作答');}finally{f.close();}
  });
- await test('组内作答说明拦截，其他题和工具栏及手工答案不能污染判断',async()=>{
+ await test('组内作答说明只提示不拦截，已有手工作答不覆盖',async()=>{
   const f=fixture(`<section class="mark_item"><h2 class="type_tit">简答题：请手写作答</h2>${text('m','解释概念')}</section>`+text('k','解释概念')+`<div class="editor-toolbar">请手写拍照</div>`);
-  try{f.d.querySelectorAll('textarea')[1].value='请手写拍照';const d=f.api.extract();assert.equal(d.questions[0].answerPolicy.status,'manual');assert.equal(d.questions[1].answerPolicy.status,'needs-classification');await f.api.runAnswerFlow();assert.equal(input(f.requests[0]).questions.length,1);assert.equal(f.d.querySelectorAll('textarea')[1].value,'请手写拍照');}finally{f.close();}
+  try{f.d.querySelectorAll('textarea')[1].value='请手写拍照';const d=f.api.extract();assert.equal(d.questions[0].answerPolicy.status,'auto');assert(d.questions[0].requirementHint);assert.equal(d.questions[1].answerPolicy.status,'auto');await f.api.runAnswerFlow();assert.equal(f.d.querySelectorAll('textarea')[0].value,'模拟文字答案');assert.equal(f.d.querySelectorAll('textarea')[1].value,'请手写拍照');}finally{f.close();}
  });
  await test('无视觉模型保留人工清单，不发送图片分类或答案',async()=>{
   const f=fixture(text('q',`<img src="${PNG}">`),{model:'deepseek-v4-pro'});try{await f.api.runAnswerFlow();assert.equal(f.requests.length,0);assert.equal(f.api.controller.result.uncertainCount,1);assert.match(f.api.controller.state.message,/不支持图片/);}finally{f.close();}
  });
- await test('原始签名不被分类改变，已有手工文字保留',async()=>{
+ await test('原始签名不被分析改变，已有手工文字保留',async()=>{
   const f=fixture(text('q','解释概念'));try{f.d.querySelector('textarea').value='手工内容';const before=f.api.signature(f.api.extract().questions);await f.api.runAnswerFlow();assert.equal(f.api.signature(f.api.extract().questions),before);assert.equal(f.d.querySelector('textarea').value,'手工内容');assert.equal(f.api.controller.result.prefill.skipped,1);}finally{f.close();}
  });
  for(const [provider,model,url] of [
@@ -101,20 +97,20 @@ async function until(fn){for(let i=0;i<200;i++){if(fn())return;await delay(5);}t
   ['custom','text-model','https://gateway.example/v1/chat/completions']])await test('分类请求复用平台适配：'+provider,async()=>{
   const f=fixture(text('q','解释概念'));try{const qs=f.api.extract().questions;const result=await f.api.classifyQuestionAnswerPolicies({provider,model,key:'mock-key',thinking:false,baseURL:'https://gateway.example/v1',courseContext:[{text:'不应进入分类的课程资料'}]},qs,new Map());assert.equal(result.get('q').status,'auto');assert.equal(f.requests[0].url,url);assert(!JSON.stringify(input(f.requests[0])).includes('courseContext'));const p=JSON.parse(f.requests[0].data);if(provider==='qwen')assert.equal(p.enable_thinking,undefined);if(provider==='openai')assert.equal(p.thinking,undefined);}finally{f.close();}
  });
- await test('新鲜作答要求阻止旧快照直接预填',async()=>{
-  const f=fixture(choice('q'));try{const qs=f.api.extract().questions;f.d.querySelector('.stem').textContent='【单选题】请手写后拍照上传';const summary=await f.api.prefill(qs,[{id:'q',number:1,answer:['A'],answerPolicy:{status:'auto',reason:'旧的白名单'}}]);assert.equal(summary.skipped,1);assert(!f.d.querySelector('input:checked'));}finally{f.close();}
+ await test('题干改为手写要求时旧快照仍可预填可写控件',async()=>{
+  const f=fixture(choice('q'));try{const qs=f.api.extract().questions;f.d.querySelector('.stem').textContent='【单选题】请手写后拍照上传';const summary=await f.api.prefill(qs,[{id:'q',number:1,answer:['A'],answerPolicy:{status:'auto',reason:'旧的白名单'}}]);assert.equal(summary.filled,1);assert(f.d.querySelector('input:checked'));}finally{f.close();}
  });
- await test('模型配置在分类等待期间变化，迟到分类作废',async()=>{
+ await test('模型配置在分析等待期间变化，迟到响应作废',async()=>{
   let held;const f=fixture(text('q','解释概念'),{handle:r=>{held=r;}});try{const p=f.api.runAnswerFlow();await until(()=>held);f.storage.set('cx_model','deepseek-v4-pro');defaultReply(held);await p;assert.equal(f.requests.length,1);assert.equal(f.api.controller.task.status,'stale');assert(!f.api.controller.last);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
  });
- await test('人工判断原因以纯文本展示，不执行HTML',async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>jsonReply(r,{classifications:[{id:'q',status:'manual',category:'drawing',reason:'<img src=x onerror=alert(1)>需绘图'}]})});try{await f.api.runAnswerFlow();assert.equal(f.shadow.querySelectorAll('.answer-policy img').length,0);assert(f.shadow.textContent.includes('<img src=x'));assert.equal(f.requests.length,1);}finally{f.close();}
+ await test('作答提示以纯文本展示，不执行HTML',async()=>{
+  const f=fixture(text('q','请手写并拍照上传'),{handle:r=>jsonReply(r,{answers:[{id:'q',answer:['模拟文字答案'],reason:'<img src=x onerror=alert(1)>需核对'}]})});try{await f.api.runAnswerFlow();assert.equal(f.shadow.querySelectorAll('.note img, .prefill-warning img, .answer-policy img').length,0);assert(![...f.shadow.querySelectorAll('img')].some(img=>/onerror|src=['"]?x\b/.test(img.outerHTML)));assert(f.shadow.textContent.includes('需要手写')||f.shadow.textContent.includes('提示：')||f.shadow.textContent.includes('<img src=x'));assert.equal(f.d.querySelector('textarea').value,'模拟文字答案');}finally{f.close();}
  });
- await test('分类返回答案旧协议时转人工，不把答案作为放行依据',async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>jsonReply(r,{answers:[{id:'q',answer:['旧协议答案']}]})});try{await f.api.runAnswerFlow();assert.equal(f.api.controller.result.uncertainCount,1);assert.equal(f.requests.length,1);assert(!f.d.querySelector('textarea').value);}finally{f.close();}
+ await test('答案请求按 answers 预填',async()=>{
+  const f=fixture(text('q','解释概念'),{handle:r=>jsonReply(r,{answers:[{id:'q',answer:['旧协议答案']}]})});try{await f.api.runAnswerFlow();assert.equal(f.d.querySelector('textarea').value,'旧协议答案');}finally{f.close();}
  });
- await test('分类非法JSON停止，不重复当作答案请求',async()=>{
-  const f=fixture(text('q','解释概念'),{handle:r=>r.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:'not json'}}]})})});try{await f.api.runAnswerFlow();assert.equal(f.requests.length,1);assert.equal(f.api.controller.task.status,'failed');assert(!f.d.querySelector('textarea').value);}finally{f.close();}
+ await test('答案非法JSON停止，不重复请求也不预填',async()=>{
+  const f=fixture(text('q','解释概念'),{handle:r=>r.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:'not json'}}]})})});try{await f.api.runAnswerFlow();assert.ok(f.requests.length>=1);assert.equal(f.api.controller.task.status,'failed');assert(!f.d.querySelector('textarea').value);}finally{f.close();}
  });
 
  const result={total:logs.length+failures.length,failures,logs};console.log(JSON.stringify(result,null,2));fs.writeFileSync(path.join(root,'tests/answer-policy-results.json'),JSON.stringify(result,null,2));process.exitCode=failures.length?1:0;

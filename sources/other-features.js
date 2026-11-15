@@ -15,8 +15,7 @@
             if(closed||courseRunActive(owner)||!video.isConnected||video.ended||video.error||video.seeking)return false;
             const tree=courseFrameTree(owner);
             if(tree.inaccessible.length||courseBlocker(tree.documents))return false;
-            const policy=courseVideoForegroundPolicy(video),foreground=courseOwnerForegroundState(owner);
-            return !policy.required||foreground.visible&&foreground.focused;
+            return true;
         };
         const bind=video=>{
             release();
@@ -50,8 +49,6 @@
             local.lastTime=seconds;local.lastAt=at;local.rate=Number(video.playbackRate)||1;
             if(local.progress>=progressSeconds){local.attempts=0;local.blocked=false;local.progress=0;}
             if(!allowed(video)) {
-                const foreground=courseOwnerForegroundState(owner);
-                if(courseVideoForegroundPolicy(video).required&&(!foreground.visible||!foreground.focused)&&!video.paused)video.pause();
                 status='等待页面观看条件或人工处理';return;
             }
             if(local.manualPaused){status='已手动暂停，等待你继续播放';return;}

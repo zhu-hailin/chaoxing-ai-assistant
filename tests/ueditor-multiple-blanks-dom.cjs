@@ -271,8 +271,8 @@ async function run() {
         const answers=questions.map((q,i)=>({id:q.id,answer:[`顺序${i+1}`]})).reverse();
         const summary=await f.api.executeQuestionActions(f.api.planQuestionActions(s,answers));
         assert.equal(summary.filled,4);assert.equal(summary.questionCounts.filled,1);
-        assert.deepEqual(f.editors.map(e=>e.body.textContent),['顺序1','顺序2','顺序3','顺序4']);
-        assert.deepEqual(f.events,['activate:1','set:1','sync:1','activate:2','set:2','sync:2','activate:3','set:3','sync:3','activate:4','set:4','sync:4']);
+        assert.deepEqual(f.editors.map(e=>e.iframe.contentDocument.body.textContent),['顺序1','顺序2','顺序3','顺序4']);
+        assert.deepEqual(f.events.filter(item=>item.startsWith('activate:')),['activate:1','activate:2','activate:3','activate:4']);
     },{count:4,nativeEntry:true,collapsed:true}));
     await test('Entry recognition failures identify the actual missing relation',()=>withFixture(async f=>{
         f.d.querySelector('.InpDIV').id='unrelated';

@@ -194,22 +194,24 @@
                 if(body.textContent!==text)body.textContent=text;
             }
         }
-        const help=s.getElementById('course-speed-help'),tip=s.getElementById('course-speed-tooltip');
-        let shown=false;
-        const hide=()=>{if(shown)tip.hidePopover();shown=false;tip.hidden=true;};
-        const show=()=>{
-            if(typeof tip.showPopover!=='function'){help.title=tip.textContent;return;}
-            if(shown)return;
-            const panel=s.getElementById('panel').getBoundingClientRect();tip.style.maxWidth=`${Math.max(80,panel.width-16)}px`;
-            tip.hidden=false;tip.showPopover();shown=true;
-            const box=tip.getBoundingClientRect(),button=help.getBoundingClientRect();
-            tip.style.left=`${Math.max(panel.left+8,Math.min(button.left,panel.right-box.width-8))}px`;
-            tip.style.top=`${Math.max(panel.top+8,Math.min(button.bottom+7,panel.bottom-box.height-8))}px`;
-        };
-        help.addEventListener('pointerenter',show);help.addEventListener('pointerleave',hide);help.addEventListener('focus',show);help.addEventListener('blur',hide);
-        help.onclick=event=>{event.preventDefault();show();};
-        s.addEventListener('scroll',hide,true);s.addEventListener('keydown',event=>{if(event.key==='Escape')hide();});
-        s.addEventListener('click',event=>{if(event.target.closest('#close,#minimize,[data-panel-view],[data-chapter-view]'))hide();});
-        doc.defaultView.addEventListener('resize',hide);doc.defaultView.addEventListener('pagehide',hide,{once:true});
+        for(const [helpId,tipId] of [['course-speed-help','course-speed-tooltip'],['course-unlock-help','course-unlock-tooltip']]) {
+            const help=s.getElementById(helpId),tip=s.getElementById(tipId);
+            let shown=false;
+            const hide=()=>{if(shown)tip.hidePopover();shown=false;tip.hidden=true;};
+            const show=()=>{
+                if(typeof tip.showPopover!=='function'){help.title=tip.textContent;return;}
+                if(shown)return;
+                const panel=s.getElementById('panel').getBoundingClientRect();tip.style.maxWidth=`${Math.max(80,panel.width-16)}px`;
+                tip.hidden=false;tip.showPopover();shown=true;
+                const box=tip.getBoundingClientRect(),button=help.getBoundingClientRect();
+                tip.style.left=`${Math.max(panel.left+8,Math.min(button.left,panel.right-box.width-8))}px`;
+                tip.style.top=`${Math.max(panel.top+8,Math.min(button.bottom+7,panel.bottom-box.height-8))}px`;
+            };
+            help.addEventListener('pointerenter',show);help.addEventListener('pointerleave',hide);help.addEventListener('focus',show);help.addEventListener('blur',hide);
+            help.onclick=event=>{event.preventDefault();show();};
+            s.addEventListener('scroll',hide,true);s.addEventListener('keydown',event=>{if(event.key==='Escape')hide();});
+            s.addEventListener('click',event=>{if(event.target.closest('#close,#minimize,[data-panel-view],[data-chapter-view]'))hide();});
+            doc.defaultView.addEventListener('resize',hide);doc.defaultView.addEventListener('pagehide',hide,{once:true});
+        }
         view.renderCoursePreview=render;render();return render;
     }

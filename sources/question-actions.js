@@ -34,7 +34,7 @@
     }
     function questionUEState(binding) {
         const ue=binding.ueditor,doc=binding.node.ownerDocument;
-        const content=questionUEContent(ue.editor.getContent(),doc),body=questionUEContent(ue.body.innerHTML,doc),saved=questionUEContent(ue.input.value,doc);
+        const content=questionUEContent((typeof ue.getContent==='function'?ue.getContent:ue.editor.getContent).call(ue.editor||ue),doc),body=questionUEContent(ue.body.innerHTML,doc),saved=questionUEContent(ue.input.value,doc);
         return {keys:[],values:[content.text,body.text,saved.text],saved:'',
             unknownSaved:content.nonText||body.nonText||saved.nonText||content.text!==body.text||content.text!==saved.text,
             editorEmpty:content.empty&&body.empty,savedEmpty:saved.empty};
@@ -154,7 +154,7 @@
         for (const record of adapter.records) {
             const checked=record.marker.classList.contains(adapter.selectedClass),aria=record.row.getAttribute('aria-checked');
             const pressed=record.row.getAttribute('aria-pressed');
-            if(record.marker.classList.contains(adapter.type==='multiple'?'check_answer':'check_answer_dx'))consistent=false;
+            if(record.marker.classList.contains(adapter.selectedClass==='check_answer_dx'?'check_answer':'check_answer_dx'))consistent=false;
             // Unticked options may omit ARIA attributes; any present value must agree with CSS.
             if ((aria!==null && !['true','false'].includes(aria)) || (checked ? aria!=='true' : aria==='true')) consistent=false;
             if (pressed!==null && pressed!==(checked?'true':'false')) consistent=false;
@@ -247,7 +247,7 @@
                 assertQuestionSnapshot(fence);
                 failUnit(question,entry,'UEditor 内容读取失败，未写入，请人工处理');continue;
             }
-            const text=['blank','essay'].includes(current.type);
+            const text=['blank','essay','sort'].includes(current.type);
             const original=parseContext.scope==='video-quiz'?options.ownedAnswers?.get(entry.id):null;
             const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
             const owns=Boolean(previous && previous.node===binding.node);
@@ -261,11 +261,12 @@
                 units.push(unit);plan.actions.push(...unit.actions);continue;
             }
             if(text) {
+                const textAnswers=current.type==='sort'?[entry.answer.join('、')]:entry.answer;
                 const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
-                if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
+                if(inputs.length!==1 || textAnswers.length!==1 || typeof textAnswers[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
                 const input=inputs[0];
                 if(binding.writer==='ueditor') {
-                    unit.input=input;unit.value=entry.answer[0];unit.expectedText=questionUEText(unit.value);
+                    unit.input=input;unit.value=textAnswers[0];unit.expectedText=questionUEText(unit.value);
                     if(input!==binding.ueditor.input||!unit.expectedText||state.unknownSaved){failUnit(question,entry,'富文本内容或 textarea 同步状态不明确，未写入');continue;}
                     if(!state.editorEmpty||!state.savedEmpty) {
                         if(!questionUEVerified(unit)){failUnit(question,entry,'已有富文本作答，未覆盖');continue;}
@@ -278,8 +279,8 @@
                 }
                 if(owns && (previous.input!==input || String(input.value)!==previous.value))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
                 if(clean(input.value) && !owns){failUnit(question,entry,'已有填写内容，跳过');continue;}
-                unit.input=input;unit.value=entry.answer[0];
-                unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill',value:entry.answer[0],expectedState:'unchanged'});
+                unit.input=input;unit.value=textAnswers[0];
+                unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill',value:unit.value,expectedState:'unchanged'});
             } else {
                 const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
                 if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
@@ -424,9 +425,10 @@
                             validateUnit(unit);
                             if(!courseElementVisible(unit.binding.ueditor.iframe))throw questionActionError('CX-CTL-004','原生编辑器已收起，未继续写入');
                             activeWrites++;
-                            unit.binding.ueditor.editor.setContent(unit.html,false);
+                            const ue=unit.binding.ueditor;
+                            (typeof ue.setContent==='function'?ue.setContent:ue.editor.setContent).call(ue.editor||ue,unit.html,false);
                             validateUnit(unit,false);
-                            unit.binding.ueditor.editor.sync();
+                            (typeof ue.sync==='function'?ue.sync:ue.editor.sync).call(ue.editor||ue);
                         });
                     }
                     await waitFor(()=>{validateUnit(unit,false);return questionUEVerified(unit);},1000);

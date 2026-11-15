@@ -67,6 +67,22 @@ async function main() {
             return {summary,html:f.body.innerHTML,saved:f.input.value,events:f.events};
         },{mode});
     });
+    await test('A rebuilt writable iframe repairs references only on write and preserves native editor methods',async()=>{
+        const f=fixture();
+        try{
+            const native={body:f.editor.body,document:f.editor.document,setContent:f.editor.setContent,getContent:f.editor.getContent,sync:f.editor.sync};
+            f.editor.document={body:null};
+            const snapshot=f.snapshot();
+            assert.equal(f.editor.document.body,null,'Parsing does not mutate the native editor');
+            const summary=await f.api.executeQuestionActions(f.api.planQuestionActions(snapshot,[answer('123','重建后的答案')]));
+            assert.equal(summary.filled,1);assert(f.body.textContent.includes('重建后的答案'));assert.equal(f.input.value,f.body.innerHTML);
+            for(const key of ['body','setContent','getContent','sync'])assert.equal(f.editor[key],native[key]);
+            assert.equal(f.editor.document,f.iframe.contentDocument);
+        }finally{f.close();}
+        const readonly=fixture();try{readonly.editor.document={body:null};readonly.body.contentEditable='false';
+            const graph=readonly.api.parseQuestionGraph(readonly.d);assert.equal(graph.bindings.get('123').ueditor.valid,false);assert.equal(readonly.body.contentEditable,'false');
+        }finally{readonly.close();}
+    });
     const mutations={
         registry:f=>{f.w.UE.instants={existing:f.editor};},
         instance:f=>{f.w.UE.instants.existing={...f.editor};},

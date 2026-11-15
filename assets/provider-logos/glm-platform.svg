@@ -1,0 +1,18 @@
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="56" height="56" rx="8.4" fill="url(#wechatAuthLogoGradient)" />
+  <path
+    d="M28.9634 11.6244L26.2647 15.4608C25.8404 16.0583 25.147 16.4243 24.3952 16.4243H9.68713V11.6052C9.68713 11.6244 28.9634 11.6244 28.9634 11.6244Z"
+    fill="white"
+  />
+  <path d="M47.2758 11.6247L24.144 44.3955H8.72327L31.8551 11.6247H47.2758Z" fill="white" />
+  <path
+    d="M27.0358 44.395L29.7537 40.5394C30.1779 39.9418 30.8714 39.5759 31.6232 39.5759H46.312V44.395H27.0358Z"
+    fill="white"
+  />
+  <defs>
+    <linearGradient id="wechatAuthLogoGradient" x1="28" y1="56" x2="28" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#000000" />
+      <stop offset="1" stop-color="#151718" />
+    </linearGradient>
+  </defs>
+</svg>

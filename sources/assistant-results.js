@@ -1,5 +1,5 @@
     // 题目结果、原图、逐题操作与复制展示。
-    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', matching:'连线题', unknown: '未识别题型' };
+    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', matching:'连线题', sort:'排序题', unknown: '未识别题型' };
 
     function readableAnswer(question, entry) {
         if (!entry?.answer?.length) return '暂无有效答案，请人工核对';
@@ -31,7 +31,8 @@
         const written=data.prefill?.perQuestion?.find(item=>item.questionId===question.id);
         const prefillPolicy=questionPrefillPolicy(question,entry || {answerPolicy:policy});
         const ueditorIssue=question.diagnostics?.find(reason=>reason.startsWith('UEditor：'));
-        const restriction=questionManualPrefillPolicy(question)||(['manual','uncertain'].includes(policy.status)?policy:null);
+        const restriction=['manual','uncertain'].includes(policy.status)?policy:null;
+        const requirementHint=policy?.requirementHint || question.requirementHint || questionRequirementHint?.(question)?.reason || '';
         const ueditorReason=ueditorIssue?[...new Set([restriction?.reason,ueditorIssue].filter(Boolean))].join('；'):'';
         const prefill=written ? ({filled:'已填写',already:'已有相同答案',unverified:'写入状态待核对',skipped:written.reason || prefillPolicy.reason || '已跳过，请手动填写'}[written.status] || '请核对写入状态')
             : !entry?.answer?.length&&!['manual','uncertain'].includes(policy.status) ? ''
@@ -41,7 +42,7 @@
         const prefillWarning=question.capabilities?.prefill===false||['manual','uncertain'].includes(prefillPolicy.status)
             ||['skipped','unverified'].includes(written?.status)
             ? ueditorReason||written?.reason||(written?.status==='unverified'?'写入状态待核对，请手动检查答案':written?.status==='skipped'?'本题已跳过，请手动填写':prefillPolicy.reason)||'当前作答区域暂不支持自动填写，请手动填写' : '';
-        return {analysis,prefill,prefillWarning};
+        return {analysis,prefill,prefillWarning,requirementHint};
     }
     function resultImageCaption(image, question) {
         if (image.location === 'shared' || question?.contextImageIds?.includes(image.id) || image.sourceMaterialId && image.sourceQuestionNumber == null) return '共用材料';
@@ -291,7 +292,8 @@
                 media.details.replaceChildren(fragment);
             }
             const states = questionResultStatuses(data,question,entry);
-            const statusText = states.prefillWarning ? [`不可预填：${states.prefillWarning}`] : [];
+            const statusText = [...(states.prefillWarning ? [`不可预填：${states.prefillWarning}`] : []),
+                ...(states.requirementHint ? [`提示：${states.requirementHint}，已按可写控件处理，请自行核对`] : [])];
             const statusKey = JSON.stringify(statusText);
             if (item.statusKey !== statusKey) { item.statusKey = statusKey; item.statuses.hidden=!statusText.length; item.statuses.replaceChildren(...statusText.map(text => node('p','note prefill-warning',text))); }
             const canRetry = Boolean((question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id])

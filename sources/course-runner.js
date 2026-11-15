@@ -1,7 +1,7 @@
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:30, loadMs:30000, videoLoadMs:60000, completionMs:30000, emptyTailWaitMs:2500,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:250, unlockWaitMs:15000, settleMs:200, frameReadDelayMs:500, maxFrameReadRetries:120, loadMs:30000, videoLoadMs:60000, completionMs:30000, emptyTailWaitMs:2500,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
-        slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
+        slideMs:250, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
     let courseRunner;
     // 仅脚本闭包持有命令入口；页面事件只传递状态，不授予操作权限。
     const assistantConfirm = window.confirm.bind(window);
@@ -26,6 +26,19 @@
     const courseRunnerControllers = new WeakMap();
     function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
     function courseForcePlaybackEnabled() {return get('cx_course_force_playback',true)!==false;}
+    function courseStepSkippedError() {return Object.assign(new Error('用户跳过当前步骤'),{code:'COURSE_STEP_SKIPPED'});}
+    function courseBeginStep(run,task) {
+        const chapter=run.chapter,step={task,skipped:false,abort:new AbortController()};
+        step.wait=new Promise(resolve=>{step.wake=resolve;});
+        const cancel=()=>step.abort.abort();
+        chapter.abort.signal.addEventListener('abort',cancel,{once:true});
+        step.finish=()=>{
+            chapter.abort.signal.removeEventListener('abort',cancel);step.abort.abort();
+            if(run.step===step)run.step=null;
+        };
+        run.step=step;
+        return step;
+    }
     const courseVideoPlaybackRequests=new WeakMap();
     function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs,clock=null) {
         if(signal?.aborted)return Promise.reject(cancelledError());
@@ -202,7 +215,7 @@
         }
         if (!report) return '尚未开始自动学习';
         const pending=coursePendingChapters(report),protection=report.protection;
-        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.userSkipped||task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
         const finished = report.chapters.filter(item => ['done','already'].includes(item.status)).length;
         const completedQuizzes=report.chapters.flatMap(chapter=>chapter.tasks).filter(task=>task.type==='quiz'&&task.status==='already').length;
         const taskFree = report.chapters.filter(item=>item.status==='no-tasks');
@@ -301,6 +314,9 @@
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
             get mode() { return current?.mode||null; },
             get canSkip() { return current ? Boolean(!current.cancelled && !current.waitingUnlock && !current.verification?.pending && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : lastUnlockReport?.scope===scope?false:Boolean(courseSkipResume(owner)); },
+            get canSkipStep() {return Boolean(current&&!current.cancelled&&!current.waitingUnlock&&!current.verification?.pending
+                &&current.chapter&&!current.chapter.skipped&&!current.chapter.submitting&&current.step&&!current.step.skipped
+                &&!current.step.task.submissionStarted&&!current.step.task.videoQuizUnconfirmed);},
             get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
@@ -328,6 +344,17 @@
                 current.releaseVideoProtection?.();
                 current.activeVideo?.pause();
                 current.notify('正在跳过本章节…','course-skipping');
+                return true;
+            },
+            skipStep() {
+                if(!api.canSkipStep)return false;
+                try{current.validate(true);}catch(error){if(error.code!=='COURSE_UNLOCK_RECONNECT')api.stop(error.message,error);return false;}
+                if(!api.canSkipStep)return false;
+                const step=current.step;
+                if(step.skipWait){step.task.skippedWait=true;step.skipWait();current.notify('已跳过等待，继续后续操作…','course-running');return true;}
+                step.skipped=true;step.abort.abort();step.wake();
+                current.releaseVideoProtection?.();current.activeVideo?.pause();
+                current.notify('正在跳过当前步骤…','course-skipping');
                 return true;
             },
             async start({ mode='study',submit = false, skipLearned = true, fromCurrent = false, startChapterId = null, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings(), queueContext = null, queuePacing = null } = {}) {
@@ -677,13 +704,15 @@
                     const guard=()=>{
                         guardRun();
                         if(context!==run.chapter || context.skipped) throw skippedError();
+                        if(run.step?.skipped)throw courseStepSkippedError();
                     };
+                    const stepGuard=step=>()=>{guard();if(step&&run.step!==step)throw courseStepSkippedError();};
                     const emit=(message,phase)=>{guard();emitRun(message,phase);};
                     const wait = async ms => {
                         await verificationReady();guard();
                         const deadline=taskNow()+ms;
                         while(taskNow()<deadline) {
-                            await Promise.race([sleep(Math.min(limits.pollMs,deadline-taskNow())),run.cancelWait,context.wait]);
+                            await Promise.race([sleep(Math.min(limits.pollMs,deadline-taskNow())),run.cancelWait,context.wait,...(run.step?[run.step.wait]:[])]);
                             await verificationReady();guard();
                         }
                     };
@@ -697,12 +726,15 @@
                         }
                     };
                     const race = async promise => {
-                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();})]); await verificationReady();guard(); return value;
+                        const step=run.step;
+                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();}),...(step?[step.wait.then(()=>{throw courseStepSkippedError();})]:[])]);
+                        await verificationReady();stepGuard(step)();return value;
                     };
                     const taskDone = async node => {
                         if (courseTaskComplete(node) === false) await until(() => courseTaskComplete(node) === true,limits.completionMs,'播放/阅读结束，但平台未确认任务完成');
                     };
                     const playVideo = async (video, task) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         let contextCapturedAt=-Infinity;
                         run.activeVideo=video;
                         if ((run.skipLearned||run.retrying) && courseTaskComplete(video) === true) {task.status='already';return;}
@@ -849,7 +881,7 @@
                             commitSample(current,false);
                         };
                         const materialRecord=settings.videoInfoEnabled?chapterContextStore(owner):null;
-                        const videoInfo=createCourseVideoInfo(settings,{signal:context.abort.signal,now,guard:()=>{
+                        const videoInfo=createCourseVideoInfo(settings,{signal,now,guard:()=>{
                             guard();
                             if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频页面已切换');
                         },
@@ -867,7 +899,7 @@
                             if(['pause','seeking','loadstart','emptied'].includes(event.type))suspendSpeed();
                             if(['loadstart','emptied'].includes(event.type))speedGeneration++;
                             const state=snapshot(event.type);observe(state);
-                            if(!courseForcePlaybackEnabled()&&state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                             if(event.type==='playing'&&pauseControl.scriptPaused&&!video.paused){policyPauseExpected=true;video.pause();}
                             if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
@@ -876,7 +908,7 @@
                             task.playbackState=state;
                             if(event.type==='pause'){
                                 task.pauseCount++;task.lastPause=state;
-                                if(!courseForcePlaybackEnabled()&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 if(!policyPauseExpected&&!pauseControl.scriptPaused)pauseControl.pausedAt??=now();
                                 policyPauseExpected=false;
                             }
@@ -895,7 +927,7 @@
                         if(!Array.isArray(task.videoQuizzes))task.videoQuizzes=[];
                         let rewatchGrant=null;
                         const quizHandler=createCourseVideoQuizHandler(video,task.videoQuizzes,{
-                            settings:{...settings,diagnosticTaskId},signal:context.abort.signal,now,confirmMs:limits.videoQuizConfirmMs,
+                            settings:{...settings,diagnosticTaskId},signal,now,confirmMs:limits.videoQuizConfirmMs,
                             guard:()=>{guard();if(!video.isConnected||!courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');},
                             wake:()=>wakeMedia?.(),wait:waitForMedia,playingCount:()=>playingEventCount,
                             status:message=>emit(message,'course-video-quiz'),
@@ -928,7 +960,7 @@
                             const policy=courseVideoForegroundPolicy(video);
                             if(policy.required){task.foregroundState.required=true;task.foregroundState.evidence=policy.evidence;}
                             const state=courseOwnerForegroundState(owner);
-                            if(!task.foregroundState.required || state.visible&&state.focused)return false;
+                            if(courseForcePlaybackEnabled()||!task.foregroundState.required || state.visible&&state.focused)return false;
                             if(foregroundWaitingStartedAt===null){
                                 suspendSpeed();foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
                                 syncVideoWaitBudget();pausePacing();
@@ -965,7 +997,7 @@
                             }
                             try {
                                 while((video.paused||pauseControl.scriptPaused)&&!video.ended){
-                                    if(!pauseControl.scriptPaused&&(courseForcePlaybackEnabled()||pauseControl.resumeRequested))break;
+                                    if(!pauseControl.scriptPaused&&(pauseControl.resumeRequested||courseForcePlaybackEnabled()&&!pauseControl.manualPaused&&!pauseControl.recoveryBlocked))break;
                                     await handleVideoQuiz();guard();await waitForVideoForeground();
                                     if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
                                     if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
@@ -980,7 +1012,6 @@
                             }
                         };
                         const onPlayerInput=event=>{
-                            if(courseForcePlaybackEnabled())return;
                             if(context.skipped||run.cancelled||video.paused||video.ended||!courseVideoPauseInput(event,video))return;
                             pauseControl.manualIntentUntil=now()+limits.videoManualPauseIntentMs;
                         };
@@ -992,6 +1023,7 @@
                             wake:()=>wakeMedia?.(),
                             settingsChanged:()=>{
                                 if(courseForcePlaybackEnabled()&&!pauseControl.scriptPaused){pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;pauseControl.manualIntentUntil=0;}
+                                if(courseForcePlaybackEnabled())finishForegroundWait();
                                 wakeMedia?.();
                             },
                             togglePause:()=>{
@@ -1007,7 +1039,7 @@
                                 if(current!==run||run.cancelled||context!==run.chapter||context.skipped||context.submitting||run.resting
                                     ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.scriptPaused||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
                                     ||manualWaitingStartedAt!==null||foregroundWaitingStartedAt!==null||quizWaitingStartedAt!==null
-                                    ||task.foregroundState.required||courseVideoForegroundPolicy(video).required||courseVideoQuizCandidate(video))return false;
+                                    ||!courseForcePlaybackEnabled()||courseVideoQuizCandidate(video))return false;
                                 guard();return courseFrameTree(owner).documents.includes(video.ownerDocument);
                             },onSuppressed:()=>{task.backgroundState.interceptedMouseouts++;}})||(()=>{});
                         run.releaseVideoProtection=releaseProtection;
@@ -1042,8 +1074,8 @@
                                             if(pendingSeek){await waitForMedia();continue;}
                                         }
                                         // 明确手动暂停交给人工等待；未知中断可有限重试，浏览器拒绝不能绕过。
-                                        if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
-                                        if(!courseForcePlaybackEnabled()&&pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
+                                        if(pauseControl.scriptPaused||pauseControl.manualPaused){await waitForManualPlayback();continue;}
+                                        if(pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
                                         if(playError?.name==='AbortError'&&(task.foregroundState.waitCount>foregroundWaitCount
                                             ||!pauseControl.manualPaused))playError=null;
                                         if(playError)throw playError;
@@ -1067,8 +1099,8 @@
                                             if(retryButton)retryButton.click();
                                             else {
                                                 playRequestPending=true;
-                                                requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
-                                                    if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                                requestCourseVideoPlayback(video,signal,limits.videoLoadMs,taskNow).then(()=>{
+                                                    if(signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
                                                 },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
                                             }
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
@@ -1087,6 +1119,7 @@
                             if(run.videoDelay.enabled&&run.videoDelayUntil!==null){
                                 const deadline=run.videoDelayUntil;
                                 const manualStart=event=>{if(courseVideoPauseInput(event,video))pauseControl.resumeRequested=true;};
+                                step.skipWait=()=>{pauseControl.resumeRequested=true;wakeMedia?.();};
                                 video.ownerDocument.addEventListener('pointerdown',manualStart,true);video.ownerDocument.addEventListener('keydown',manualStart,true);
                                 pausePacing();
                                 try {
@@ -1099,6 +1132,7 @@
                                     }
                                     run.videoDelayUntil=null;save();
                                 } finally {
+                                    step.skipWait=null;
                                     video.ownerDocument.removeEventListener('pointerdown',manualStart,true);video.ownerDocument.removeEventListener('keydown',manualStart,true);resumePacing();
                                 }
                             }
@@ -1114,18 +1148,18 @@
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
                                 await waitForVideoForeground();
                                 await handleVideoQuiz();
-                                if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
+                                if(pauseControl.scriptPaused||pauseControl.manualPaused){await waitForManualPlayback();continue;}
                                 collectVideoInfo();
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if(!courseForcePlaybackEnabled()&&video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){
                                     if(video.paused){pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;}
-                                    if(!courseForcePlaybackEnabled()&&video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
+                                    if(video.paused&&(pauseControl.manualPaused||!courseForcePlaybackEnabled()&&pauseControl.recoveryBlocked))await waitForManualPlayback();
                                     else await waitForMedia();
                                     continue;
                                 }
@@ -1142,10 +1176,10 @@
                                 if(replay&&currentSample.budgetAt>=replayDeadline(currentSample.budgetAt)){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
                                 if(!video.ended&&video.paused){
                                     // 未收到 pause 事件时也回读可信输入意图；不能因后台事件排队而抢播。
-                                    if(!courseForcePlaybackEnabled()&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
+                                    if(pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
                                     pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;
+                                    if(pauseControl.manualPaused){await waitForManualPlayback();continue;}
                                     if(courseForcePlaybackEnabled()){
-                                        pauseControl.manualPaused=false;
                                         if(pauseControl.recoveryBlocked)throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
                                     } else if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
                                     if(videoBudgetNow()-lastMotionAt>=limits.stallMs)throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
@@ -1201,6 +1235,7 @@
                         }
                     };
                     const readDocument = async (reader, task) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         if((run.skipLearned||run.retrying) && courseTaskComplete(reader.node)===true){task.status='already';return;}
                         const materialIdentity=chapterContextIdentity(owner)?.id;
                         const collectDocumentInfo=()=>{
@@ -1225,7 +1260,7 @@
                                 if(now()>=readingDeadline)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
                                 let states,targetsChanged=false;
                                 if(remote) {
-                                    const state=await race(reader.request(op,context.abort.signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
+                                    const state=await race(reader.request(op,signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
                                     ensureCurrent();
                                     if(state.canBottom!==true)throw new Error('阅读器版本未同步，请更新脚本并刷新整个课程页');
                                     states=[state];
@@ -1313,6 +1348,7 @@
                         task.status='done';task.totalPages=reader.total;report.documents++;
                     };
                     const solveQuiz = async (doc, task, chapter) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         const verificationPasses=verification.passes;
                         if (doc.querySelector('.fanyaMarking_left')) throw new Error('这是作业页面，无法在刷课流程自动处理');
                         if (courseQuizComplete(doc) || courseTaskComplete(doc.querySelector('.CeYan,.singleQuesId,.TiMu,[data-quiz-status]')||doc.body)===true) {task.status='already';emit('章节测验已完成，跳过作答…','course-running');return;}
@@ -1325,7 +1361,7 @@
                         emit('正在分析章节测验…','generating');await race(ensureFontDecoded(doc));guard();
                         const body=doc.body;
                         const checkQuiz=()=>{guard();if(!courseFrameTree(owner).documents.includes(doc)||doc.body!==body) throw new Error('测验页面已切换，已停止');};
-                        const snapshot=extractQuestionSnapshot(doc,{}, {taskId:diagnosticTaskId,checkCurrent:checkQuiz,signal:context.abort.signal});
+                        const snapshot=extractQuestionSnapshot(doc,{}, {taskId:diagnosticTaskId,checkCurrent:checkQuiz,signal});
                         snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(owner):[];
                         const data={version:ASSISTANT_VERSION,schemaVersion:3,questions:snapshot.questions,media:snapshot.media,total:snapshot.questions.length};
                         ctl.output(data);
@@ -1340,7 +1376,7 @@
                             throw Object.assign(new Error('测验题型尚未适配，无法自动填写'),{code:'COURSE_MANUAL_ANSWER_REQUIRED'});
                         }
                         let answers;
-                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'),
+                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal},message=>emit(message,'generating'),
                             {retryTransient:true,onProgress:result=>{guard();ctl.output({...data,...result,model:settings.model});}})); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
                         guard();if(verification.passes!==verificationPasses)throw courseVerificationWaitError();checkSnapshot(snapshot);
@@ -1625,9 +1661,11 @@
                             if(item.type==='video')task.number=++videoNumber;
                             if(item.type==='document')task.number=++documentNumber;
                             chapter.tasks.push(task);
-                            while(true) {
-                            await verificationReady();guard();
+                            const step=courseBeginStep(run,task);owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
                             try {
+                            while(true) {
+                            try {
+                            await verificationReady();guard();
                             if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
                             else if(item.type==='video')await playVideo(item.node,task);
                             else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);if(settings.videoInfoEnabled)captureCurrentCourseContext(owner,{reader:item.reader});}
@@ -1653,6 +1691,14 @@
                             }
                             break;
                             } catch(error) {
+                                if(step.skipped||error.code==='COURSE_STEP_SKIPPED') {
+                                    step.finish();guard();
+                                    if(!['done','already'].includes(task.status)){
+                                        task.status='manual-pending';task.userSkipped=true;task.reason='用户跳过当前步骤，未计为完成';
+                                    }else task.skippedWait=true;
+                                    run.videoDelayUntil=null;
+                                    emit('已跳过当前步骤，继续后续操作…','course-running');break;
+                                }
                                 if(error.code!=='COURSE_VERIFICATION_WAIT') {
                                     guard();
                                     // 超时和不可读框架交给章节层；其余任务失败先尝试本章后续任务。
@@ -1671,6 +1717,10 @@
                                 }
                                 if(task.status==='done'||task.status==='already')break;
                             }
+                            }
+                            } finally {
+                                if(step.skipped){run.activeVideo?.pause();run.activeVideo=null;run.releaseVideoProtection?.();run.videoDelayUntil=null;}
+                                step.finish();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
                             if(task.status==='done')courseInvalidateTaskProbe(owner,entry.id);
@@ -1721,7 +1771,7 @@
                     if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         const failedTask=chapter.tasks.find(task=>task.status==='manual-pending'&&task.errorCode);
-                        chapter.status='manual-pending';chapter.reason=failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
+                        chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.userSkipped)?'包含用户跳过的步骤，保留未完成状态':failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':chapter.tasks.some(task=>task.requiresManualSave)
                             ?'富文本答案已预填并同步到表单，等待人工保存或提交':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
                     }

@@ -2,14 +2,16 @@
   {
     "provider": "deepseek",
     "officialPage": "https://www.deepseek.com/",
-    "sourceURL": "https://www.deepseek.com/favicon.ico",
-    "retrievedAt": "2026-10-13",
-    "originalFile": "deepseek.ico",
-    "originalSHA256": "30a4420e6e4dcb17fd7de560c5004346c2bc8cd971d2d5f5ee15326603e51321",
-    "runtimeFile": "deepseek.png",
-    "runtimeSHA256": "64b7848019357d28df08746954cdc8c7ff6830212573279fb91614d16ae09199",
-    "runtimeBytes": 6430,
-    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+    "sourceURL": "https://www.deepseek.com/",
+    "retrievedAt": "2026-11-15",
+    "originalFile": "deepseek-home-header.svg",
+    "originalSHA256": "1a1d76b9af2773338c981b63fa930b1e04acda91cb03bc971e6e85cae3b1099b",
+    "runtimeFile": "deepseek-mark.svg",
+    "runtimeSHA256": "8c646482d57d237c704f924972a862da837910c40a7956f4e49b4e39d6fd2a22",
+    "runtimeBytes": 3813,
+    "processing": "Extracted the original whale mark from the official header; square viewport; fixed #4D6BFE matching the official DeepSeek-LLM logo; white background.",
+    "processedAt": "2026-11-15",
+    "colorReference": "https://github.com/deepseek-ai/DeepSeek-LLM/blob/main/images/logo.svg"
   },
   {
     "provider": "openai",
@@ -18,10 +20,11 @@
     "retrievedAt": "2026-10-13",
     "originalFile": "openai.svg",
     "originalSHA256": "ed615b8fd9703863918daae6106396a42926fd167abc1bcad4aca860ff0f7ba6",
-    "runtimeFile": "openai.svg",
-    "runtimeSHA256": "ed615b8fd9703863918daae6106396a42926fd167abc1bcad4aca860ff0f7ba6",
-    "runtimeBytes": 2466,
-    "processing": "None"
+    "runtimeFile": "openai-light.svg",
+    "runtimeSHA256": "4cf1e9f44840797e4c3bdc59f4e5ea0910552101879b0bd31b7ec845b03dad3a",
+    "runtimeBytes": 2229,
+    "processing": "Pinned the supplied SVG light palette to white background and black glyph; removed automatic dark-mode inversion; tighter square viewport.",
+    "processedAt": "2026-11-15"
   },
   {
     "provider": "qwen",
@@ -37,26 +40,28 @@
   },
   {
     "provider": "kimi",
-    "officialPage": "https://www.kimi.com/",
-    "sourceURL": "https://www.kimi.com/favicon-light.ico",
-    "retrievedAt": "2026-10-13",
-    "originalFile": "kimi.ico",
-    "originalSHA256": "df91c1ecf1d4894cf05845cdce44549ed3ccca3478b97a70972d1bc82ac4f2d1",
-    "runtimeFile": "kimi.png",
-    "runtimeSHA256": "ad0579292b8bcaa2fe29fd9c758111fc26a9c902b3d48a22a1870a73f5416584",
-    "runtimeBytes": 1580,
-    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+    "officialPage": "https://platform.kimi.com/",
+    "sourceURL": "https://platform.kimi.com/",
+    "retrievedAt": "2026-11-15",
+    "originalFile": "kimi-platform-header.svg",
+    "originalSHA256": "7bd99b44b37c107bab984255d1f98325a687362e37b2d30e01d9034bed180cf7",
+    "runtimeFile": "kimi-mark.svg",
+    "runtimeSHA256": "fa3be43975452a22529a440a93ff22663dd087f0b406745fd64045e623a79c73",
+    "runtimeBytes": 654,
+    "processing": "Extracted the original first closed K-mark subpath from the official light header; centered square viewport with white background; original black fill retained.",
+    "processedAt": "2026-11-15"
   },
   {
     "provider": "glm",
-    "officialPage": "https://chatglm.cn/",
-    "sourceURL": "https://chatglm.cn/favicon.ico",
-    "retrievedAt": "2026-10-13",
-    "originalFile": "glm.ico",
-    "originalSHA256": "94e48956654f0b02d7a113628cdea50819579c6bccecec8888928f321c0f997d",
-    "runtimeFile": "glm.png",
-    "runtimeSHA256": "847ba8e5230a2122479a20d1f969a18e26947d1dd15ae5522e005343e58ee421",
-    "runtimeBytes": 2211,
-    "processing": "Pillow lossless PNG encoding of largest original ICO frame; no resizing or drawing. GLM favicon already contains PNG bytes."
+    "officialPage": "https://bigmodel.cn/",
+    "sourceURL": "https://static.bigmodel.cn/wd-paas-front/img/z-pure-logo.b8a0e72f.svg",
+    "retrievedAt": "2026-11-15",
+    "originalFile": "glm-platform.svg",
+    "originalSHA256": "1b9098f886c3033dadbae6c48e1064f58f6c5f303eb1a107ff40cab0d0011b1e",
+    "runtimeFile": "glm-platform.svg",
+    "runtimeSHA256": "1b9098f886c3033dadbae6c48e1064f58f6c5f303eb1a107ff40cab0d0011b1e",
+    "runtimeBytes": 834,
+    "processing": "None. The official BigModel platform Z mark replaces the Qingyan chat-app favicon.",
+    "processedAt": "2026-11-15"
   }
 ]

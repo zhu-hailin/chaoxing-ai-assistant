@@ -1,5 +1,19 @@
-    // Current account presentation only; never persist or expose authentication tokens.
+    // Only public profile fields are cached, separately for each verified UID.
     const ACCOUNT_HIDE_AVATAR_KEY='cx_account_hide_avatar';
+    const ACCOUNT_PROFILE_PREFIX='cx_account_profile:';
+    function normalizedAssistantProfile(value) {
+        const uid=String(value?.uid||'');
+        if(!/^\d{1,20}$/.test(uid))return null;
+        const profile={uid,fid:String(value.fid||''),roleId:String(value.roleId||''),
+            name:clean(value.name).slice(0,80),school:clean(value.school).slice(0,160),role:clean(value.role).slice(0,80),
+            avatar:'https://photo.chaoxing.com/p/'+uid+'_80'};
+        for(const field of ['fid','roleId'])if(!/^\d{1,20}$/.test(profile[field]))profile[field]='';
+        try{
+            const avatar=new URL(value.avatar);
+            if(avatar.origin==='https://photo.chaoxing.com'&&new RegExp('^/p/'+uid+'_(80|160)$').test(avatar.pathname))profile.avatar=avatar.origin+avatar.pathname;
+        }catch{}
+        return profile;
+    }
     function assistantAccountIdentifiers(doc) {
         const fields={},allowed=new Set(['UID','_uid','fid','spaceFid','siteRole','spaceRoleId']);
         try {
@@ -54,7 +68,7 @@
         const hideAvatar=shadow.getElementById('account-hide-avatar');
         const status=shadow.getElementById('account-status'),details=shadow.getElementById('account-details');
         const portraits=[shadow.getElementById('account-nav-image'),shadow.getElementById('account-image')];
-        let pending=null,generation=0,closed=false,currentUID='',currentName='',privacyListener=null;
+        let pending=null,generation=0,closed=false,currentUID='',currentName='',privacyListener=null,profileListener=null,listenedUID='',rendered='';
         const syncAvatarPrivacy=()=>{
             const hidden=get(ACCOUNT_HIDE_AVATAR_KEY,false)===true,name=hidden?'':currentName;
             hideAvatar.checked=hidden;trigger.dataset.privateAvatar=String(hidden);
@@ -64,6 +78,9 @@
             if(privacyListener===null&&typeof GM_addValueChangeListener==='function')privacyListener=GM_addValueChangeListener(ACCOUNT_HIDE_AVATAR_KEY,syncAvatarPrivacy);
         };
         const render=profile=>{
+            const signature=JSON.stringify(profile);
+            if(signature===rendered)return;
+            rendered=signature;
             const name=profile.name||'当前账号';
             currentUID=profile.uid||'';
             currentName=profile.name||'';syncAvatarPrivacy();
@@ -83,20 +100,48 @@
         const localProfile=()=>assistantAccountProfile(doc,assistantAccountIdentifiers(doc),pageURL(doc)?.href);
         const reset=()=>render({uid:'',fid:'',roleId:'',name:'',school:'',role:'',avatar:''});
         for(const image of portraits)image.addEventListener('error',()=>{image.hidden=true;image.nextElementSibling.hidden=false;});
-        const updateLocal=()=>{try{render(localProfile());}catch{reset();}};
-        const load=async({allowRemote=false}={})=>{
+        const cached=uid=>{
+            const profile=uid?normalizedAssistantProfile(get(ACCOUNT_PROFILE_PREFIX+uid,null)):null;
+            return profile?.uid===uid?profile:null;
+        };
+        const save=profile=>{
+            const normalized=normalizedAssistantProfile(profile);
+            if(!normalized?.name)return;
+            if(JSON.stringify(cached(normalized.uid))!==JSON.stringify(normalized))set(ACCOUNT_PROFILE_PREFIX+normalized.uid,normalized);
+        };
+        const listenProfile=uid=>{
+            if(uid===listenedUID)return;
+            if(profileListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(profileListener);
+            profileListener=null;listenedUID=uid;
+            if(uid&&typeof GM_addValueChangeListener==='function')profileListener=GM_addValueChangeListener(ACCOUNT_PROFILE_PREFIX+uid,()=>{
+                const profile=cached(uid);
+                if(!closed&&profile&&assistantAccountIdentifiers(doc).uid===uid)render(profile);
+            });
+        };
+        const updateLocal=()=>{
+            const local=localProfile();
+            listenProfile(local.uid);
+            const saved=cached(local.uid);
+            const profile=local.name?normalizedAssistantProfile(local):saved?{...saved,...(local.fid?{fid:local.fid}:{}),...(local.roleId?{roleId:local.roleId}:{})}:local;
+            if(local.name||saved)save(profile);
+            render(profile);return profile;
+        };
+        const load=async({allowRemote=false,onlyMissing=false}={})=>{
             const current=++generation;pending?.abort();pending=null;status.textContent='';
             try {
-                const local=localProfile();render(local);
-                if(local.name)return;
-                if(!allowRemote){status.textContent='点击头像读取账号资料';return;}
+                const local=updateLocal();
+                if(local.name&&(onlyMissing||pageURL(doc)?.origin==='https://i.chaoxing.com'&&pageURL(doc)?.pathname==='/base'))return;
+                if(!allowRemote){status.textContent=local.name?'':'点击头像读取账号资料';return;}
+                const requestedUID=assistantAccountIdentifiers(doc).uid;
                 status.textContent='正在读取账号资料…';pending=requestAssistantAccountProfile();
                 const source=await pending.promise;
                 if(closed||current!==generation)return;
+                if(assistantAccountIdentifiers(doc).uid!==requestedUID){updateLocal();status.textContent='';return;}
                 const profile=assistantAccountProfile(source.doc,assistantAccountIdentifiers(doc),source.url);
                 if(!profile.name||!profile.uid)throw new Error('请先登录学习通后重试');
-                render(profile);status.textContent='';
-            }catch(error){if(!closed&&current===generation){reset();status.textContent=error.message;}}
+                if(requestedUID&&profile.uid!==requestedUID)throw new Error('当前登录账号已变化，请刷新页面');
+                save(profile);listenProfile(profile.uid);render(normalizedAssistantProfile(profile));status.textContent='';
+            }catch(error){if(!closed&&current===generation){try{updateLocal();}catch{reset();}status.textContent=error.message;}}
             finally{if(current===generation)pending=null;}
         };
         const cancel=()=>{generation++;pending?.abort();pending=null;};
@@ -106,11 +151,36 @@
             set(ACCOUNT_HIDE_AVATAR_KEY,hideAvatar.checked);syncAvatarPrivacy();
         };
         const focus=()=>{
-            if(panelView?.activeView!=='account'){updateLocal();return;}
-            try {const local=localProfile();if(local.name||local.uid&&local.uid!==currentUID){cancel();render(local);status.textContent=local.name?'':'点击头像读取账号资料';}}catch{cancel();reset();}
+            try{
+                const uid=assistantAccountIdentifiers(doc).uid;
+                if(uid!==currentUID){cancel();void load({allowRemote:Boolean(uid),onlyMissing:true});}
+                else updateLocal();
+            }catch{cancel();reset();}
+        };
+        const profileSelector='.user-block,.user,#siteName';
+        const observer=new doc.defaultView.MutationObserver(records=>{
+            if(closed)return;
+            const changed=records.some(record=>{
+                const target=record.target.nodeType===1?record.target:record.target.parentElement;
+                return target?.closest(profileSelector)||[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches(profileSelector)||node.querySelector(profileSelector)));
+            });
+            if(changed)focus();
+        });
+        const observe=()=>{
+            const url=pageURL(doc);
+            if(url?.origin==='https://i.chaoxing.com'&&/^\/base\/?$/.test(url.pathname))
+                observer.observe(doc.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['src']});
         };
         doc.defaultView.addEventListener('focus',focus);
-        doc.defaultView.addEventListener('pagehide',()=>{closed=true;cancel();reset();if(privacyListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(privacyListener);privacyListener=null;});
-        doc.defaultView.addEventListener('pageshow',()=>{closed=false;listenAvatarPrivacy();updateLocal();});
-        syncAvatarPrivacy();listenAvatarPrivacy();updateLocal();
+        doc.defaultView.addEventListener('pagehide',()=>{
+            closed=true;observer.disconnect();cancel();reset();
+            if(typeof GM_removeValueChangeListener==='function'){
+                if(privacyListener!==null)GM_removeValueChangeListener(privacyListener);
+                if(profileListener!==null)GM_removeValueChangeListener(profileListener);
+            }
+            privacyListener=null;profileListener=null;listenedUID='';
+        });
+        doc.defaultView.addEventListener('pageshow',()=>{closed=false;listenAvatarPrivacy();observe();focus();});
+        syncAvatarPrivacy();listenAvatarPrivacy();observe();
+        void load({allowRemote:Boolean(assistantAccountIdentifiers(doc).uid),onlyMissing:true});
     }

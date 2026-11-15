@@ -5,7 +5,7 @@
 // @icon         data:image/png;base64,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
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.33.4
+// @version      1.34
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -2917,7 +2917,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.33.4';
+    const ASSISTANT_VERSION = '1.34';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2932,11 +2932,15 @@ Typr["U"] = {
     const set = (key, value) => GM_setValue(key, value);
 
     function detectType(title) {
-        if (/连线|匹配题/.test(title)) return 'matching';
-        if (title.includes('单选题')) return 'single';
-        if (title.includes('多选题')) return 'multiple';
-        if (title.includes('判断题')) return 'judge';
-        if (title.includes('填空题')) return 'blank';
+        if (/连线|匹配/.test(title)) return 'matching';
+        if (/多选|多项选择/.test(title)) return 'multiple';
+        if (/单选|单项选择/.test(title)) return 'single';
+        if (/判断|是非/.test(title)) return 'judge';
+        if (/完[型形]填空/.test(title)) return 'single';
+        if (/填空/.test(title)) return 'blank';
+        if (/简答|问答|论述|名词解释/.test(title)) return 'essay';
+        if (/阅读理解/.test(title)) return 'single';
+        if (/排序|排列/.test(title)) return 'sort';
         return 'unknown';
     }
 
@@ -2966,7 +2970,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.33.4', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.34', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -3040,6 +3044,46 @@ Typr["U"] = {
         return fetchConfiguredModels({provider:'deepseek',key});
     }
 
+    const JUDGE_POSITIVE = /^(?:正确|对|是|√|✓|T|true|right|yes)$/i;
+    const JUDGE_NEGATIVE = /^(?:错误|错|否|×|✗|✘|F|false|wrong|no)$/i;
+    function questionOptionKeys(question) {
+        return [...new Set((question.options || []).map(option => option.key).filter(key => key || key === 0).map(key => String(key)))];
+    }
+    function splitChoiceAnswerTokens(values, allowed, unique=true) {
+        const tokens = [];
+        for (const value of values) {
+            const trimmed = String(value).trim();
+            if (!trimmed) continue;
+            if (allowed.has(trimmed)) { tokens.push(trimmed); continue; }
+            const parts = trimmed.split(/[,，、;；|/\s]+/).map(part => part.trim()).filter(Boolean);
+            if (parts.length > 1 && parts.every(part => allowed.has(part))) { tokens.push(...parts); continue; }
+            if (/^[A-Za-z]+$/.test(trimmed)) {
+                const letters = [...trimmed.toUpperCase()];
+                if (!allowed.has(trimmed) && !allowed.has(trimmed.toUpperCase()) && letters.every(letter => allowed.has(letter))) {
+                    tokens.push(...letters); continue;
+                }
+            }
+            return null;
+        }
+        return unique?[...new Set(tokens)]:tokens;
+    }
+    function mapJudgeAnswer(value, options) {
+        const trimmed = clean(value);
+        if (!trimmed) return null;
+        const allowed = new Set(options.map(option => option.key));
+        if (allowed.has(trimmed)) return trimmed;
+        const ignoreCase = options.filter(option => String(option.key).toLowerCase() === trimmed.toLowerCase());
+        if (ignoreCase.length === 1) return ignoreCase[0].key;
+        const polarity = JUDGE_POSITIVE.test(trimmed) ? 'positive' : JUDGE_NEGATIVE.test(trimmed) ? 'negative' : null;
+        if (!polarity) return null;
+        const mapped = options.filter(option => {
+            const text = clean(option.text), key = String(option.key);
+            return polarity === 'positive'
+                ? JUDGE_POSITIVE.test(text) || JUDGE_POSITIVE.test(key) || key === 'true'
+                : JUDGE_NEGATIVE.test(text) || JUDGE_NEGATIVE.test(key) || key === 'false';
+        });
+        return mapped.length === 1 ? mapped[0].key : null;
+    }
     function normalize(raw, questions) {
         const context={...requestContextForResponse(raw),module:'model',operation:'answers'};
         if (!raw || !Array.isArray(raw.answers)) throw createCxError('CX-RES-002',context,{legacyCode:'BAD_RESPONSE'});
@@ -3057,14 +3101,39 @@ Typr["U"] = {
         return questions.map(q => {
             const item = answers.get(q.id);
             let answer = item?.answer;
-            let valid = q.type !== 'unknown' && Array.isArray(answer) && answer.every(x => typeof x === 'string');
+            let valid = Array.isArray(answer) && answer.every(x => typeof x === 'string');
             if (valid) {
-                answer = answer.map(x => x.trim());
-                const allowed = new Set(q.options.map(o => o.key));
-                if (!['blank','essay'].includes(q.type) && answer.some(x => !allowed.has(x))) valid = false;
-                if (['single', 'judge', 'blank', 'essay'].includes(q.type) && (answer.length !== 1 || !answer[0])) valid = false;
-                if(q.type==='matching'&&answer.length!==q.responseUnits?.[0]?.controlIds?.length)valid=false;
-                if (q.type === 'multiple' && (!answer.length || new Set(answer).size !== answer.length)) valid = false;
+                answer = answer.map(x => x.trim()).filter(Boolean);
+                const allowed = new Set(questionOptionKeys(q));
+                if (q.type === 'judge') {
+                    const mapped = answer.length ? mapJudgeAnswer(answer.length === 1 ? answer[0] : answer.join(''), q.options || []) : null;
+                    answer = mapped ? [mapped] : [];
+                    valid = answer.length === 1;
+                } else if (['single','multiple'].includes(q.type)) {
+                    const tokens = splitChoiceAnswerTokens(answer, allowed);
+                    answer = tokens || [];
+                    valid = Boolean(tokens) && answer.length > 0 && answer.every(key => allowed.has(key));
+                    if (q.type === 'single') valid = valid && answer.length === 1;
+                    if (q.type === 'multiple') valid = valid && new Set(answer).size === answer.length;
+                } else if (['blank','essay'].includes(q.type)) {
+                    valid = answer.length === 1 && Boolean(answer[0]);
+                } else if (q.type === 'matching') {
+                    valid = answer.length === (q.responseUnits?.[0]?.controlIds?.length || 0) && answer.every(key => allowed.has(key));
+                } else if (q.type === 'sort') {
+                    if(allowed.size){
+                        const tokens=splitChoiceAnswerTokens(answer,allowed,false);
+                        valid=Boolean(tokens)&&tokens.length===allowed.size&&new Set(tokens).size===allowed.size;
+                        answer=tokens||[];
+                    }else{
+                        valid=answer.length>0;
+                        answer=[answer.join('\n')];
+                    }
+                } else if (q.type === 'unknown') {
+                    const tokens = allowed.size ? splitChoiceAnswerTokens(answer, allowed) : null;
+                    if (tokens?.length) answer = tokens;
+                    else if (allowed.size) valid = false;
+                    if (valid) valid = answer.length > 0;
+                } else if (answer.some(x => allowed.size && !allowed.has(x))) valid = false;
             }
             return {
                 id: q.id,
@@ -3151,6 +3220,7 @@ Typr["U"] = {
             ...(answerFeedback.length ? ['answerFeedback 中的先前答案组合已被平台明确判错，请结合题干、材料和反馈重新推理，不能把错误答案当作正确示例；整组判错不代表每个子题都错，没有逐题反馈时应重新核对各题。'] : []),
             '格式：{"answers":[{"id":"原题ID","answer":["选项key或文字答案"],"reason":"中文解析；计算与推导题给出完整的必要解题步骤"}]}。',
             'matching 按第一组题项顺序返回第二组字母数组，每行一个，数量必须准确，按选项规则允许重复；single / judge 只返回一个选项 key；multiple 返回所有正确 key；blank / essay 返回一条文字。',
+            'sort 按正确顺序返回全部选项 key，不重复、不遗漏；没有选项时返回一条排序文字。',
             ...(questions.some(q=>q.ueditorBlankGroup)?['具有相同 parentQuestionId 且带 blankSlotNumber 的条目属于同一道多空题。请整体推理，再为每个条目原样保留 id，仅返回该空的一条答案；全部空位都必须返回，不将多个空合并到一个答案，也不更改空号。']:[]),
             '分析材料完整的选择判断、填空、文字问答、数学物理计算推导、公式计算和 SQL/编程题。是否能自动填写由程序独立判断，不因富文本编辑器或不可写控件省略答案。',
             '直接给出解答；题目涉及手写、拍照、上传附件、录音录像、抄写、绘图、思维导图或标注时，提供可用的文字、公式、代码、图示说明或完成步骤。答案最终的使用和提交形式由用户处理，无需先判断作答适用性或返回 answerPolicy。',
@@ -3295,7 +3365,7 @@ Typr["U"] = {
         if (['auto','manual','uncertain','needs-classification'].includes(context.policyStatus)) result.policyStatus=context.policyStatus;
         if (['confirmed','probable','ambiguous','unsupported','inside','outside','unknown'].includes(context.relationStatus)) result.relationStatus=context.relationStatus;
         const recognitionEnums={adapterId:['chaoxing-chapter','chaoxing-homework','chaoxing-mooc2-work','video-quiz'],
-            questionType:['single','multiple','judge','blank','essay','matching','unknown'],writer:['native-choice','chapter-choice','mooc2-choice','ueditor','matching','none'],
+            questionType:['single','multiple','judge','blank','essay','matching','sort','unknown'],writer:['native-choice','chapter-choice','mooc2-choice','ueditor','matching','none'],
             recognitionType:['declared','text-alias','native-inferred','unknown'],materialState:['complete','unreadable'],
             materialKind:['text','image','math','table','code','mixed'],sharing:['none','explicit'],slotState:['single','native-label','adapter-declared','ambiguous']};
         for(const [name,allowed] of Object.entries(recognitionEnums))if(allowed.includes(context[name]))result[name]=context[name];
@@ -3782,14 +3852,14 @@ Typr["U"] = {
             return true;
         } finally { state.checking = false; }
     }
-    // 官方原始平台标识；来源、原始文件与校验值见 assets/provider-logos/provenance.json。
-    // 仅将 ICO 的最大帧无损编码为 PNG；无绘制、无运行时网络请求。
+    // 官方平台标识的本地显示版本；来源、原始文件和显示处理见 assets/provider-logos/provenance.json。
+    // 固定浅色图标画布与原生品牌颜色，运行时无需网络请求。
     const PROVIDER_LOGOS = Object.freeze({
-        deepseek:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOEAAADhCAYAAAA+s9J6AAAY5UlEQVR42u2dT24bSdLFX2SWaO9cfQJVn0C8gbgcGO42byAvNRoB0g08voEE9OfxUroBNT0wZknfoHyCKZ3A5Z2brMz3LYqUKJmy+aeK9S9+wADTjbZJVuXLeBEZmQkoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqIoiqJsjegjUMpmeMzIB/4NKYcChARjR3f58X0v1qcDBPoIlLJxxg1AcwQgYj73R1b20uEx09EHSbr+fIwOEaXsKAixhwCihX8dCjhw4vr6hDQSNmMgnzP89g2hMQiNycK7XMJJCAC0TL0PUu+RPn+OdHQhaa2iIMzg8b8nEIm1+/p2NSesbfTIgiwSJ6FYu08iAhBCEIIMF15eOBvQKURSECmAVASJR/Y5CIK4SkEOzxm6Kd4CPH9i+F1Zh3ddt6QaCeskOi8RIZET7AttJAYhyVyAM7U9iiYL/8DF/5sKbOz+cpcARlX9rizL+gLbfzoCsO/E9wGoCJVqhecEh0IbQRAJEM3lxc3/+hDAAMbGw3OOq4iGw3OG2cQPIHhShGpJVYS1ER7AqOCPSvL/+duqam9ZlvUlL8iEP5osSPSHx4y6bElVhDuICJMJIgvXL1l4dwIU4bWHHwdZkIz+r5qc0DDYJxn9vOrAgTP+E4ArFWEHxLCswriMeaVx/s+bVByHx4yccQM3xYE1iEDTL1F4c3sXC3htMjP69webVPmss4n/VUTCFf7zCGIPh8ccdzUaSptENpkgMiYL51VF7/0vdz9UzAssqTAufyp3lcY5Kem/GmO+gEjp3VcnNllcEliMeIREImYf4AAP18fKIgUxBv21fWbHVS9R/O2Y0Z7FW4Bv1oneJjNXXRRi0GTBWbpoLjY3xYs84thwXlV8OBMTK1c7yCW6FJBMQaRiTGoFiRWkbor01Yn7ev/5pr9YXNkRMY27/M8fe+M6vB9j5pPdyn8kIuXIWZ8Oz3lVp3VOFeFTRY2ZxROa6F5sXEtnGxJCEDIXan9RoIufv2MSgDdBEMR1eVeWLn836/2xiJAjN/UYHnPUpYgYNEZ4j4salY35WpECMrJORlUVYJa6eWNfkAzXTXYE6AMSOov9V6fTm6qbDYoey864ASGRMebLYjNF7URYQTWxycSU7Gb0Ya9eUUMQ4sdLEz8u1IBvhLbvpv6mDVFxvosENEcCRCQfNFMEdfqiWZBFbur71pjDXVQTm4/EdbKhc7z3v6xYGX3a9gMDQCJncfD7KeM6tOFtI0BSjnBfpMt/n7FJbUQ4/6LCWbc9VXyrQPqvowvb5iJGBPDNvA0vm/hPL08mo6bsQ3xCgAuGIa8rBFV/SWfcwAkOQRlgN+V8peR0wk3xouCMPQQwEJG+ZXDw20l2Y72t9brizwSYT6K5ZQ8qFx/MQG1ne/j2DeGe3Tgf/LkYBUPA9J3FQV2LN6sIcJGdNhYOzxm+Op0OnMUZxMwXc1WAm2aEYvaHx52cwKJZ8eatm7jh8JxhUwW400g4PGbkpn4osK+Re+FQZbSlCGu4Fej587yBYQcfFQIYUEzopj6suoq6TWq1ExG+PJn0neAIkKFGvuIgEFGkX9V2pWWMLiR9deK+5g0Mu5iI8rVFH/hweMydtr09Xk5bN7USySeroOwv6f5yA8AczfooNfoVniPJa/eXi1Hh5t062FNSjpxxCbbcjTFv9Afy9rtlzf7iJBRjX2QT/6s15mDT5TRKPmGUJsK5/aQxR/lspZQWCcQcvTyZJB0/QnDj3RiPWyLvCkuCELTfizDvTQ5F5OebAX5sZcqLhPcdAnIkaj93ocSBxV5SlyMEjTFfSKa7dz4c+IC3q9jSlTZY88k0oKj9R+WIcJPqkFJEkYJDZwV1KNvTuVsxJuHuHdBPbelcfB5+ILSHFbZEpiJ5Qc2oAFtkx+Zl+6l/U+XSBS1TAmllz0HswbJli4XOrLezMTqobJwSaeF2VAVYl4h413NZ2U4E74PUGqTL9mXuyJ5HkwkiAPG82OL+cgNn8Lo2nVmCxEt2W1gkVAFqVFyk10MCVrd2KWRk6aL52HRT/4ambs0hkmRZUIwdVQHWPiqe+WC3QhxdSAq6z6ioiWB+lOJdgRByVrMKfUr62+fPC7CjKsBmRMX86Ai82KU9pWEieTSsYlyE9Bw4KxFYwwYRIjVi/jd/DxtHwuE5Q2f9UAXYMHu6o17LIAsSoMLlEsGgtr3JC/ngViLMsqwPyGsVYLPsKcWc7SJPHH2QRAQxqquShqhnh1ZK8tPiZuyNRPjyZNKX/L65vo7tZjHrtdxJnkjnbqXj90wsef6JkA9SgrVFODxmZGVv3owd6mNtdJ549vJkUtpEamljQmJ93IvpoMSW9sEzWUuE8zwQoAqwJXmiFVuaEEcfJAHdJ2g0nJOA7tPjlrq1RKh5YBvzRBmWKUTr7RiQsT5qACKxg/3OGawswuExI2HwWvNAFaJGw41I6f3nXu/757CSCNWGqhA1Gm6dDI493GjZGu1KIlQb2i0hvjqdDopcS+x6NCQQg/76qf2ePxWh2tDuCbGMRX3r7ViE1x0UYgryxj6zTzoBozZU+V6Is0X9AoU4+iCJycxV52zpD2zoSiJUG9pd5sdm5GOgQFvq3Q1nW4y6bkN/KsLhOUN4M1Ab2mn6QnNUZLHGPrNjQSdsaSLg9Y9s6E9FmGVZX0QO1YZqjlhk1XR0Ial1ZtTy/DAR4bV1ZrTKjhWjUVDZuRBn+WFLhbj21d9Go6CiQqxOgEtFqFFQUSHuToBLRTiZIBJjDjQKKrsUIsDLplZN8+/Ny00EuFSEli4SvaRT2bEQ7Z65Eu/fgRihuo3Aa0c/QK7E+3d2z2x8D4Y8tqLZxJ+LyJlGQuUnpABHju6yyOP3X55M+vl+VQ5R3/XpFHn0u7HObH0b1INIqAUZpcqICAAf3/di63BZ4zwxAeSK4raKfk9Gwt9PeUbynypCpeqIODxm5CzOZoc1hdULDwmQN6IXfVW3LFpRN8VbgOc6rpS1hUiMQX9tn9nC7kr8/R88IvnP/L6IisQnEoP+E8XHQRYkZVy4EzyworB9HU/KRtZUMKSYyE1cODznqBAhSiUnpj2Ieo427vVMMrqwaVkfGNwnh8EB82usFWVTW9WfHam49fXVM2cWlSzCVIAkv7xGEtLfCpjQMMmjXrCTnDTY4Q9WOiLEIq6vLtGZJYCMSX9rjPlC525pmeais0kVzywA8gV6axCBOoiUQtj66H3DYJ9kVNBlnPe5K2RkHS6rEtyTIswX6E1UsAYXQv13s2VILkRdqe1pycoWQpwdvd93E3e9Tp44W6/+VUSKHRNEKoK4DrcZfydCsTafdbYRm0gCIiH9V2B2ZfIs1H/3J5yEYuyLRRGSMzssCIWMCLXHLSBEvks/zCY+enU6Ha8SFfP1atuZ9epgy3wwAWRE7z45sUmvh42rSMNzht++ITQGoaWPxNp97/0vIuYFwD6ISCNmg/NEkQi0h27qb35WtCnJitZXhFvkg7Oucbkqooo0mx3nAo4fWJPM9Q2CfU//q4jZn90x3ldBNi8qzm4RPvjtJFu66F2aFa2zCDfPB2WcC7Bcfz0T53gxWgaBiwyCg9zCsq+CbF6uCDEDZ3H4WIxds6IAEIixL0iG64Z+0t/uusK0EC0TAOOFKKmCbLgYfz9lDCIl/QAd28saNDnPWoiSKsiGi5FECiJFbkM79c6CvPjRfP+9TJDwZjDbFdJVMc56H++r1nmhC2EN8+pwFhA6RzCrPq6fEYp5MTxnuIv7zzcV5PCccZZl4w6KMQFkfN/7eF+11ry6jnZ08wcffvuGEDXeBd1RMf6wav1UXg1vBhB5LW3Oxx7dFV+vnJAb/aDQmGYM5A6JMQVktE7VevHZuIlLIHfXoLdwkpIky3bTlL0OZuPzZMjQmKxRL2p0Iel//tgbBz1zQXHvSF7O8si0FWOMSAWbtWWNLiS1PTuiuHeAXKGdB/Omz5/X710HJMKudCY8FRnzW6dqfabJyu5km+LG3XM5ZuIDfiXlCC26h4T0X8vcF7hxJNz8fSMU1+yq6jwyWodLsHEnfS3N0+k52PZ+wZYezJsaY77U8YsFm88qeNiE3WQx5vbt6uXJJDa0nxtdoBAMhDZ0U8S/nzIBkdK7r/e9vatVs0cfJBke88oHHq2IiERa1wk22OJlt25d5+P7Xjw8Z+L+cjHEHEEwaGCBIgQwADiYL4CLMakVJG6K5LeT7POqBxW1Sog1rYxuJ0Ig9N7/0tJ8cfTyZJI0PirOFsCZW5f8N4hJnMXhb3/PblY5lKk9QqxnZXSrnLDtfHzfi4OeuWjgqdA/IwL4hsasfCV2S3LEWlZGcxFuYSlFzP7wuL1H5o8uJP3zX8HIIWtq2T6RfFtY+r07Qx/Gvp5MVotsC9ddN3FCSkVWz4cbFgkZZUHWWhEuRsWanwr93aADMQL9O3r/jnzishWyb+FWttqjD5I4Tq/BfGtZo4oyrO/EYbb5cm1YplhnAM5vD0L9F/hjGnf55/vg6s9/BaOgZy6euKI6gtiDdZYz8lO2/U2jXEGNizJbR0ICkVi735U8cX57UN5VwhrbMomDIIgXbTXFx08IZ94DvDLW23Gz8sP6FmUKsKP5AU3bLAw3MU/8zx97Y0d3WeM8McQjYYmTUJYvt6xdsFjID5tiS2tblClChIAgWjW51zxxV+6LfWfcXdfM8JgRjD3kkuWFvJVr/YLF6EN+THwDomGtizIAEIgg3eq8UTI0xoXoIHVdQyMQQcxRNvHR76f84og+wAG+j4RbtXJZb8c+8FHN1w9jj+xznceR4fZ5TSReInSUmq6hhQAGIjK76o5vlopky6phM2xpvfPBYuwoEBHdFWGNhTgXY1j2b6+xLU1Jf1vnfDAXoWzvldu+aN9wIZZObaulRGrE/K/O+WAuwkIWMbuxaN86IRbUhD/6IImHH9fuN9d8fXDRjhYxS3Q6L2ywEAtbYgqyIBFhzWzpw/XS2opwfhTetiKE2MOuW9JGCrGgJaYaRsPaL03ciXBWolZL2lUhrtk/+rNoCNTm2rHaL03cR0LnbqWYQaKW9Akh1nznQWEupl6V0mZY0VyElikLygvVki4fmPXfecCBD/ybIt4dDZMaiLAxVhQAjPdBWsQyhVrSp/n4vheD/nrpdqKaRMPZ9dZnL08mW1nTH/SoqhV9ysb3evnZI0W9TLWky7HP7NhNfQRIiHq2eEUA31ix4avT6fUm98wPjxk5g0OiajfUHCsKID9x9PdTztqbipjB5Mo6vKvbveB1YHjMyAf+Tc17LVMAMcAbRzNe5YS2XHxuALGHsx7VKn9bKiL//PcfctmYSAgAdO5WjElYwIFGAvad+D461jWyan44POaVs3gx6+cMa/g1Q8xu1LUGh9nEf351Oh3P+y/nLWCTCSJjslC8RE5wCJgBUIt6QKOs6L0ILQvb/k8gokh/eM5xUxLjXQvx1en0Rmj7+WCvLRHISEQGoD3cs/mk6qb5OMmvWLchBFFNxAcAKclPwV5zrOidCL0PUmuQgizi7wzFmIPZAnCsslvy0IMgdlN/g7zxve459Cwy8rvZtoa5VQIybtrkbwCg10MCFmgfC1wAbmU0vJDUOjPqYrN3mVAkcWIb9zzNfFCA7nOBA0LXDFewpQ0+QrCOpPT+c6+HZooQKGORlQNn3EDHxo+FSMlu1LYXQgzjG1mHuBNhCX1/Gg1XzA8BNusIwTpGQfJTk9YGl4qwnL4/jYaaH2oUXFmE5VhSjYZr5odjfRrdioLfibCcrSgaDVcVYkOOENQoWKYIRx8kEVl+gYhGw/Jp3snWGgULFyEwa2ErfBBoNFRbqlFwZRFa2piQomcWjYZqSzUKrirC8gZBcRtH1ZYqbYmCS0UIlLY7Ot84qrZUben2JABv2hAFnxThrEoao/h2KrWlaksLQMbWmVFbdumYJweAd5+klAGgtlRt6RajB4jh3U2bNo0/eRdFSQUataVqS7chBXljn9lWPQ9TkR1SW6q2dBNaU4xZSYRzO1TeLKy2VG3pmjaU/rotxZiVRVh6NKS8dqKbf9ewpSN0c+9hIuC17dlRG49M+en9hGVGQwIRjNrSVYXY0b2HKSCjNlVD1xZhydEwBDhUW7oaHd17GFOymzYfobnSTb3l5oZ5tVSFuEI07N7ew6RNi/JPIav+h7+dZG8g5i3KOx0sAXhp98xV3WzH8Jzh/Pow75E+f460yu84PGbkLN7Ozi5tbx4ovDaZuWr7QdKy5os/K/PQWgKx0F/WKQHPf7cfQszh7EumpL81Yv7nJbvd5Lj4ItjBpFh1HnhlHS67cJJ7sE5hoOxDawXoU8yZ+8ulAEZ1eEB5U4E5A++tsoikJFOBTbKJ//TqdDretRitt2Mf+KjmR+pvOhuPHabXf37odSL3NWspdgeFAQH6EHO07e1ARdlQiD1YMshnJ09jICJnQvs2m/jzV6fTQRFXT686KTboWu613BDorz++78XoCGuJcF4YKL2NSjCwsndUdaHm2zeEK1jv8LEYdzWBtK2t7S4daVlbWqEinL/4HbRRhXVYuphdfpKu/p1zMVoEb3/7ezbcRVScNdvfsPnrh61ekC9UhPN8ZAc2qLCLKzce4BeSkv7r2hOIYEhjdmZR7TM7FjTaliYivG7zgnzhItyhDYpmF1ee7TLfeuiMN9vgLEB/blHdtNyI3vD1w84sRRQqwh3boBCQodC+dRM33LUQtzxlIER+19+Zsyh1ImlooSYFZNRlAW4lwh3boBDAgGLOyo4qjynoLNYI4Juyo2LDGr1TgCPH6XXXb3WWbf+CCq6A3rl9KXhhPAFkRMluylpbfHky6VuxZ4AMUc/bgAFi5JC969JSRCmRsKLZd+e9pgX3zt5HxZLs9cf3vdjRXYIY11N/3VsLLFWEcyE6Tq93+NJ3WjktYVmmdHv98X0vBv113ZYuuroWWLoIK3rpEcA3u1qTK2NZRoB+mUUb+8yOhf6yTkIUkcTBxl1ciigtJ3yQH54zdFP/BpAz7LCfMbc3vPFwozItzssT9q3BW5DD4osUiAHeWGdGRea6w3OGbuKGFHOWi75y7nLiLAuSqnektE6EFRVq7gcyMQb9tX1mSzkMaAeTTALIyHFaaL5UQyHOJh1JSH8L48dV7UZppQgrFmLpUfHV6XQgtG9R0k4SzEr3lPxQo6IGZg2F+FiQsQgSj+xz1wQpZf3FVQqxzKhYoiUt3Z7WWIgPfjfJT12KjlLmX16xEO+iYpEvdAeR8IE9LXpNdC5EiDlCLsSwrmLsSnSUsj+gaiEWObvu4nSBHxUyihqIw3OGWZb1heao1gv6HYmOsosPqYEQt5pd52fMBMYPK7PXswXuIrf6NKKzpgNilF19UE2EuFSQIFJ695WWqfdB6j1SYxAak4XiJKRIX4w5ANmv8rsTiAWzLT8F2dNciHtHAIdoxjEZrROj7PLDaibExSJOKoKUQAqRFEQKQQgyFCBk/l3rEimKt6f1fC8rTqTFr622WoT3eZUfEnJU0wpdYwZgkdHg7lQ5yOsaF2yWT0r07/58H1ypCNcsDNS8VN5JMTasYLM4jC/sHt411ZZKVR/ckFJ5o8S4WHTapiXs5cmkb2CHEHndjElSrqYO7/7bUEsqVX74/cwbvG5QYaApgkwApIuFJyc28f5+u9ljkQ7PGc5OmIMxCK3gaMfLMRoJKxNjMwsDzRHlvPAkkoAP9nw+OMhKxLx4KDhGDXApmhMWKcSGFga6QgKRGGRYo/eTtuG4fKnTl2luYaD9AhThdebNyJgshDcDETkEEUFWOiC5nEmhhB0nnRfhYmGgYQvILc8vH67FzSdLw2Df0/8qYvYBRjsQZTITXwK6T9bbcRsOiZK6fjG1pzWwnys0BcyLOUGQRYbBPgQhudDcIAiFjMj7f/7Bu3zYOJEnqimIhPRfBUxomARZkLTphDap85ebz7jwZtCccnl77Oemuze+q7LSRWLsi7kIvfe/LPtzxpgviy2EAOB9kPZ6SNq8pUma8CWH5wzdX24AY18DHKhFLbv44j81vRVMRagWtdHFl7ZHHhVhgRZVRA5VjIXkfuM2FTpUhCrGzuR+SsdFqGLU6KciVDGq+BQVoYpxJVIBEkJiFZ+KsBIxGgQH+eIx+x0TZAKRmN5/FjK2tLGKT0VYn+hYbc9jyXbzvq3Lwca63KAirGd0fNzz2NwIObOaSOfCa2Nbl4qwxYK863mcW1ZBJGRUs4OdnhSdCGI6d0vLVIWnImyFKCcTRJYuEmv3vfe/3G9y3ckOgTuhLTn9LSH9V2PMFxWdirBT/O2YURAggveLuWRU6ocSCQQJwEQEt/RMpt6O/6uCUxRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFURRFUZQf8/81n5n5+9v2MQAAAABJRU5ErkJggg==',
-        openai:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiBmaWxsPSJub25lIj4KICA8c3R5bGU+CiAgICA6cm9vdCB7CiAgICAgIC0tcHJpbWFyeS1maWxsOiAjZmZmOwogICAgICAtLXNlY29uZGFyeS1maWxsOiAjMDAwOwogICAgfQogICAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgICA6cm9vdCB7CiAgICAgICAgLS1wcmltYXJ5LWZpbGw6ICMwMDA7CiAgICAgICAgLS1zZWNvbmRhcnktZmlsbDogI2ZmZjsKICAgICAgfQogICAgfQogIDwvc3R5bGU+CiAgPGcgY2xpcC1wYXRoPSJ1cmwoI2EpIj4KICAgIDxyZWN0IHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiBmaWxsPSJ2YXIoLS1wcmltYXJ5LWZpbGwpIiByeD0iOTAiIC8+CiAgICA8ZyBjbGlwLXBhdGg9InVybCgjYikiPgogICAgICA8cGF0aAogICAgICAgIGZpbGw9InZhcigtLXNlY29uZGFyeS1maWxsKSIKICAgICAgICBkPSJNNzUuOTEgNzMuNjI4VjYyLjIzMmMwLS45Ni4zNi0xLjY4IDEuMTk5LTIuMTZsMjIuOTEyLTEzLjE5NGMzLjExOS0xLjggNi44MzgtMi42MzkgMTAuNjc2LTIuNjM5IDE0LjM5NCAwIDIzLjUxMSAxMS4xNTcgMjMuNTExIDIzLjAzMiAwIC44MzkgMCAxLjc5OS0uMTIgMi43NThsLTIzLjc1Mi0xMy45MTRjLTEuNDM5LS44NC0yLjg3OS0uODQtNC4zMTggMEw3NS45MSA3My42MjdabTUzLjQ5OSA0NC4zODN2LTI3LjIzYzAtMS42OC0uNzItMi44OC0yLjE1OS0zLjcxOUw5Ny4xNDIgNjkuNTVsOS44MzYtNS42MzhjLjgzOS0uNDggMS41NTktLjQ4IDIuMzk5IDBsMjIuOTEyIDEzLjE5NWM2LjU5OCAzLjgzOSAxMS4wMzUgMTEuOTk1IDExLjAzNSAxOS45MTIgMCA5LjExNi01LjM5NyAxNy41MTMtMTMuOTE1IDIwLjk5MnYuMDAxWm0tNjAuNTc3LTIzLjk5LTkuODM2LTUuNzU4Yy0uODQtLjQ4LTEuMi0xLjItMS4yLTIuMTZ2LTI2LjM5YzAtMTIuODM0IDkuODM3LTIyLjU1IDIzLjE1Mi0yMi41NSA1LjAzOSAwIDkuNzE2IDEuNjc5IDEzLjY3NiA0LjY3OEw3MC45OTMgNTUuNTE2Yy0xLjQ0Ljg0LTIuMTYgMi4wMzktMi4xNiAzLjcxOXYzNC43ODctLjAwMlptMjEuMTczIDEyLjIzNEw3NS45MSA5OC4zMzlWODEuNTQ2bDE0LjA5NS03LjkxNyAxNC4wOTQgNy45MTd2MTYuNzkzbC0xNC4wOTQgNy45MTZabTkuMDU2IDM2LjQ2N2MtNS4wMzggMC05LjcxNi0xLjY4LTEzLjY3NS00LjY3OGwyMy42MzEtMTMuNjc2YzEuNDM5LS44MzkgMi4xNTktMi4wMzggMi4xNTktMy43MThWODUuODYzbDkuOTU2IDUuNzU3Yy44NC40OCAxLjIgMS4yIDEuMiAyLjE2djI2LjM4OWMwIDEyLjgzNS05Ljk1NyAyMi41NTItMjMuMjcgMjIuNTUydi4wMDFabS0yOC40My0yNi43NUw0Ny43MiAxMDIuNzc4Yy02LjU5OS0zLjg0LTExLjAzNi0xMS45OTYtMTEuMDM2LTE5LjkxMyAwLTkuMjM2IDUuNTE4LTE3LjUxMyAxNC4wMzQtMjAuOTkydjI3LjM1YzAgMS42OC43MiAyLjg3OSAyLjE2IDMuNzE4bDI5Ljk4OSAxNy4zOTMtOS44MzcgNS42MzhjLS44NC40OC0xLjU2LjQ4LTIuMzk5IDBabS0xLjMxOCAxOS42NzNjLTEzLjU1NSAwLTIzLjUxMi0xMC4xOTYtMjMuNTEyLTIyLjc5MiAwLS45NTkuMTItMS45MTkuMjQtMi44NzlsMjMuNjMgMTMuNjc1YzEuNDQuODQgMi44OC44NCA0LjMyIDBsMzAuMTA4LTE3LjM5MnYxMS4zOTVjMCAuOTYtLjM2MSAxLjY4LTEuMiAyLjE2bC0yMi45MTIgMTMuMTk0Yy0zLjExOSAxLjgtNi44MzcgMi42MzktMTAuNjc1IDIuNjM5Wm0yOS43NDggMTQuMjc0YzE0LjUxNSAwIDI2LjYzLTEwLjMxNiAyOS4zOS0yMy45OTEgMTMuNDM0LTMuNDc5IDIyLjA3MS0xNi4wNzQgMjIuMDcxLTI4LjkxIDAtOC4zOTYtMy41OTgtMTYuNTUzLTEwLjA3Ni0yMi40My42LTIuNTIuOTYtNS4wMzkuOTYtNy41NTcgMC0xNy4xNTMtMTMuOTE1LTI5Ljk5LTI5Ljk4OS0yOS45OS0zLjIzOSAwLTYuMzU4LjQ4LTkuNDc3IDEuNTYtNS4zOTgtNS4yNzgtMTIuODM1LTguNjM3LTIwLjk5Mi04LjYzNy0xNC41MTUgMC0yNi42MyAxMC4zMTYtMjkuMzkgMjMuOTkxLTEzLjQzNCAzLjQ4LTIyLjA3IDE2LjA3NC0yMi4wNyAyOC45MSAwIDguMzk2IDMuNTk4IDE2LjU1MyAxMC4wNzUgMjIuNDMxLS42IDIuNTE5LS45NiA1LjAzOC0uOTYgNy41NTYgMCAxNy4xNTQgMTMuOTE1IDI5Ljk4OSAyOS45OSAyOS45ODkgMy4yMzggMCA2LjM1Ny0uNDc5IDkuNDc2LTEuNTU5IDUuMzk3IDUuMjc4IDEyLjgzNSA4LjYzNyAyMC45OTIgOC42MzdaIgogICAgICAvPgogICAgPC9nPgogIDwvZz4KICA8ZGVmcz4KICAgIDxjbGlwUGF0aCBpZD0iYSI+CiAgICAgIDxwYXRoIGQ9Ik0wIDBoMTgwdjE4MEgweiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgICA8Y2xpcFBhdGggaWQ9ImIiPgogICAgICA8cGF0aCBkPSJNMjkuNDg3IDI5Ljk2NGgxMjEuMDM1djExOS45NTRIMjkuNDg3eiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgPC9kZWZzPgo8L3N2Zz4K',
+        deepseek:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii0yLjUgLTQgMzIgMzIiIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PHJlY3QgeD0iLTIuNSIgeT0iLTQiIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgZmlsbD0iI2ZmZiIvPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF9sb2dvKSI+PHBhdGggZD0iTTI2LjUxNzQgMy4zOTQ3MUMyNi4yMzUgMy4yNTY3IDI2LjExMzcgMy41MjAwNiAyNS45NDg3IDMuNjUzNDZDMjUuODkyMyAzLjY5NjU5IDI1Ljg0NDYgMy43NTI5NCAyNS43OTY5IDMuODA0NjlDMjUuMzg0NiA0LjI0NTE2IDI0LjkwMjcgNC41MzQzOSAyNC4yNzM3IDQuNDk5ODlDMjMuMzUzNiA0LjQ0ODE0IDIyLjU2ODIgNC43MzczNyAyMS44NzM1IDUuNDQxMTlDMjEuNzI1OCA0LjU3MzQ5IDIxLjIzNTMgNC4wNTU0IDIwLjQ4ODkgMy43MjMwNEMyMC4wOTg1IDMuNTUwNTQgMTkuNzAzNCAzLjM3NzQ2IDE5LjQyOTcgMy4wMDE5N0MxOS4yMzg4IDIuNzM0NTkgMTkuMTg2NSAyLjQzNjczIDE5LjA5MSAyLjE0Mjg5QzE5LjAzMDEgMS45NjU3OSAxOC45Njk3IDEuNzg0NjYgMTguNzY1NiAxLjc1NDE4QzE4LjU0NDIgMS43MTk2OCAxOC40NTc0IDEuOTA1NDEgMTguMzcwNSAyLjA2MDY3QzE4LjAyMzIgMi42OTU0OSAxNy44ODg3IDMuMzk0NzEgMTcuOTAxOSA0LjEwMzEzQzE3LjkzMjQgNS42OTY1IDE4LjYwNTEgNi45NjU1NiAxOS45NDIxIDcuODY4MzRDMjAuMDkzOSA3Ljk3MTg0IDIwLjEzMyA4LjA3NTM1IDIwLjA4NTIgOC4yMjY1OEMxOS45OTM4IDguNTM3NjYgMTkuODg1NyA4LjgzOTU1IDE5Ljc5MDMgOS4xNTA2M0MxOS43MjkzIDkuMzQ5MDEgMTkuNjM4NCA5LjM5MjcxIDE5LjQyNTcgOS4zMDU4OEMxOC42OTIgOC45OTk0IDE4LjA1ODMgOC41NDU3MSAxNy40OTgyIDcuOTk3NzJDMTYuNTQ3NyA3LjA3ODI3IDE1LjY4ODEgNi4wNjMzNiAxNC42MTYyIDUuMjY4NjlDMTQuMzY0NCA1LjA4Mjk2IDE0LjExMjUgNC45MTA0NSAxMy44NTIxIDQuNzQ2QzEyLjc1ODQgMy42ODM5NCAxMy45OTUyIDIuODExNjQgMTQuMjgxNiAyLjcwODE0QzE0LjU4MTIgMi42MDAwMyAxNC4zODU3IDIuMjI4NTcgMTMuNDE3OSAyLjIzMzE3QzEyLjQ1MDIgMi4yMzcyIDExLjU2NDYgMi41NjE1MSAxMC40MzU5IDIuOTkzMzVDMTAuMjcwOCAzLjA1ODMyIDEwLjA5NzIgMy4xMDU0NyA5LjkxOTUxIDMuMTQ0NTdDOC44OTU0IDIuOTUwMjIgNy44MzE2MiAyLjkwNzA5IDYuNzIwNjkgMy4wMzI0NUM0LjYyODc3IDMuMjY1MzMgMi45NTc3NyA0LjI1NDM2IDEuNzI5NTQgNS45NDI2MUMwLjI1NDA0MyA3Ljk3MTg0IC0wLjA5MzI2NzggMTAuMjc3NyAwLjMzMTY3IDEyLjY4MjRDMC43Nzg0NTggMTUuMjE3MSAyLjA3MjI1IDE3LjMxNTMgNC4wNjAwOCAxOC45NTU4QzYuMTIxNTIgMjAuNjU2NyA4LjQ5NTc3IDIxLjQ5MDUgMTEuMjA0NyAyMS4zMzA2QzEyLjg0OTggMjEuMjM1OCAxNC42ODEyIDIxLjAxNTUgMTYuNzQ3MyAxOS4yNjY5QzE3LjI2ODIgMTkuNTI2MiAxNy44MTUxIDE5LjYyOTcgMTguNzIxOSAxOS43MDc0QzE5LjQyMDUgMTkuNzcyMyAyMC4wOTMzIDE5LjY3MjkgMjAuNjE0MyAxOS41NjQ4QzIxLjQzMDIgMTkuMzkyMyAyMS4zNzM5IDE4LjYzNjcgMjEuMDc4OSAxOC40OTgxQzE4LjY4NzQgMTcuMzg0MyAxOS4yMTI0IDE3LjgzNzQgMTguNzM1MSAxNy40NzA2QzE5Ljk1MDEgMTYuMDMzIDIxLjgwNjMgMTMuNDc3NiAyMi4zNzkgOS45OTgyMUMyMi40MzUzIDkuNjE0MDkgMjIuNTA3MiA5LjA3MyAyMi40OTg2IDguNzYxOTJDMjIuNDk0IDguNTcyMTYgMjIuNTM3NyA4LjQ5ODU2IDIyLjc1NDUgOC40NzY3MUMyMy4zNTM2IDguNDA3NzEgMjMuOTM1IDguMjQzODMgMjQuNDY5MiA3Ljk0OTk5QzI2LjAxODggNy4xMDM1NyAyNi42NDM5IDUuNzEzMTggMjYuNzkxMSA0LjA0Njc4QzI2LjgxMjkgMy43OTIwNCAyNi43ODY1IDMuNTI4NjkgMjYuNTE3NCAzLjM5NDcxWk0xMy4wMTQzIDE4LjM5NDZDMTAuNjk2NCAxNi41NzI0IDkuNTcyMiAxNS45NzI2IDkuMTA4MTYgMTUuOTk4NUM4LjY3NDAyIDE2LjAyNDQgOC43NTIyMiAxNi41MjEyIDguODQ3NjggMTYuODQ0OUM4Ljk0NzczIDE3LjE2NDYgOS4wNzc2OCAxNy4zODQ5IDkuMjU5OTYgMTcuNjY1NUM5LjM4NTg5IDE3Ljg1MTIgOS40NzI3MiAxOC4xMjcyIDkuMTM0MDQgMTguMzM0OEM4LjM4NzY2IDE4Ljc5NjUgNy4wODk4NSAxOC4xNzk2IDcuMDI4OSAxOC4xNDkxQzUuNTE4MzMgMTcuMjU5NSA0LjI1NTU5IDE2LjA4NTMgMy4zNjU0NiAxNC40NzkzQzIuNTA1ODEgMTIuOTMzNyAyLjAwNjcgMTEuMjc1MyAxLjkyNDQ3IDkuNTA1NDJDMS45MDI2MiA5LjA3ODE4IDIuMDI4NTUgOC45MjY5NSAyLjQ1NDA2IDguODQ5MzJDMy4wMTQxMyA4Ljc0NTgyIDMuNTkxNDQgOC43MjM5NyA0LjE1MDkzIDguODA2MTlDNi41MTY1NiA5LjE1MTc4IDguNTMwMjcgMTAuMjA5MiAxMC4yMTg1IDExLjg4NDhDMTEuMTgyMiAxMi44Mzg4IDExLjkxMTQgMTMuOTc5IDEyLjY2MjMgMTUuMDkyOUMxMy40NjEgMTYuMjc1NyAxNC4zMjAxIDE3LjQwMjcgMTUuNDE0NCAxOC4zMjY4QzE1LjgwMDggMTguNjUwNSAxNi4xMDkgMTguODk2NiAxNi40MDQgMTkuMDc4M0MxNS41MTQ0IDE5LjE3NzggMTQuMDI5NyAxOS4xOTkxIDEzLjAxNDMgMTguMzk1OFYxOC4zOTQ2Wk0xNC4xMjUyIDExLjI0ODlDMTQuMTI1MiAxMS4wNTkxIDE0LjI3NyAxMC45MDc5IDE0LjQ2NzkgMTAuOTA3OUMxNC41MTEgMTAuOTA3OSAxNC41NTAxIDEwLjkxNjUgMTQuNTg1MiAxMC45MjkyQzE0LjYzMjkgMTAuOTQ2NCAxNC42NzY2IDEwLjk3MjMgMTQuNzExMSAxMS4wMTE0QzE0Ljc3MjEgMTEuMDcxOCAxNC44MDY2IDExLjE1OCAxNC44MDY2IDExLjI0ODlDMTQuODA2NiAxMS40Mzg2IDE0LjY1NDggMTEuNTg5OSAxNC40NjM5IDExLjU4OTlDMTQuMjczIDExLjU4OTkgMTQuMTI1MiAxMS40Mzg2IDE0LjEyNTIgMTEuMjQ4OVpNMTcuNTc1OSAxMy4wMTg4QzE3LjM1NDUgMTMuMTA5NiAxNy4xMzMxIDEzLjE4NzMgMTYuOTIwMyAxMy4xOTU5QzE2LjU5MDMgMTMuMjEzMSAxNi4yMzAzIDEzLjA3OTEgMTYuMDM0OCAxMi45MTUzQzE1LjczMTIgMTIuNjYwNSAxNS41MTM5IDEyLjUxNzkgMTUuNDIzIDEyLjA3MzRDMTUuMzgzOSAxMS44ODM3IDE1LjQwNTcgMTEuNTg5OSAxNS40NDAyIDExLjQyMTRDMTUuNTE4NSAxMS4wNTg1IDE1LjQzMTYgMTAuODI1NyAxNS4xNzU3IDEwLjYxNEMxNC45Njc2IDEwLjQ0MTUgMTQuNzAyNSAxMC4zOTM4IDE0LjQxMTUgMTAuMzkzOEMxNC4zMDI5IDEwLjM5MzggMTQuMjAzNCAxMC4zNDYxIDE0LjEyOTIgMTAuMzA3NkMxNC4wMDc5IDEwLjI0NzIgMTMuOTA3OCAxMC4wOTYgMTQuMDAzMyA5LjkxMDIzQzE0LjAzMzggOS44NDk4NSAxNC4xODE1IDkuNzAzMjIgMTQuMjE2IDkuNjc3MzRDMTQuNjExMSA5LjQ1MjUxIDE1LjA2NjUgOS41MjYxMiAxNS40ODggOS42OTQ2QzE1Ljg3ODQgOS44NTQ0NSAxNi4xNzQgMTAuMTQ3NyAxNi41OTg5IDEwLjU2MjNDMTcuMDMzIDExLjA2MzEgMTcuMTExMiAxMS4yMDExIDE3LjM1ODUgMTEuNTc3MkMxNy41NTQgMTEuODcxIDE3LjczMTcgMTIuMTcyOSAxNy44NTM2IDEyLjUxODVDMTcuOTI3MiAxMi43MzQxIDE3LjgzMTcgMTIuOTEwNyAxNy41NzU5IDEzLjAxODhaIiBmaWxsPSIjNEQ2QkZFIj48L3BhdGg+PC9nPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDBfbG9nbyI+PHJlY3Qgd2lkdGg9IjI2LjYzNCIgaGVpZ2h0PSIxOS42IiBmaWxsPSJ3aGl0ZSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMC4xNjMwODYgMS43NSkiPjwvcmVjdD48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4K',
+        openai:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiB2aWV3Qm94PSIyMCAyMCAxNDAgMTQwIiBmaWxsPSJub25lIj4KICA8ZyBjbGlwLXBhdGg9InVybCgjYSkiPgogICAgPHJlY3Qgd2lkdGg9IjE4MCIgaGVpZ2h0PSIxODAiIGZpbGw9IiNmZmYiIHJ4PSI5MCIgLz4KICAgIDxnIGNsaXAtcGF0aD0idXJsKCNiKSI+CiAgICAgIDxwYXRoCiAgICAgICAgZmlsbD0iIzAwMCIKICAgICAgICBkPSJNNzUuOTEgNzMuNjI4VjYyLjIzMmMwLS45Ni4zNi0xLjY4IDEuMTk5LTIuMTZsMjIuOTEyLTEzLjE5NGMzLjExOS0xLjggNi44MzgtMi42MzkgMTAuNjc2LTIuNjM5IDE0LjM5NCAwIDIzLjUxMSAxMS4xNTcgMjMuNTExIDIzLjAzMiAwIC44MzkgMCAxLjc5OS0uMTIgMi43NThsLTIzLjc1Mi0xMy45MTRjLTEuNDM5LS44NC0yLjg3OS0uODQtNC4zMTggMEw3NS45MSA3My42MjdabTUzLjQ5OSA0NC4zODN2LTI3LjIzYzAtMS42OC0uNzItMi44OC0yLjE1OS0zLjcxOUw5Ny4xNDIgNjkuNTVsOS44MzYtNS42MzhjLjgzOS0uNDggMS41NTktLjQ4IDIuMzk5IDBsMjIuOTEyIDEzLjE5NWM2LjU5OCAzLjgzOSAxMS4wMzUgMTEuOTk1IDExLjAzNSAxOS45MTIgMCA5LjExNi01LjM5NyAxNy41MTMtMTMuOTE1IDIwLjk5MnYuMDAxWm0tNjAuNTc3LTIzLjk5LTkuODM2LTUuNzU4Yy0uODQtLjQ4LTEuMi0xLjItMS4yLTIuMTZ2LTI2LjM5YzAtMTIuODM0IDkuODM3LTIyLjU1IDIzLjE1Mi0yMi41NSA1LjAzOSAwIDkuNzE2IDEuNjc5IDEzLjY3NiA0LjY3OEw3MC45OTMgNTUuNTE2Yy0xLjQ0Ljg0LTIuMTYgMi4wMzktMi4xNiAzLjcxOXYzNC43ODctLjAwMlptMjEuMTczIDEyLjIzNEw3NS45MSA5OC4zMzlWODEuNTQ2bDE0LjA5NS03LjkxNyAxNC4wOTQgNy45MTd2MTYuNzkzbC0xNC4wOTQgNy45MTZabTkuMDU2IDM2LjQ2N2MtNS4wMzggMC05LjcxNi0xLjY4LTEzLjY3NS00LjY3OGwyMy42MzEtMTMuNjc2YzEuNDM5LS44MzkgMi4xNTktMi4wMzggMi4xNTktMy43MThWODUuODYzbDkuOTU2IDUuNzU3Yy44NC40OCAxLjIgMS4yIDEuMiAyLjE2djI2LjM4OWMwIDEyLjgzNS05Ljk1NyAyMi41NTItMjMuMjcgMjIuNTUydi4wMDFabS0yOC40My0yNi43NUw0Ny43MiAxMDIuNzc4Yy02LjU5OS0zLjg0LTExLjAzNi0xMS45OTYtMTEuMDM2LTE5LjkxMyAwLTkuMjM2IDUuNTE4LTE3LjUxMyAxNC4wMzQtMjAuOTkydjI3LjM1YzAgMS42OC43MiAyLjg3OSAyLjE2IDMuNzE4bDI5Ljk4OSAxNy4zOTMtOS44MzcgNS42MzhjLS44NC40OC0xLjU2LjQ4LTIuMzk5IDBabS0xLjMxOCAxOS42NzNjLTEzLjU1NSAwLTIzLjUxMi0xMC4xOTYtMjMuNTEyLTIyLjc5MiAwLS45NTkuMTItMS45MTkuMjQtMi44NzlsMjMuNjMgMTMuNjc1YzEuNDQuODQgMi44OC44NCA0LjMyIDBsMzAuMTA4LTE3LjM5MnYxMS4zOTVjMCAuOTYtLjM2MSAxLjY4LTEuMiAyLjE2bC0yMi45MTIgMTMuMTk0Yy0zLjExOSAxLjgtNi44MzcgMi42MzktMTAuNjc1IDIuNjM5Wm0yOS43NDggMTQuMjc0YzE0LjUxNSAwIDI2LjYzLTEwLjMxNiAyOS4zOS0yMy45OTEgMTMuNDM0LTMuNDc5IDIyLjA3MS0xNi4wNzQgMjIuMDcxLTI4LjkxIDAtOC4zOTYtMy41OTgtMTYuNTUzLTEwLjA3Ni0yMi40My42LTIuNTIuOTYtNS4wMzkuOTYtNy41NTcgMC0xNy4xNTMtMTMuOTE1LTI5Ljk5LTI5Ljk4OS0yOS45OS0zLjIzOSAwLTYuMzU4LjQ4LTkuNDc3IDEuNTYtNS4zOTgtNS4yNzgtMTIuODM1LTguNjM3LTIwLjk5Mi04LjYzNy0xNC41MTUgMC0yNi42MyAxMC4zMTYtMjkuMzkgMjMuOTkxLTEzLjQzNCAzLjQ4LTIyLjA3IDE2LjA3NC0yMi4wNyAyOC45MSAwIDguMzk2IDMuNTk4IDE2LjU1MyAxMC4wNzUgMjIuNDMxLS42IDIuNTE5LS45NiA1LjAzOC0uOTYgNy41NTYgMCAxNy4xNTQgMTMuOTE1IDI5Ljk4OSAyOS45OSAyOS45ODkgMy4yMzggMCA2LjM1Ny0uNDc5IDkuNDc2LTEuNTU5IDUuMzk3IDUuMjc4IDEyLjgzNSA4LjYzNyAyMC45OTIgOC42MzdaIgogICAgICAvPgogICAgPC9nPgogIDwvZz4KICA8ZGVmcz4KICAgIDxjbGlwUGF0aCBpZD0iYSI+CiAgICAgIDxwYXRoIGQ9Ik0wIDBoMTgwdjE4MEgweiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgICA8Y2xpcFBhdGggaWQ9ImIiPgogICAgICA8cGF0aCBkPSJNMjkuNDg3IDI5Ljk2NGgxMjEuMDM1djExOS45NTRIMjkuNDg3eiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgPC9kZWZzPgo8L3N2Zz4K',
         qwen:'data:image/png;base64,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',
-        kimi:'data:image/png;base64,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',
-        glm:'data:image/png;base64,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',
+        kimi:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii04IDggNjIgNjIiIHdpZHRoPSI2MiIgaGVpZ2h0PSI2MiI+PHJlY3QgeD0iLTgiIHk9IjgiIHdpZHRoPSI2MiIgaGVpZ2h0PSI2MiIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGw9IiMwMDAiIGQ9Im0yMi44MDUgMzguMDk4IDE2LjA5IDEyLjYxNWMxLjU3MyAxLjIzNSAzLjkwMyAyLjE5NCA1Ljc1IDIuNDcuMjcxLjA2OS40OC4yMDUuNDguNTV2OS4wNWMwIC4zNDEtLjIwNC41NS0uNTQ5LjQ4Mi0zLjE1MS0uNDEzLTUuODktMS4zNzItOC43NjYtMy4yOTNMMTYuNDM0IDQ0LjQ3NWMtLjI3Mi0uMjA1LS41NDktLjIwNS0uNzUzIDBMOC45NyA1MS4wNThjLS4yMDQuMjA1LS4yNzIuNDEzLS4yNzIuNjg2VjYyLjkyYzAgLjM0LS4yMDUuNTUtLjU1LjU1aC03LjZjLS4zNCAwLS41NDgtLjIwNS0uNTQ4LS41NVYxNi4wMTljMC0uMzQuMjA0LS41NS41NDktLjU1aDcuNmMuMzQgMCAuNTQ5LjIwNS41NDkuNTVWMzguMzdjMCAuNDgyLjM0LjYxOC42ODQuMjczbDIzLjc2Mi0yMi45MDFjLjIwNC0uMjA1LjQxMy0uMjczLjY4NS0uMjczaDEwLjIwM2MuNTQ5IDAgLjgyLjYxOC40MTMgMS4wMjdMMjIuNzM3IDM3LjMzOGMtLjI3Mi4yNzMtLjI3Mi40ODIuMDY4Ljc1NHoiLz48L3N2Zz4K',
+        glm:'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNTYiIHZpZXdCb3g9IjAgMCA1NiA1NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNTYiIGhlaWdodD0iNTYiIHJ4PSI4LjQiIGZpbGw9InVybCgjd2VjaGF0QXV0aExvZ29HcmFkaWVudCkiIC8+CiAgPHBhdGgKICAgIGQ9Ik0yOC45NjM0IDExLjYyNDRMMjYuMjY0NyAxNS40NjA4QzI1Ljg0MDQgMTYuMDU4MyAyNS4xNDcgMTYuNDI0MyAyNC4zOTUyIDE2LjQyNDNIOS42ODcxM1YxMS42MDUyQzkuNjg3MTMgMTEuNjI0NCAyOC45NjM0IDExLjYyNDQgMjguOTYzNCAxMS42MjQ0WiIKICAgIGZpbGw9IndoaXRlIgogIC8+CiAgPHBhdGggZD0iTTQ3LjI3NTggMTEuNjI0N0wyNC4xNDQgNDQuMzk1NUg4LjcyMzI3TDMxLjg1NTEgMTEuNjI0N0g0Ny4yNzU4WiIgZmlsbD0id2hpdGUiIC8+CiAgPHBhdGgKICAgIGQ9Ik0yNy4wMzU4IDQ0LjM5NUwyOS43NTM3IDQwLjUzOTRDMzAuMTc3OSAzOS45NDE4IDMwLjg3MTQgMzkuNTc1OSAzMS42MjMyIDM5LjU3NTlINDYuMzEyVjQ0LjM5NUgyNy4wMzU4WiIKICAgIGZpbGw9IndoaXRlIgogIC8+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9IndlY2hhdEF1dGhMb2dvR3JhZGllbnQiIHgxPSIyOCIgeTE9IjU2IiB4Mj0iMjgiIHkyPSIwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMwMDAwMDAiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzE1MTcxOCIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgo8L3N2Zz4K',
     });
     // 只预置平台地址和标识；具体型号由接口返回或用户保存，不内置型号与型号能力。
     const KEY_PROVIDER = 'cx_provider';
@@ -4639,8 +4709,8 @@ Typr["U"] = {
         const label = clean(match?.slice(1).find(Boolean));
         // 括号内的公式不算题型；保留教师明确声明但尚未适配的类型。
         if (label && /题$/.test(label)) return label;
-        if (label && (/^(简答|问答|论述|单选|多选|判断|填空)$/.test(label) || TEXT_ANSWER_TYPE_LABEL.test(label))) return label;
-        return clean(group?.querySelector(':scope > .type_tit')?.textContent.match(/(多项选择|单项选择|多选|单选|判断|是非|填空|简答|问答|论述|计算与推导|计算与证明|计算|证明|解答|分析|应用|综合|推导|编程|程序设计|程序|代码)题?/)?.[0]);
+        if (label && (/^(简答|问答|论述|名词解释|阅读理解|排序|排列|完[型形]填空|单选|多选|判断|填空)$/.test(label) || TEXT_ANSWER_TYPE_LABEL.test(label))) return label;
+        return clean(group?.querySelector(':scope > .type_tit')?.textContent.match(/(完型填空|完形填空|名词解释|阅读理解|排序|排列|多项选择|单项选择|多选|单选|判断|是非|填空|简答|问答|论述|计算与推导|计算与证明|计算|证明|解答|分析|应用|综合|推导|编程|程序设计|程序|代码)题?/)?.[0]);
     }
     function stripQuestionPrefix(text, typeLabel) {
         let result = clean(text).replace(/^\d+\s*[.．、](?!\d)\s*/, '');
@@ -4740,25 +4810,34 @@ Typr["U"] = {
         const records=[],diagnostics=[],keys=new Set(),values=new Set(),doc=node.ownerDocument;
         const rows=[...node.querySelectorAll('.stem_answer .answerBg')].filter(row=>row.closest('.questionLi.singleQuesId')===node);
         const multiple=type==='multiple',knownType=['single','multiple','judge'].includes(type);
-        const markerSelector=multiple?'.num_option_dx':'.num_option',selectedClass=multiple?'check_answer_dx':'check_answer';
-        const role=multiple?'checkbox':'radio',handlerName=multiple?'addMultipleChoice':'addChoice';
-        const expectedType=multiple?'1':type==='single'?'0':null;
-        let contentValid=knownType&&rows.length>0;
+        const dx=multiple&&rows.length>0&&rows.every(row=>row.querySelector('.num_option_dx')&&!row.querySelector('.num_option:not(.num_option_dx)'));
+        const classic=rows.length>0&&rows.every(row=>row.querySelector('.num_option')&&!row.querySelector('.num_option_dx'));
+        const layout=multiple&&dx?{markerSelector:'.num_option_dx',selectedClass:'check_answer_dx',roles:['checkbox'],handlers:['addMultipleChoice'],expectedTypes:['1']}
+            :multiple&&classic?{markerSelector:'.num_option',selectedClass:'check_answer',roles:['checkbox','radio'],handlers:['addMultipleChoice','addChoice'],expectedTypes:['1','0']}
+            :!multiple?{markerSelector:'.num_option',selectedClass:'check_answer',roles:['radio'],handlers:['addChoice'],expectedTypes:type==='single'?['0']:null}
+            :null;
+        const markerSelector=layout?.markerSelector || (multiple?'.num_option_dx':'.num_option');
+        const selectedClass=layout?.selectedClass || (multiple?'check_answer_dx':'check_answer');
+        const allowedRoles=new Set(layout?.roles || []);
+        const allowedHandlers=new Set(layout?.handlers || []);
+        const expectedTypes=layout?.expectedTypes;
+        let contentValid=Boolean(knownType&&rows.length>0&&layout);
         let qid='',qtype='';
+        if(multiple&&!layout)diagnostics.push('mooc2 多选选项标记结构无法唯一对应');
         for (const row of rows) {
             const markers=[...row.querySelectorAll(markerSelector)],contents=[...row.querySelectorAll('.answer_p')];
             const marker=markers[0],content=contents[0],key=clean(marker?.textContent),value=marker?.getAttribute('data') || '';
             const rowId=row.getAttribute('qid') || '',rowType=row.getAttribute('qtype') || '';
             if (!qid) { qid=rowId;qtype=rowType; }
-            const materialValid=knownType&&markers.length===1&&contents.length===1&&/^[A-Z]$/.test(key)&&!keys.has(key)
+            const materialValid=Boolean(layout)&&knownType&&markers.length===1&&contents.length===1&&/^[A-Z]$/.test(key)&&!keys.has(key)
                 &&row.querySelectorAll('.num_option,.num_option_dx').length===1
                 &&marker.closest('.answerBg')===row&&content.closest('.answerBg')===row
                 &&/^\d+$/.test(rowId)&&rowId===String(id)&&rowId===qid&&Boolean(rowType)&&rowType===qtype
-                &&(expectedType===null||rowType===expectedType);
+                &&(expectedTypes===null||expectedTypes.includes(rowType));
             if(!materialValid)contentValid=false;
             const call=/^\s*(?:return\s+)?(addChoice|addMultipleChoice)\(\s*this\s*\)\s*;?\s*$/.exec(row.getAttribute('onclick') || '');
             if (!materialValid || !value || value!==value.trim() || values.has(value)
-                || row.getAttribute('role')!==role || call?.[1]!==handlerName
+                || !allowedRoles.has(row.getAttribute('role')) || !allowedHandlers.has(call?.[1])
                 || row.querySelector('input[type="radio"],input[type="checkbox"],.answerBg'))
                 diagnostics.push('mooc2 选项字母、内部标识或原生点击结构无法唯一对应');
             keys.add(key);values.add(value);
@@ -4900,6 +4979,7 @@ Typr["U"] = {
         if(!before||!after)return !before&&!after;
         return ['entry','shell','holder','row','click'].every(key=>before[key]===after[key]);
     }
+    const questionUEditorLiveWriters = new WeakMap();
     function readQuestionUEditor(node,id,slotInput=null,allowBlankSlots=false) {
         // 只读取已存在的实例；不调用 UE.getEditor，不按 uid 或题号顺序猜测实例。
         try {if(!/^\/(?:mooc-ans\/)?work\/doHomeWorkNew\/?$/.test(new URL(node.ownerDocument.URL).pathname))return null;}
@@ -4959,14 +5039,39 @@ Typr["U"] = {
             if(!same(editor.form,form))return invalid('编辑器与答案字段的表单归属不一致');
             if(['setContent','getContent','sync'].some(key=>typeof editor[key]!=='function'))return invalid('编辑器原生内容或同步接口不可用');
             const iframe=frames.find(frame=>same(frame,editor.iframe)),container=iframe?.closest('.edui-editor');
-            const inner=iframe?.contentDocument,body=inner?.body;
+            const inner=iframe?.contentDocument,liveBody=inner?.body;
             if(frames.length!==1||!iframe)return invalid('编辑器 iframe 与题目无法唯一对应');
             if(!container||owner(container)!==node||!node.contains(container)||!container.contains(iframe))return invalid('编辑器容器不属于当前题目');
             if(container.closest('form')!==form)return invalid('编辑器容器与答案字段的表单归属不一致');
-            if(!same(container,editor.container)||!same(inner,editor.document)||!same(body,editor.body)
-                ||!same(inner?.defaultView?.frameElement,iframe)||!body?.isConnected)return invalid('编辑器文档、正文或 iframe 关联已失效');
+            const editorDocumentLive=Boolean(editor.document?.body?.isConnected);
+            // 行被移动后，iframe 会重建 contentDocument；只要新文档已挂接且仍是同一 iframe，就回绑到新文档。
+            const liveDocument=Boolean(liveBody?.isConnected&&same(inner?.defaultView?.frameElement,iframe));
+            const rebound=liveDocument&&(!editorDocumentLive||!same(inner,editor.document)||!same(liveBody,editor.body));
+            if(!same(container,editor.container)||!same(inner?.defaultView?.frameElement,iframe)||!liveBody?.isConnected)
+                return invalid('编辑器文档、正文或 iframe 关联已失效');
+            if(!rebound&&(!same(inner,editor.document)||!same(liveBody,editor.body)))
+                return invalid('编辑器文档、正文或 iframe 关联已失效');
+            const body=liveBody;
             if(body.contentEditable!=='true'||editor.options?.readonly===true
                 ||container.getAttribute('aria-disabled')==='true'||iframe.getAttribute('aria-disabled')==='true')return invalid('编辑器已禁用或只读');
+            let setContent=editor.setContent,getContent=editor.getContent,sync=editor.sync;
+            const cached=questionUEditorLiveWriters.get(editor);
+            if(rebound||cached?.body===body) {
+                const nativeSetContent=setContent,nativeGetContent=getContent,nativeSync=sync;
+                const writers=cached&&cached.body===body&&cached.input===input&&cached.document===inner
+                    &&cached.nativeSetContent===setContent&&cached.nativeGetContent===getContent&&cached.nativeSync===sync
+                    &&(cached.sourceDocument===editor.document&&cached.sourceBody===editor.body||same(editor.document,inner)&&same(editor.body,body))?cached:
+                    {body,input,document:inner,sourceDocument:editor.document,sourceBody:editor.body,nativeSetContent,nativeGetContent,nativeSync,
+                        setContent(html,append){
+                            // Repair native references only when committing a validated write.
+                            editor.document=inner;editor.body=body;
+                            return nativeSetContent.call(editor,html,append);
+                        },
+                        getContent(){return same(editor.document,inner)&&same(editor.body,body)?nativeGetContent.call(editor):body.innerHTML;},
+                        sync(){return nativeSync.call(editor);}};
+                if(writers!==cached)questionUEditorLiveWriters.set(editor,writers);
+                setContent=writers.setContent;getContent=writers.getContent;sync=writers.sync;
+            }
             // Bind the same native blank entry for both single- and multi-slot questions.
             // Keep the descriptor even while expanded so native collapse does not lose its identity.
             const activationDiagnostics=[];
@@ -4975,7 +5080,7 @@ Typr["U"] = {
             if(instances.filter(other=>other===editor).length!==1||instances.some(other=>other!==editor
                 &&(other.key===input.id||same(other.iframe,iframe)||same(other.container,container)||same(other.body,body)||same(other.document,inner))))return invalid('编辑器实例或文档被重复注册或跨题共享');
             return {valid:true,diagnostics:[],id:String(id),mode,nativeQuestionId:mode==='answer'?node.getAttribute('data'):null,registry,editor,input,form,iframe,document:inner,body,container,
-                key:input.id,name:input.name,activation,setContent:editor.setContent,getContent:editor.getContent,sync:editor.sync};
+                key:input.id,name:input.name,activation,setContent,getContent,sync,rebound};
         }catch{return detected?invalid('编辑器实例或文档关联无法安全读取'):null;}
     }
     function sameQuestionUEditor(before,after) {
@@ -5067,7 +5172,7 @@ Typr["U"] = {
             questionContentText(group?.querySelector(':scope > .question-instructions'))].filter(Boolean).join('；'));
         const legacy = [...node.querySelectorAll('.Zy_ulTop li')];
         const native = [...node.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
-        const mooc2=!matching&&adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && !['blank','essay'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node,id,canonicalType({typeLabel,question})) : null;
+        const mooc2=!matching&&adapter==='chaoxing-mooc2-work' && node.querySelector('.stem_answer') && ['single','multiple','judge'].includes(canonicalType({typeLabel,question})) ? readMooc2ChoiceBindings(node,id,canonicalType({typeLabel,question})) : null;
         let optionTargets, options, writer,chapterRows=null;
         if(matching){options=matching.right.map(item=>({key:item.key,text:item.text}));optionTargets=new Map();writer='matching';}
         else if (mooc2) {
@@ -5099,7 +5204,8 @@ Typr["U"] = {
         const radios = native.filter(input => input.type === 'radio');
         const radioGroupIsolated = !radios.length || radios.every(input => input.name && input.name === radios[0].name && [...node.ownerDocument.getElementsByName(input.name)].filter(other => other.type === 'radio' && other.form === input.form).every(other => node.contains(other)));
         const inputs = textInputs(node).filter(input=>adapter!=='video-quiz'||courseElementVisible(input)&&!input.closest(MEDIA_EXCLUDED));
-        const ueditor=adapter==='video-quiz'||!['blank','essay'].includes(canonicalType({typeLabel,question}))?null:readQuestionUEditor(node,id,null,canonicalType({typeLabel,question})==='blank');
+        const declaredType=canonicalType({typeLabel,question});
+        const ueditor=adapter==='video-quiz'||!['blank','essay','sort','unknown'].includes(declaredType)?null:readQuestionUEditor(node,id,null,['blank','unknown'].includes(declaredType));
         const controls = { radios: native.filter(input => input.type === 'radio').length, checkboxes: native.filter(input => input.type === 'checkbox').length, textInputs: inputs.length, editableTextInputs: inputs.filter(input => !input.disabled && !input.readOnly).length, disabledChoices: native.filter(input => input.disabled).length, radioGroupIsolated, richText: node.querySelectorAll('[contenteditable="true"],iframe').length, choiceTargets: optionTargets.size };
         const shared = readQuestionSharedMaterials(node, group, groupId, local.graphHints || {});
         const { media, sharedMedia, imageNodes } = collectQuestionMedia(node, stem, id, groupId, optionTargets, shared.materials,matching);
@@ -5137,14 +5243,24 @@ Typr["U"] = {
         collect: (doc, context = {}) => context.scope === 'video-quiz' || isMooc2HomeworkDocument(doc) ? [] : [...doc.querySelectorAll('.fanyaMarking_left .questionLi.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]')].filter(node => node.querySelector(STEM_SELECTOR)),
         read: (node, index) => rawQuestion(node, index, 'chaoxing-homework')
     });
+    function canonicalChoiceFromControls(raw, fallback = 'single') {
+        if (raw?.controls?.checkboxes > 0 && !raw.controls.radios) return 'multiple';
+        if (raw?.controls?.radios > 0) return 'single';
+        if ((raw?.options || []).length) return 'single';
+        return fallback;
+    }
     function canonicalType(raw) {
         const label = raw.typeLabel || raw.question.match(/【([^】]+)】/)?.[1] || '';
         if (/连线|匹配/.test(label)) return 'matching';
         if (/多选|多项选择/.test(label)) return 'multiple';
         if (/单选|单项选择/.test(label)) return 'single';
         if (/判断|是非/.test(label)) return 'judge';
+        // 完形填空 must be classified before the generic 填空 match.
+        if (/完[型形]填空/.test(label)) return canonicalChoiceFromControls(raw, 'single');
         if (/填空/.test(label)) return 'blank';
-        if (/简答|问答|论述/.test(label)) return 'essay';
+        if (/简答|问答|论述|名词解释/.test(label)) return 'essay';
+        if (/阅读理解/.test(label)) return canonicalChoiceFromControls(raw, 'essay');
+        if (/排序|排列/.test(label)) return 'sort';
         if (TEXT_ANSWER_TYPE_LABEL.test(clean(label))) return 'essay';
         return 'unknown';
     }
@@ -5155,8 +5271,8 @@ Typr["U"] = {
         catch { return false; }
     }
 
-    // 提交形式仅约束原有自动填写保护，不阻止模型生成解答。
-    function questionManualPrefillPolicy(question, instructions = question.instructions || '') {
+    // 题干中的手写/上传等要求只作提示，有可写控件时仍分析并预填，由用户自行核对。
+    function questionRequirementHint(question, instructions = question.instructions || '') {
         const text = clean([instructions, question.question].filter(Boolean).join('；'));
         const rules = [
             ['handwriting', /(?:请|须|需要|需|必须|要求|用|采用|以|只能|仅限|只接受)(?:先|直接|本人|亲自|在纸上|用纸笔|使用纸笔|进行|采用|用|以|纸质|方式|作答|答案|纸笔|\s){0,8}(?:手写|手绘)|(?:^|[；;。！？])\s*手写|(?:拍照|扫描)[^。！？；;]{0,15}(?:上传|提交)|(?:上传|提交)[^。！？；;]{0,15}(?:手写|照片|手稿)/, '需要手写或拍照上传'],
@@ -5166,32 +5282,35 @@ Typr["U"] = {
         ];
         for (const [category, pattern, reason] of rules) {
             const match=text.match(pattern);
-            if(match) return {status:'manual',category,reason,evidence:match[0].slice(0,200)};
+            if(match) return {category,reason,evidence:match[0].slice(0,200)};
         }
         return null;
     }
+    function questionManualPrefillPolicy(question, instructions = question.instructions || '') {
+        // 兼容旧名：不再拦截预填，只返回提示信息。
+        return questionRequirementHint(question, instructions);
+    }
+    function questionPolicyWithHint(policy, hint) {
+        return hint ? {...policy, requirementHint:hint.reason, requirementCategory:hint.category, requirementEvidence:hint.evidence} : policy;
+    }
     function questionLocalAnswerPolicy(question) {
-        if(question.type==='unknown' || question.capabilities?.analyze===false)
-            return {status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''};
+        const hint=questionRequirementHint(question);
+        if(question.capabilities?.analyze===false)
+            return questionPolicyWithHint({status:'manual',category:'unsupported',reason:question.diagnostics?.join('；') || '题型或材料尚未适配',evidence:''},hint);
+        const category=['single','multiple','judge','matching'].includes(question.type)?'objective':'knowledge';
         if(question.recognition?.materials === 'unreadable' || question.blocks?.some(block=>block.unreadable))
-            return {status:'uncertain',category:'materials',reason:'题目包含尚未可靠读取的材料，请人工核对',evidence:''};
-        return {status:'auto',category:['single','multiple','judge','matching'].includes(question.type)?'objective':'knowledge',reason:'直接生成答案与解析',evidence:''};
+            return questionPolicyWithHint({status:'auto',category:'materials',reason:'题目包含尚未可靠读取的材料，已继续分析，请人工核对',evidence:''},hint);
+        return questionPolicyWithHint({status:'auto',category,reason:'直接生成答案与解析',evidence:''},hint);
     }
     function questionCanAutoAnswer(question, policy) {
-        const local=questionLocalAnswerPolicy(question);
-        return !['manual','uncertain'].includes(local.status) && question.capabilities?.analyze!==false &&
-            (policy || local).status==='auto';
+        return question.capabilities?.analyze!==false && questionLocalAnswerPolicy(question).status==='auto'
+            && !(policy?.category==='images' && policy.status==='uncertain');
     }
     function questionPrefillPolicy(question, entry) {
-        const local=questionManualPrefillPolicy(question)||questionLocalAnswerPolicy(question);
-        if(local.status==='manual')return local;
         if(question.capabilities?.prefill===false)
             return {status:'manual',category:'controls',reason:question.diagnostics?.join('；') || '控件暂不支持自动填写，请手动填写',evidence:''};
-        if(local.status==='uncertain')return local;
-        // 已分类结果只能限制本地白名单，不能解除明确的人工要求。
-        if(entry?.answerPolicy && ['auto','manual','uncertain'].includes(entry.answerPolicy.status))return entry.answerPolicy;
-        if(local.status==='auto')return local;
-        return {status:'uncertain',category:'missing-policy',reason:'缺少作答要求判断，请重新分析',evidence:''};
+        // 题干要求或模型返回的 manual/uncertain 不阻止可写控件预填。
+        return questionLocalAnswerPolicy(question);
     }
 
     function finishQuestion(raw, type, parser, inferred = false) {
@@ -5205,6 +5324,13 @@ Typr["U"] = {
             &&(raw.binding.ueditor.multiple?type==='blank'&&raw.binding.inputs.length===raw.binding.ueditor.slots.length
                 &&raw.binding.inputs.every(input=>questionUEditorForInput(raw.binding.ueditor,input))
                 :raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input);
+        if(type==='sort'){
+            const sortText=raw.controls.textInputs===1&&raw.controls.editableTextInputs===1&&raw.controls.richText===0;
+            const sortEditor=raw.binding.ueditor?.valid&&raw.binding.inputs.length===1&&raw.binding.inputs[0]===raw.binding.ueditor.input;
+            // Choice selection alone cannot encode the order of a permutation.
+            prefill=Boolean(sortText||sortEditor);
+            if(!prefill)diagnostics.push('排序题没有可可靠对应的作答控件，暂不预填');
+        }
         if(type==='matching'){prefill=raw.binding.matching?.valid===true;if(!prefill)diagnostics.push('连线题行号、控件、Chosen 或原生保存字段未可靠对应，暂不预填');}
         const mooc2Invalid=raw.binding.mooc2 && !raw.binding.mooc2.valid;
         if (mooc2Invalid) { diagnostics.push(...raw.binding.mooc2.diagnostics);prefill=false; }
@@ -5215,7 +5341,7 @@ Typr["U"] = {
         if (raw.options.some(option => !option.text && !ownMedia.some(item => item.location === 'option' && item.optionKey === option.key))) { diagnostics.push('选项文本不完整'); prefill = false; }
         if (choice && native && !nativeCompatible) diagnostics.push('题型与选择控件不一致');
         if (native && type !== 'multiple' && !raw.controls.radioGroupIsolated) diagnostics.push('单选控件组缺失或跨题共享，暂不预填');
-        const textAnswer = ['blank','essay'].includes(type);
+        const textAnswer = ['blank','essay','sort'].includes(type);
         const submittedReview = textAnswer && raw.controls.editableTextInputs === 0 && !raw.controls.richText && isSubmittedHomeworkView(raw.binding.node);
         if (submittedReview) diagnostics.push('答案已提交，当前页面仅供查看，暂不预填');
         else {
@@ -5225,7 +5351,9 @@ Typr["U"] = {
         if(raw.binding.ueditor&&!prefill)diagnostics.push(...raw.binding.ueditor.diagnostics);
         if(raw.binding.ueditor?.valid&&!raw.binding.ueditor.multiple&&(raw.binding.inputs.length!==1||raw.binding.inputs[0]!==raw.binding.ueditor.input))
             diagnostics.push('UEditor：题目内文本答案控件无法唯一对应');
-        if (type === 'unknown') { diagnostics.push('未识别题型，保留原始题目供核对'); prefill = false; }
+        if (type === 'unknown') diagnostics.push('未识别题型，已尽量按可写控件分析');
+        const hint=questionRequirementHint({question:raw.question,instructions:raw.instructions||''});
+        if(hint)diagnostics.push(`提示：${hint.reason}，已按可写控件分析并预填，请自行核对`);
         if (raw.unboundOptionImages) { diagnostics.push('选项图片无法可靠对应选项，暂不分析或预填'); prefill = false; }
         const question = {
             id: raw.id, number: raw.number, type, question: raw.question, instructions:raw.instructions || '', options: raw.options,
@@ -5236,19 +5364,38 @@ Typr["U"] = {
                 sharing:raw.binding.sharedMaterials?.length ? 'explicit' : 'none',slots:'single'},
             source: { adapter: raw.adapter, parser, typeLabel: raw.typeLabel, inferred },
             controls: raw.controls,
-            capabilities: { analyze: Boolean(raw.question || ownMedia.length || sharedMedia.length) && type !== 'unknown' && uniqueOptions
+            capabilities: { analyze: Boolean(raw.question || ownMedia.length || sharedMedia.length) && uniqueOptions
                 &&(!raw.binding.chapterRows||raw.binding.chapterRows.contentValid)
                 && !raw.options.some(option=>!option.text&&!ownMedia.some(item=>item.location==='option'&&item.optionKey===option.key))
                 && !raw.unboundOptionImages && (!raw.binding.mooc2||raw.binding.mooc2.contentValid), prefill }, diagnostics
         };
         question.answerPolicy=questionLocalAnswerPolicy(question);
+        if(question.answerPolicy.requirementHint)question.requirementHint=question.answerPolicy.requirementHint;
         return { question, binding: { ...raw.binding, writer:prefill&&raw.binding.ueditor?.valid?'ueditor':raw.binding.writer, type, canPrefill: prefill } };
+    }
+    const JUDGE_OPTION_LABEL = /^(?:正确|错误|对|错|是|否|√|×|✓|✗|true|false|T|F)$/i;
+    function inferFillableType(raw) {
+        if(raw.binding?.matching)return raw.binding.matching.valid?'matching':null;
+        if(raw.controls?.checkboxes>0&&!raw.controls.radios&&raw.options?.length===raw.controls.checkboxes)return 'multiple';
+        if(raw.controls?.radios>0&&!raw.controls.checkboxes&&raw.options?.length===raw.controls.radios){
+            if(raw.options.length===2&&raw.options.every(option=>JUDGE_OPTION_LABEL.test(clean(option.text))||JUDGE_OPTION_LABEL.test(String(option.key))||['true','false'].includes(String(option.key))))
+                return 'judge';
+            return 'single';
+        }
+        if(raw.binding?.ueditor?.valid)return raw.binding.ueditor.multiple?'blank':'essay';
+        if(raw.controls?.editableTextInputs===1&&raw.controls.textInputs===1&&raw.controls.richText===0)return 'essay';
+        return null;
     }
     registerQuestionParser({ id: 'declared-type', match: raw => canonicalType(raw) !== 'unknown', parse: raw => finishQuestion(raw, canonicalType(raw), 'declared-type') });
     registerQuestionParser({
         id: 'native-choice',
         match: raw => !raw.typeLabel && (raw.controls.radios > 0 || raw.controls.checkboxes > 0) && !(raw.controls.radios && raw.controls.checkboxes),
         parse: raw => finishQuestion(raw, raw.controls.checkboxes ? 'multiple' : 'single', 'native-choice', true)
+    });
+    registerQuestionParser({
+        id: 'inferred-controls',
+        match: raw => canonicalType(raw)==='unknown' && Boolean(inferFillableType(raw)),
+        parse: raw => finishQuestion(raw, inferFillableType(raw), 'inferred-controls', true)
     });
     registerQuestionParser({ id: 'unknown', match: () => true, parse: raw => finishQuestion(raw, 'unknown', 'unknown') });
     function parseQuestionDocument(doc = document, parseContext = {}) {
@@ -5358,7 +5505,7 @@ Typr["U"] = {
                 slots.push({id:String(slot.id), text:text(slot.text), control:slot.control,
                     evidence:['adapter-slot-reference'], type:slot.type || question.type});
             }
-        } else if (['blank','essay'].includes(question.type)) {
+        } else if (['blank','essay','sort'].includes(question.type)) {
             const labels = [...node.querySelectorAll('label')];
             const index = context.parseLookup?.documentIndex(node.ownerDocument);
             const allLabels = index ? null : [...node.ownerDocument.querySelectorAll('label')];
@@ -5416,7 +5563,7 @@ Typr["U"] = {
             binding.canPrefill, {optionKey:key, groupId:`${question.id}:options`});
         if(binding.matching)for(const row of binding.matching.rows)add(row.select,'select',binding.canPrefill,{matchingRow:row.index});
         for (const input of binding.inputs || []) add(input, input.tagName === 'TEXTAREA' ? 'textarea' : 'text',
-            ['blank','essay'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&questionUEditorForInput(binding.ueditor,input)));
+            ['blank','essay','sort'].includes(question.type) && (!question.controls?.richText || binding.writer==='ueditor'&&questionUEditorForInput(binding.ueditor,input)));
         for (const target of node.querySelectorAll('select,input[type="file"],[contenteditable="true"],canvas')) {
             if (target.closest(MEDIA_EXCLUDED) || typeof courseElementVisible === 'function' && !courseElementVisible(target)) continue;
             if (target.tagName === 'CANVAS' && [...(binding.imageNodes || new Map()).values()].includes(target)) continue;
@@ -5438,9 +5585,9 @@ Typr["U"] = {
             const confirmed = binding.canPrefill && targets.length === question.options.length && targets.every(control => control.writable);
             unit(question.id, question.type, targets.map(control => control.id), confirmed ? 'confirmed' : 'unsupported',
                 confirmed ? ['adapter-option-key','isolated-option-group'] : ['unverified-option-group']);
-        } else if (['blank','essay'].includes(question.type) && content.slotAmbiguous) {
+        } else if (['blank','essay','sort'].includes(question.type) && content.slotAmbiguous) {
             unit(question.id, question.type, textControls.map(control => control.id), 'ambiguous', ['invalid-slot-reference']);
-        } else if (['blank','essay'].includes(question.type) && content.slots.length > 1) {
+        } else if (['blank','essay','sort'].includes(question.type) && content.slots.length > 1) {
             for (const slot of content.slots) {
                 const descriptor = textControls.find(control => controls.runtime.get(control.id) === slot.control);
                 const valid = descriptor?.writable && content.slots.filter(other => other.id === slot.id || other.control === slot.control).length === 1;
@@ -5509,7 +5656,7 @@ Typr["U"] = {
                 let question = parent;
                 if (composite) {
                     const count = unit.controlIds.length;
-                    const textUnit = ['blank','essay'].includes(unit.type);
+                    const textUnit = ['blank','essay','sort'].includes(unit.type);
                     const material = graph.materials.filter(item => parent.sharedMaterialIds.includes(item.id)).map(item => item.text).filter(Boolean).join('\n');
                     question = {...parent, id:unit.id, parentQuestionId:parent.id, parentNumber:parent.number, type:unit.type,
                         question:[parent.question, material, unit.question].filter(Boolean).join('\n'),
@@ -6049,7 +6196,7 @@ Typr["U"] = {
     }
     function questionUEState(binding) {
         const ue=binding.ueditor,doc=binding.node.ownerDocument;
-        const content=questionUEContent(ue.editor.getContent(),doc),body=questionUEContent(ue.body.innerHTML,doc),saved=questionUEContent(ue.input.value,doc);
+        const content=questionUEContent((typeof ue.getContent==='function'?ue.getContent:ue.editor.getContent).call(ue.editor||ue),doc),body=questionUEContent(ue.body.innerHTML,doc),saved=questionUEContent(ue.input.value,doc);
         return {keys:[],values:[content.text,body.text,saved.text],saved:'',
             unknownSaved:content.nonText||body.nonText||saved.nonText||content.text!==body.text||content.text!==saved.text,
             editorEmpty:content.empty&&body.empty,savedEmpty:saved.empty};
@@ -6169,7 +6316,7 @@ Typr["U"] = {
         for (const record of adapter.records) {
             const checked=record.marker.classList.contains(adapter.selectedClass),aria=record.row.getAttribute('aria-checked');
             const pressed=record.row.getAttribute('aria-pressed');
-            if(record.marker.classList.contains(adapter.type==='multiple'?'check_answer':'check_answer_dx'))consistent=false;
+            if(record.marker.classList.contains(adapter.selectedClass==='check_answer_dx'?'check_answer':'check_answer_dx'))consistent=false;
             // Unticked options may omit ARIA attributes; any present value must agree with CSS.
             if ((aria!==null && !['true','false'].includes(aria)) || (checked ? aria!=='true' : aria==='true')) consistent=false;
             if (pressed!==null && pressed!==(checked?'true':'false')) consistent=false;
@@ -6262,7 +6409,7 @@ Typr["U"] = {
                 assertQuestionSnapshot(fence);
                 failUnit(question,entry,'UEditor 内容读取失败，未写入，请人工处理');continue;
             }
-            const text=['blank','essay'].includes(current.type);
+            const text=['blank','essay','sort'].includes(current.type);
             const original=parseContext.scope==='video-quiz'?options.ownedAnswers?.get(entry.id):null;
             const previous=original?{node:original.node,input:original.input,value:original.value,keys:original.keys?[...original.keys]:null}:null;
             const owns=Boolean(previous && previous.node===binding.node);
@@ -6276,11 +6423,12 @@ Typr["U"] = {
                 units.push(unit);plan.actions.push(...unit.actions);continue;
             }
             if(text) {
+                const textAnswers=current.type==='sort'?[entry.answer.join('、')]:entry.answer;
                 const inputs=binding.inputs.filter(input=>!questionActionDisabled(input));
-                if(inputs.length!==1 || entry.answer.length!==1 || typeof entry.answer[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
+                if(inputs.length!==1 || textAnswers.length!==1 || typeof textAnswers[0]!=='string'){failUnit(question,entry,'填空结构或答案不确定，跳过');continue;}
                 const input=inputs[0];
                 if(binding.writer==='ueditor') {
-                    unit.input=input;unit.value=entry.answer[0];unit.expectedText=questionUEText(unit.value);
+                    unit.input=input;unit.value=textAnswers[0];unit.expectedText=questionUEText(unit.value);
                     if(input!==binding.ueditor.input||!unit.expectedText||state.unknownSaved){failUnit(question,entry,'富文本内容或 textarea 同步状态不明确，未写入');continue;}
                     if(!state.editorEmpty||!state.savedEmpty) {
                         if(!questionUEVerified(unit)){failUnit(question,entry,'已有富文本作答，未覆盖');continue;}
@@ -6293,8 +6441,8 @@ Typr["U"] = {
                 }
                 if(owns && (previous.input!==input || String(input.value)!==previous.value))throw questionActionError('CX-EXE-004','用户已修改弹题答案，等待人工处理');
                 if(clean(input.value) && !owns){failUnit(question,entry,'已有填写内容，跳过');continue;}
-                unit.input=input;unit.value=entry.answer[0];
-                unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill',value:entry.answer[0],expectedState:'unchanged'});
+                unit.input=input;unit.value=textAnswers[0];
+                unit.actions.push({responseUnitId:unit.id,targetId:responseUnit.controlIds[0],type:'fill',value:unit.value,expectedState:'unchanged'});
             } else {
                 const keys=[...new Set(entry.answer)],targetKeys=new Set(keys);
                 if(entry.answer.some(key=>typeof key!=='string') || keys.length!==entry.answer.length || keys.some(key=>!binding.optionTargets.has(key)) || (['single','judge'].includes(current.type)&&keys.length!==1)) {failUnit(question,entry,'选项无法对应，跳过');continue;}
@@ -6439,9 +6587,10 @@ Typr["U"] = {
                             validateUnit(unit);
                             if(!courseElementVisible(unit.binding.ueditor.iframe))throw questionActionError('CX-CTL-004','原生编辑器已收起，未继续写入');
                             activeWrites++;
-                            unit.binding.ueditor.editor.setContent(unit.html,false);
+                            const ue=unit.binding.ueditor;
+                            (typeof ue.setContent==='function'?ue.setContent:ue.editor.setContent).call(ue.editor||ue,unit.html,false);
                             validateUnit(unit,false);
-                            unit.binding.ueditor.editor.sync();
+                            (typeof ue.sync==='function'?ue.sync:ue.editor.sync).call(ue.editor||ue);
                         });
                     }
                     await waitFor(()=>{validateUnit(unit,false);return questionUEVerified(unit);},1000);
@@ -7393,7 +7542,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.33.4');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.34');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -7457,7 +7606,7 @@ Typr["U"] = {
     }
     function courseBlocker(documents, videoQuizContext = null, verification = null) {
         for (const doc of documents) {
-            for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
+            for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,.chapterVideoFaceQrMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
                 if (node.id === 'fcqrimg' && !node.getAttribute('src')) continue;
                 if (courseElementVisible(node) && !verification?.allows(node)) return '需要人脸识别，请自行处理；自动流程已停止';
             }
@@ -8285,7 +8434,8 @@ Typr["U"] = {
     }
     // Native face verification stays on the platform; only its loaded QR bitmap is displayed here.
     const courseVerificationSessions = new WeakMap();
-    const COURSE_FACE_SELECTOR = '.chapterVideoFaceMaskDiv,.face-recognition,[data-face-verification]';
+    const COURSE_FACE_SELECTOR = '.chapterVideoFaceMaskDiv,.chapterVideoFaceQrMaskDiv,.face-recognition,[data-face-verification]';
+    const COURSE_FACE_ROOT_SELECTOR = COURSE_FACE_SELECTOR+',.faceCollectQrPopVideo,.layui-layer-content,.vjs-modal-dialog-content,[role="dialog"]';
     function courseFaceQRCode(tree, video = null) {
         const images=tree.documents.flatMap(doc=>[...doc.querySelectorAll('img#fcqrimg')])
             .filter(image=>courseElementVisible(image)||courseElementVisible(image.closest(COURSE_FACE_SELECTOR)));
@@ -8296,11 +8446,20 @@ Typr["U"] = {
             try{doc=doc.defaultView.frameElement?.ownerDocument;}catch{break;}
         }
         if(!parents.has(image.ownerDocument))return null;
-        const root=image.closest(COURSE_FACE_SELECTOR+',.layui-layer-content,.vjs-modal-dialog-content,[role="dialog"]')||image.parentElement;
+        const root=image.closest(COURSE_FACE_ROOT_SELECTOR)||image.parentElement;
         if(!root)return null;
         const masks=tree.documents.filter(doc=>parents.has(doc)).flatMap(doc=>[...doc.querySelectorAll(COURSE_FACE_SELECTOR)])
             .filter(node=>courseElementVisible(node));
         return {image,root,masks};
+    }
+    function courseFaceQRExpired(image,root) {
+        if(!root.matches(COURSE_FACE_ROOT_SELECTOR))return false;
+        const scope=image.closest('.ewmDiv')||root;
+        return [...scope.querySelectorAll('p,span,strong,em,div,button,a,[role="status"]')].some(node=>{
+            if(!courseElementVisible(node))return false;
+            const text=clean(node.innerText??node.textContent);
+            return text.length<120&&/二维码.{0,8}(?:已过期|已失效|失效了)/.test(text);
+        });
     }
     function courseVerificationWaitError() {
         return Object.assign(new Error('等待学习通扫码核验'),{code:'COURSE_VERIFICATION_WAIT'});
@@ -8309,7 +8468,31 @@ Typr["U"] = {
         let pending=null,lastPassed=null,closed=false,excluded=0,passes=0;
         const update=()=>owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-verification'));
         const visible=node=>Boolean(node?.isConnected&&courseElementVisible(node));
-        const clearListener=state=>state?.video?.removeEventListener('playing',state.onPlaying);
+        const clearRefresh=state=>{
+            if(state?.refreshImage)state.refreshImage.removeEventListener('load',state.onRefreshLoad);
+            if(state){state.refreshImage=null;state.onRefreshLoad=null;}
+        };
+        const clearListener=state=>{state?.video?.removeEventListener('playing',state.onPlaying);clearRefresh(state);};
+        const refresh=state=>{
+            if(!state.expired||!state.root.isConnected||now()-(state.refreshedAt??-Infinity)<5000)return;
+            const matches=[...state.root.querySelectorAll('button,a,[role="button"],[onclick],img')].filter(node=>{
+                if(!visible(node)||node.disabled||node.getAttribute('aria-disabled')==='true')return false;
+                const label=clean(node.getAttribute('aria-label')||node.getAttribute('title')||node.getAttribute('alt')||node.textContent)
+                    .replace(/^二维码.{0,8}(?:已过期|已失效|失效了)[，,。:：\s]*/,'');
+                return /^(?:点击)?(?:刷新(?:二维码)?|重新获取(?:二维码)?|重新加载(?:二维码)?)[！!。\s]*$/.test(label);
+            });
+            const candidates=matches.filter(node=>!matches.some(other=>other!==node&&node.contains(other)));
+            if(candidates.length!==1){state.refreshMessage='二维码已过期，请在原页面点击刷新';return;}
+            state.refreshedAt=now();state.refreshSource=state.image.currentSrc||state.image.src;
+            state.seenImage=false;state.playing=false;state.refreshMessage='正在刷新二维码…';
+            clearRefresh(state);state.refreshImage=state.image;
+            state.onRefreshLoad=()=>{
+                if(pending!==state||closed)return;
+                state.refreshSource=null;state.refreshMessage='';clearRefresh(state);update();
+            };
+            state.image.addEventListener('load',state.onRefreshLoad,{once:true});
+            candidates[0].click();
+        };
         const api={
             owner,mode,get pending(){return pending;},get passes(){return passes;},
             get excludedMs(){return excluded+(pending?Math.max(0,now()-pending.started):0);},
@@ -8343,23 +8526,35 @@ Typr["U"] = {
                 if(candidate) {
                     if(candidate.image.ownerDocument!==state.image.ownerDocument)
                         throw Object.assign(new Error('出现新的核验来源，请人工确认'),{code:'COURSE_VERIFICATION_TARGET_CHANGED'});
+                    if(candidate.image!==state.image){
+                        clearRefresh(state);state.refreshSource=null;state.refreshMessage='';
+                        state.playing=false;state.seenImage=false;
+                    }
                     state.image=candidate.image;state.root=candidate.root;state.masks=candidate.masks;
                 }
                 if(visible(state.image)&&state.image.complete&&state.image.naturalWidth>0&&state.image.naturalHeight>0)state.seenImage=true;
-                const boundRoot=state.root.matches(COURSE_FACE_SELECTOR+',.layui-layer-content,.vjs-modal-dialog-content,[role="dialog"]');
-                state.expired=boundRoot&&[...state.root.querySelectorAll('p,span,div')].some(node=>!node.childElementCount&&visible(node)
-                    &&clean(node.textContent).length<120&&/二维码.{0,8}(?:已过期|已失效|失效了)/.test(clean(node.textContent)));
+                const boundRoot=state.root.matches(COURSE_FACE_ROOT_SELECTOR);
+                state.expired=courseFaceQRExpired(state.image,state.root);
+                if(state.refreshSource&&(state.image.currentSrc||state.image.src)!==state.refreshSource){
+                    state.refreshSource=null;state.refreshMessage='';clearRefresh(state);
+                }
+                if(mode==='unlock')refresh(state);
                 const gateVisible=visible(state.image)||state.masks.some(visible);
                 // Non-video gates require a native, explicit success marker inside the bound gate.
                 const nativeSuccess=!state.video&&boundRoot&&state.root.isConnected&&Boolean(
                     state.root.matches('[data-face-verified="true"],[data-verification-status="passed"]')
                     ||[...state.root.querySelectorAll('[role="status"],.success,[data-face-result]')].some(node=>visible(node)
                         &&/^(?:人脸识别成功|人脸验证成功|身份核验通过|验证成功)[！!。\s]*$/.test(clean(node.textContent))));
-                if(!state.expired&&state.seenImage&&!visible(state.image)&&(state.video?!gateVisible&&state.playing:nativeSuccess)) {
+                if(!state.expired&&!state.refreshSource&&state.seenImage&&!visible(state.image)&&(state.video?!gateVisible&&state.playing:nativeSuccess)) {
                     if(mode==='unlock')state.video?.pause();
                     clearListener(state);excluded+=Math.max(0,now()-state.started);passes++;
                     pending=null;lastPassed=state;notify(false);update();
                 } else {notify(true);update();}
+            },
+            reset() {
+                if(pending)excluded+=Math.max(0,now()-pending.started);
+                clearListener(pending);pending=null;lastPassed=null;
+                notify(false);update();
             },
             close() {
                 if(closed)return;closed=true;clearListener(pending);pending=null;lastPassed=null;
@@ -8396,7 +8591,7 @@ Typr["U"] = {
                 shown=state;overlay.hidden=false;back.focus();
             }
             if(!shown)return;
-            if(state.expired){canvas.hidden=true;message.textContent='二维码已过期，等待平台刷新';return;}
+            if(state.expired||state.refreshSource){canvas.hidden=true;drawnImage=null;message.textContent=state.refreshMessage||'二维码已过期，等待平台刷新';return;}
             const image=state.image;
             if(courseElementVisible(image)&&image.complete&&image.naturalWidth>0&&image.naturalHeight>0) {
                 const source=image.currentSrc||image.src;
@@ -8733,10 +8928,10 @@ Typr["U"] = {
         };
         return {handle,close(){closed=true;hooks.wake();}};
     }
-    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:500, unlockWaitMs:15000, settleMs:700, frameReadDelayMs:2000, maxFrameReadRetries:30, loadMs:30000, videoLoadMs:60000, completionMs:30000, emptyTailWaitMs:2500,
+    const COURSE_RUN_LIMITS = Object.freeze({ pollMs:250, unlockWaitMs:15000, settleMs:200, frameReadDelayMs:500, maxFrameReadRetries:120, loadMs:30000, videoLoadMs:60000, completionMs:30000, emptyTailWaitMs:2500,
         stallMs:300000, resumeMs:3000, videoStartRetryMs:2000, maxResumes:8, resumeProgressSeconds:10, videoSeekToleranceSeconds:2, videoSeekStableMs:500, videoSeekTimeoutMs:60000,
         videoProgressEpsilonSeconds:0.05, videoPlayedRangeToleranceSeconds:0.25, videoReplayGraceMs:300000, videoQuizConfirmMs:30000, videoManualPauseIntentMs:2000,
-        slideMs:1000, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
+        slideMs:250, documentMs:300000, documentCheckMs:500, documentStableMs:1000, documentBottomSamples:3, documentFallbackStepMs:200, documentFallbackPasses:2, submitMs:30000, maxConsecutiveChapterFailures:3, speedReadyMs:3000, speedConfirmMs:2000 });
     let courseRunner;
     // 仅脚本闭包持有命令入口；页面事件只传递状态，不授予操作权限。
     const assistantConfirm = window.confirm.bind(window);
@@ -8761,6 +8956,19 @@ Typr["U"] = {
     const courseRunnerControllers = new WeakMap();
     function courseRunController(owner) { return owner ? courseRunnerControllers.get(owner) || null : null; }
     function courseForcePlaybackEnabled() {return get('cx_course_force_playback',true)!==false;}
+    function courseStepSkippedError() {return Object.assign(new Error('用户跳过当前步骤'),{code:'COURSE_STEP_SKIPPED'});}
+    function courseBeginStep(run,task) {
+        const chapter=run.chapter,step={task,skipped:false,abort:new AbortController()};
+        step.wait=new Promise(resolve=>{step.wake=resolve;});
+        const cancel=()=>step.abort.abort();
+        chapter.abort.signal.addEventListener('abort',cancel,{once:true});
+        step.finish=()=>{
+            chapter.abort.signal.removeEventListener('abort',cancel);step.abort.abort();
+            if(run.step===step)run.step=null;
+        };
+        run.step=step;
+        return step;
+    }
     const courseVideoPlaybackRequests=new WeakMap();
     function requestCourseVideoPlayback(video,signal,timeoutMs=COURSE_RUN_LIMITS.videoLoadMs,clock=null) {
         if(signal?.aborted)return Promise.reject(cancelledError());
@@ -8937,7 +9145,7 @@ Typr["U"] = {
         }
         if (!report) return '尚未开始自动学习';
         const pending=coursePendingChapters(report),protection=report.protection;
-        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
+        const hasManualTasks=report.chapters.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks.some(task=>task.status==='manual-pending'&&(task.userSkipped||task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
         const finished = report.chapters.filter(item => ['done','already'].includes(item.status)).length;
         const completedQuizzes=report.chapters.flatMap(chapter=>chapter.tasks).filter(task=>task.type==='quiz'&&task.status==='already').length;
         const taskFree = report.chapters.filter(item=>item.status==='no-tasks');
@@ -9036,6 +9244,9 @@ Typr["U"] = {
             get autoSubmitEnabled() { return Boolean(current && !current.cancelled && current.submit === true); },
             get mode() { return current?.mode||null; },
             get canSkip() { return current ? Boolean(!current.cancelled && !current.waitingUnlock && !current.verification?.pending && current.chapter && !current.chapter.skipped && !current.chapter.submitting) : lastUnlockReport?.scope===scope?false:Boolean(courseSkipResume(owner)); },
+            get canSkipStep() {return Boolean(current&&!current.cancelled&&!current.waitingUnlock&&!current.verification?.pending
+                &&current.chapter&&!current.chapter.skipped&&!current.chapter.submitting&&current.step&&!current.step.skipped
+                &&!current.step.task.submissionStarted&&!current.step.task.videoQuizUnconfirmed);},
             get canRetry() { refreshScope();return !current&&!ctl.state.busy&&courseRetryCandidate(owner,key?get(key,null):null).allowed; },
             retryIncomplete(token, {submit=false} = {}) {
                 if(current||ctl.state.busy)return;
@@ -9063,6 +9274,17 @@ Typr["U"] = {
                 current.releaseVideoProtection?.();
                 current.activeVideo?.pause();
                 current.notify('正在跳过本章节…','course-skipping');
+                return true;
+            },
+            skipStep() {
+                if(!api.canSkipStep)return false;
+                try{current.validate(true);}catch(error){if(error.code!=='COURSE_UNLOCK_RECONNECT')api.stop(error.message,error);return false;}
+                if(!api.canSkipStep)return false;
+                const step=current.step;
+                if(step.skipWait){step.task.skippedWait=true;step.skipWait();current.notify('已跳过等待，继续后续操作…','course-running');return true;}
+                step.skipped=true;step.abort.abort();step.wake();
+                current.releaseVideoProtection?.();current.activeVideo?.pause();
+                current.notify('正在跳过当前步骤…','course-skipping');
                 return true;
             },
             async start({ mode='study',submit = false, skipLearned = true, fromCurrent = false, startChapterId = null, continueOnTimeout = true, muteVideo = true, skipUnanswerable = false, videoQuizAuto = true, speedEnabled = false, failureProtectionEnabled = get('cx_course_failure_protection_enabled',false)===true, resume = false, skipCurrent = false, retry = false, retryToken = null, restEnabled = false, studyMinutes = 50, restMinutes = 10, videoDelay = readCourseVideoDelaySettings(), queueContext = null, queuePacing = null } = {}) {
@@ -9412,13 +9634,15 @@ Typr["U"] = {
                     const guard=()=>{
                         guardRun();
                         if(context!==run.chapter || context.skipped) throw skippedError();
+                        if(run.step?.skipped)throw courseStepSkippedError();
                     };
+                    const stepGuard=step=>()=>{guard();if(step&&run.step!==step)throw courseStepSkippedError();};
                     const emit=(message,phase)=>{guard();emitRun(message,phase);};
                     const wait = async ms => {
                         await verificationReady();guard();
                         const deadline=taskNow()+ms;
                         while(taskNow()<deadline) {
-                            await Promise.race([sleep(Math.min(limits.pollMs,deadline-taskNow())),run.cancelWait,context.wait]);
+                            await Promise.race([sleep(Math.min(limits.pollMs,deadline-taskNow())),run.cancelWait,context.wait,...(run.step?[run.step.wait]:[])]);
                             await verificationReady();guard();
                         }
                     };
@@ -9432,12 +9656,15 @@ Typr["U"] = {
                         }
                     };
                     const race = async promise => {
-                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();})]); await verificationReady();guard(); return value;
+                        const step=run.step;
+                        const value = await Promise.race([promise,context.wait.then(() => {throw skippedError();}),run.cancelWait.then(() => {throw run.stopError || cancelledError();}),...(step?[step.wait.then(()=>{throw courseStepSkippedError();})]:[])]);
+                        await verificationReady();stepGuard(step)();return value;
                     };
                     const taskDone = async node => {
                         if (courseTaskComplete(node) === false) await until(() => courseTaskComplete(node) === true,limits.completionMs,'播放/阅读结束，但平台未确认任务完成');
                     };
                     const playVideo = async (video, task) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         let contextCapturedAt=-Infinity;
                         run.activeVideo=video;
                         if ((run.skipLearned||run.retrying) && courseTaskComplete(video) === true) {task.status='already';return;}
@@ -9584,7 +9811,7 @@ Typr["U"] = {
                             commitSample(current,false);
                         };
                         const materialRecord=settings.videoInfoEnabled?chapterContextStore(owner):null;
-                        const videoInfo=createCourseVideoInfo(settings,{signal:context.abort.signal,now,guard:()=>{
+                        const videoInfo=createCourseVideoInfo(settings,{signal,now,guard:()=>{
                             guard();
                             if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频页面已切换');
                         },
@@ -9602,7 +9829,7 @@ Typr["U"] = {
                             if(['pause','seeking','loadstart','emptied'].includes(event.type))suspendSpeed();
                             if(['loadstart','emptied'].includes(event.type))speedGeneration++;
                             const state=snapshot(event.type);observe(state);
-                            if(!courseForcePlaybackEnabled()&&state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                            if(state.paused&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                             if(event.type==='playing'&&pauseControl.scriptPaused&&!video.paused){policyPauseExpected=true;video.pause();}
                             if(event.type==='playing'&&foregroundWaitingStartedAt!==null&&!video.paused){foregroundPausePending=true;policyPauseExpected=true;video.pause();}
                             collectVideoInfo();
@@ -9611,7 +9838,7 @@ Typr["U"] = {
                             task.playbackState=state;
                             if(event.type==='pause'){
                                 task.pauseCount++;task.lastPause=state;
-                                if(!courseForcePlaybackEnabled()&&!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(!policyPauseExpected&&pauseControl.manualIntentUntil>0&&state.at<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 if(!policyPauseExpected&&!pauseControl.scriptPaused)pauseControl.pausedAt??=now();
                                 policyPauseExpected=false;
                             }
@@ -9630,7 +9857,7 @@ Typr["U"] = {
                         if(!Array.isArray(task.videoQuizzes))task.videoQuizzes=[];
                         let rewatchGrant=null;
                         const quizHandler=createCourseVideoQuizHandler(video,task.videoQuizzes,{
-                            settings:{...settings,diagnosticTaskId},signal:context.abort.signal,now,confirmMs:limits.videoQuizConfirmMs,
+                            settings:{...settings,diagnosticTaskId},signal,now,confirmMs:limits.videoQuizConfirmMs,
                             guard:()=>{guard();if(!video.isConnected||!courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');},
                             wake:()=>wakeMedia?.(),wait:waitForMedia,playingCount:()=>playingEventCount,
                             status:message=>emit(message,'course-video-quiz'),
@@ -9663,7 +9890,7 @@ Typr["U"] = {
                             const policy=courseVideoForegroundPolicy(video);
                             if(policy.required){task.foregroundState.required=true;task.foregroundState.evidence=policy.evidence;}
                             const state=courseOwnerForegroundState(owner);
-                            if(!task.foregroundState.required || state.visible&&state.focused)return false;
+                            if(courseForcePlaybackEnabled()||!task.foregroundState.required || state.visible&&state.focused)return false;
                             if(foregroundWaitingStartedAt===null){
                                 suspendSpeed();foregroundWaitingStartedAt=now();task.foregroundState.waitCount++;task.foregroundState.waiting=true;
                                 syncVideoWaitBudget();pausePacing();
@@ -9700,7 +9927,7 @@ Typr["U"] = {
                             }
                             try {
                                 while((video.paused||pauseControl.scriptPaused)&&!video.ended){
-                                    if(!pauseControl.scriptPaused&&(courseForcePlaybackEnabled()||pauseControl.resumeRequested))break;
+                                    if(!pauseControl.scriptPaused&&(pauseControl.resumeRequested||courseForcePlaybackEnabled()&&!pauseControl.manualPaused&&!pauseControl.recoveryBlocked))break;
                                     await handleVideoQuiz();guard();await waitForVideoForeground();
                                     if(!video.isConnected || !courseFrameTree(owner).documents.includes(video.ownerDocument))throw new Error('视频节点或页面已替换，已停止');
                                     if(video.error)throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
@@ -9715,7 +9942,6 @@ Typr["U"] = {
                             }
                         };
                         const onPlayerInput=event=>{
-                            if(courseForcePlaybackEnabled())return;
                             if(context.skipped||run.cancelled||video.paused||video.ended||!courseVideoPauseInput(event,video))return;
                             pauseControl.manualIntentUntil=now()+limits.videoManualPauseIntentMs;
                         };
@@ -9727,6 +9953,7 @@ Typr["U"] = {
                             wake:()=>wakeMedia?.(),
                             settingsChanged:()=>{
                                 if(courseForcePlaybackEnabled()&&!pauseControl.scriptPaused){pauseControl.manualPaused=false;pauseControl.recoveryBlocked=false;pauseControl.manualIntentUntil=0;}
+                                if(courseForcePlaybackEnabled())finishForegroundWait();
                                 wakeMedia?.();
                             },
                             togglePause:()=>{
@@ -9742,7 +9969,7 @@ Typr["U"] = {
                                 if(current!==run||run.cancelled||context!==run.chapter||context.skipped||context.submitting||run.resting
                                     ||fatalError||pendingSeek||video.seeking||video.error||video.readyState<2||pauseControl.scriptPaused||pauseControl.manualPaused||pauseControl.recoveryBlocked||pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil
                                     ||manualWaitingStartedAt!==null||foregroundWaitingStartedAt!==null||quizWaitingStartedAt!==null
-                                    ||task.foregroundState.required||courseVideoForegroundPolicy(video).required||courseVideoQuizCandidate(video))return false;
+                                    ||!courseForcePlaybackEnabled()||courseVideoQuizCandidate(video))return false;
                                 guard();return courseFrameTree(owner).documents.includes(video.ownerDocument);
                             },onSuppressed:()=>{task.backgroundState.interceptedMouseouts++;}})||(()=>{});
                         run.releaseVideoProtection=releaseProtection;
@@ -9777,8 +10004,8 @@ Typr["U"] = {
                                             if(pendingSeek){await waitForMedia();continue;}
                                         }
                                         // 明确手动暂停交给人工等待；未知中断可有限重试，浏览器拒绝不能绕过。
-                                        if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
-                                        if(!courseForcePlaybackEnabled()&&pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
+                                        if(pauseControl.scriptPaused||pauseControl.manualPaused){await waitForManualPlayback();continue;}
+                                        if(pauseControl.manualPaused&&video.paused&&(!playError||playError.name==='AbortError'))break;
                                         if(playError?.name==='AbortError'&&(task.foregroundState.waitCount>foregroundWaitCount
                                             ||!pauseControl.manualPaused))playError=null;
                                         if(playError)throw playError;
@@ -9802,8 +10029,8 @@ Typr["U"] = {
                                             if(retryButton)retryButton.click();
                                             else {
                                                 playRequestPending=true;
-                                                requestCourseVideoPlayback(video,context.abort.signal,limits.videoLoadMs,taskNow).then(()=>{
-                                                    if(context.abort.signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
+                                                requestCourseVideoPlayback(video,signal,limits.videoLoadMs,taskNow).then(()=>{
+                                                    if(signal.aborted||run.cancelled||pauseControl.scriptPaused)video.pause();
                                                 },error=>{playError=error;}).finally(()=>{playRequestPending=false;wakeMedia?.();});
                                             }
                                             if(playingEventCount>playingAtStart||video.ended||!video.paused&&video.readyState>=2)continue;
@@ -9822,6 +10049,7 @@ Typr["U"] = {
                             if(run.videoDelay.enabled&&run.videoDelayUntil!==null){
                                 const deadline=run.videoDelayUntil;
                                 const manualStart=event=>{if(courseVideoPauseInput(event,video))pauseControl.resumeRequested=true;};
+                                step.skipWait=()=>{pauseControl.resumeRequested=true;wakeMedia?.();};
                                 video.ownerDocument.addEventListener('pointerdown',manualStart,true);video.ownerDocument.addEventListener('keydown',manualStart,true);
                                 pausePacing();
                                 try {
@@ -9834,6 +10062,7 @@ Typr["U"] = {
                                     }
                                     run.videoDelayUntil=null;save();
                                 } finally {
+                                    step.skipWait=null;
                                     video.ownerDocument.removeEventListener('pointerdown',manualStart,true);video.ownerDocument.removeEventListener('keydown',manualStart,true);resumePacing();
                                 }
                             }
@@ -9849,18 +10078,18 @@ Typr["U"] = {
                                 if (!video.isConnected) throw new Error('视频节点已替换，已停止');
                                 await waitForVideoForeground();
                                 await handleVideoQuiz();
-                                if(pauseControl.scriptPaused){await waitForManualPlayback();continue;}
+                                if(pauseControl.scriptPaused||pauseControl.manualPaused){await waitForManualPlayback();continue;}
                                 collectVideoInfo();
                                 if(!courseFrameTree(owner).documents.includes(video.ownerDocument)) throw new Error('视频页面已切换，已停止');
                                 video.muted=run.muteVideo;
                                 if (video.error) throw new Error(`视频加载/播放失败（错误 ${video.error.code}）`);
-                                if(!courseForcePlaybackEnabled()&&video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
+                                if(video.paused&&!foregroundPausePending&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil)pauseControl.manualPaused=true;
                                 const wasPending=Boolean(pendingSeek),currentSample=snapshot('poll');observe(currentSample,true);
                                 if(fatalError)throw fatalError;
                                 // 先完成位置判定，再处理当前结束状态；后台晚唤醒不能把已正常结束的重播判为超时。
                                 if(pendingSeek){
                                     if(video.paused){pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;}
-                                    if(!courseForcePlaybackEnabled()&&video.paused&&(pauseControl.manualPaused||pauseControl.recoveryBlocked))await waitForManualPlayback();
+                                    if(video.paused&&(pauseControl.manualPaused||!courseForcePlaybackEnabled()&&pauseControl.recoveryBlocked))await waitForManualPlayback();
                                     else await waitForMedia();
                                     continue;
                                 }
@@ -9877,10 +10106,10 @@ Typr["U"] = {
                                 if(replay&&currentSample.budgetAt>=replayDeadline(currentSample.budgetAt)){recordReplay(currentSample,'timeout');throw courseTimeoutError('视频反复回退，长时间没有新增播放进展');}
                                 if(!video.ended&&video.paused){
                                     // 未收到 pause 事件时也回读可信输入意图；不能因后台事件排队而抢播。
-                                    if(!courseForcePlaybackEnabled()&&pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
+                                    if(pauseControl.manualIntentUntil>0&&now()<=pauseControl.manualIntentUntil&&!foregroundPausePending)pauseControl.manualPaused=true;
                                     pauseControl.recoveryBlocked ||= task.unstableResumes>=limits.maxResumes;
+                                    if(pauseControl.manualPaused){await waitForManualPlayback();continue;}
                                     if(courseForcePlaybackEnabled()){
-                                        pauseControl.manualPaused=false;
                                         if(pauseControl.recoveryBlocked)throw courseTimeoutError('视频连续恢复无效，已结束本次恢复');
                                     } else if(pauseControl.manualPaused||pauseControl.recoveryBlocked){await waitForManualPlayback();continue;}
                                     if(videoBudgetNow()-lastMotionAt>=limits.stallMs)throw courseTimeoutError('视频进度长时间没有变化，可能正在缓冲或暂停');
@@ -9936,6 +10165,7 @@ Typr["U"] = {
                         }
                     };
                     const readDocument = async (reader, task) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         if((run.skipLearned||run.retrying) && courseTaskComplete(reader.node)===true){task.status='already';return;}
                         const materialIdentity=chapterContextIdentity(owner)?.id;
                         const collectDocumentInfo=()=>{
@@ -9960,7 +10190,7 @@ Typr["U"] = {
                                 if(now()>=readingDeadline)throw courseTimeoutError('PPT 滚动阅读超时，请人工检查');
                                 let states,targetsChanged=false;
                                 if(remote) {
-                                    const state=await race(reader.request(op,context.abort.signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
+                                    const state=await race(reader.request(op,signal,Math.min(limits.loadMs,Math.max(1,readingDeadline-now()))));
                                     ensureCurrent();
                                     if(state.canBottom!==true)throw new Error('阅读器版本未同步，请更新脚本并刷新整个课程页');
                                     states=[state];
@@ -10048,6 +10278,7 @@ Typr["U"] = {
                         task.status='done';task.totalPages=reader.total;report.documents++;
                     };
                     const solveQuiz = async (doc, task, chapter) => {
+                        const step=run.step,signal=step?.abort.signal||context.abort.signal,guard=stepGuard(step);
                         const verificationPasses=verification.passes;
                         if (doc.querySelector('.fanyaMarking_left')) throw new Error('这是作业页面，无法在刷课流程自动处理');
                         if (courseQuizComplete(doc) || courseTaskComplete(doc.querySelector('.CeYan,.singleQuesId,.TiMu,[data-quiz-status]')||doc.body)===true) {task.status='already';emit('章节测验已完成，跳过作答…','course-running');return;}
@@ -10060,7 +10291,7 @@ Typr["U"] = {
                         emit('正在分析章节测验…','generating');await race(ensureFontDecoded(doc));guard();
                         const body=doc.body;
                         const checkQuiz=()=>{guard();if(!courseFrameTree(owner).documents.includes(doc)||doc.body!==body) throw new Error('测验页面已切换，已停止');};
-                        const snapshot=extractQuestionSnapshot(doc,{}, {taskId:diagnosticTaskId,checkCurrent:checkQuiz,signal:context.abort.signal});
+                        const snapshot=extractQuestionSnapshot(doc,{}, {taskId:diagnosticTaskId,checkCurrent:checkQuiz,signal});
                         snapshot.courseContext=settings.videoInfoEnabled?captureCurrentCourseContext(owner):[];
                         const data={version:ASSISTANT_VERSION,schemaVersion:3,questions:snapshot.questions,media:snapshot.media,total:snapshot.questions.length};
                         ctl.output(data);
@@ -10075,7 +10306,7 @@ Typr["U"] = {
                             throw Object.assign(new Error('测验题型尚未适配，无法自动填写'),{code:'COURSE_MANUAL_ANSWER_REQUIRED'});
                         }
                         let answers;
-                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal:context.abort.signal},message=>emit(message,'generating'),
+                        try { answers=await race(solveQuestionBatches(snapshot,{...settings,diagnosticTaskId,courseContext:snapshot.courseContext,signal},message=>emit(message,'generating'),
                             {retryTransient:true,onProgress:result=>{guard();ctl.output({...data,...result,model:settings.model});}})); }
                         catch(error) {guard();chapter.issues.push(...data.questions.map(q=>({number:q.number,reason:`未完成分析：${error.message}`})));throw error;}
                         guard();if(verification.passes!==verificationPasses)throw courseVerificationWaitError();checkSnapshot(snapshot);
@@ -10360,9 +10591,11 @@ Typr["U"] = {
                             if(item.type==='video')task.number=++videoNumber;
                             if(item.type==='document')task.number=++documentNumber;
                             chapter.tasks.push(task);
-                            while(true) {
-                            await verificationReady();guard();
+                            const step=courseBeginStep(run,task);owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
                             try {
+                            while(true) {
+                            try {
+                            await verificationReady();guard();
                             if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
                             else if(item.type==='video')await playVideo(item.node,task);
                             else if(item.type==='document') {emit('正在阅读资料…','course-document');await readDocument(item.reader,task);if(settings.videoInfoEnabled)captureCurrentCourseContext(owner,{reader:item.reader});}
@@ -10388,6 +10621,14 @@ Typr["U"] = {
                             }
                             break;
                             } catch(error) {
+                                if(step.skipped||error.code==='COURSE_STEP_SKIPPED') {
+                                    step.finish();guard();
+                                    if(!['done','already'].includes(task.status)){
+                                        task.status='manual-pending';task.userSkipped=true;task.reason='用户跳过当前步骤，未计为完成';
+                                    }else task.skippedWait=true;
+                                    run.videoDelayUntil=null;
+                                    emit('已跳过当前步骤，继续后续操作…','course-running');break;
+                                }
                                 if(error.code!=='COURSE_VERIFICATION_WAIT') {
                                     guard();
                                     // 超时和不可读框架交给章节层；其余任务失败先尝试本章后续任务。
@@ -10406,6 +10647,10 @@ Typr["U"] = {
                                 }
                                 if(task.status==='done'||task.status==='already')break;
                             }
+                            }
+                            } finally {
+                                if(step.skipped){run.activeVideo?.pause();run.activeVideo=null;run.releaseVideoProtection?.();run.videoDelayUntil=null;}
+                                step.finish();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
                             }
                             if(task.status==='manual-pending')manualNodes.add(item.node);
                             if(task.status==='done')courseInvalidateTaskProbe(owner,entry.id);
@@ -10456,7 +10701,7 @@ Typr["U"] = {
                     if(taskFreeOnly) {chapter.status='no-tasks';chapter.reason='已遍历全部页面，未发现可见任务点；未计为完成';save();return;}
                     if(chapter.tasks.some(task=>task.status==='manual-pending')&&!pending()?.completed&&pending()?.pending!==0) {
                         const failedTask=chapter.tasks.find(task=>task.status==='manual-pending'&&task.errorCode);
-                        chapter.status='manual-pending';chapter.reason=failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
+                        chapter.status='manual-pending';chapter.reason=chapter.tasks.some(task=>task.userSkipped)?'包含用户跳过的步骤，保留未完成状态':failedTask?`部分任务执行失败，已继续后续任务：${failedTask.reason}`:chapter.tasks.some(task=>task.type==='knowledge-graph'&&task.status==='manual-pending')
                             ?'包含已跳过的知识图谱，未计为完成，需人工处理':chapter.tasks.some(task=>task.requiresManualSave)
                             ?'富文本答案已预填并同步到表单，等待人工保存或提交':!run.submit?'自动提交章节测验已关闭，测验已跳过且未提交，需人工处理':'包含无法自动答题的测验，已跳过且未提交，需人工处理';save();return;
                     }
@@ -10656,14 +10901,17 @@ Typr["U"] = {
         const scope=courseScoreKey(owner),key=`cx_course_unlock:${scope}`,id=crypto.randomUUID();
         const catalog=readCourseCatalog(owner),entries=catalog?.entries.filter(item=>!item.isGroup)||[];
         const report={mode:'unlock',scope,status:'running',startedAt:now(),endedAt:null,reason:'',chapters:entries.map(item=>({id:item.id,number:item.number,title:item.title,status:'unvisited',tasks:[],issues:[]}))};
-        const run={id,mode:'unlock',report,cancelled:false,abort:new AbortController(),chapter:null,activeVideo:null,expected:null,expectedTab:null,navigating:false};
+        const run={id,mode:'unlock',report,cancelled:false,abort:new AbortController(),chapter:null,activeVideo:null,expected:null,expectedTab:null,navigating:false,reconnecting:false};
         run.cancelWait=new Promise(resolve=>{run.cancelWake=resolve;});
         let lease=null,claimed=false,lastSaved=0,loading=false,watchdog=null,chapterIndex=0;
         const playingDocuments=new Set();
+        const checkpoints=new Map();
+        const navigationChanged=()=>Object.assign(new Error('章节页面变化，正在接续解锁'),{code:'COURSE_UNLOCK_RECONNECT'});
         const pauseNativePlayback=event=>{
             if(run.cancelled||event.target?.tagName!=='VIDEO')return;
-            try{guard(true);event.target.pause();}
-            catch(error){run.stopError=error;run.cancelled=true;run.cancelWake();}
+            event.target.pause();
+            try{guard(true);}
+            catch(error){if(error.code==='COURSE_UNLOCK_RECONNECT')return;run.stopError=error;run.cancelled=true;run.cancelWake();}
         };
         const protection=report.protection=courseRunProtection(null,report.chapters,0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
         const save=()=>{
@@ -10689,8 +10937,8 @@ Typr["U"] = {
             if(!scope||courseScoreKey(owner)!==scope)throw new Error('课程或账号已变化');
             if(owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id')!==id||claimed&&get(key,null)?.ownerId!==id)throw new Error('解锁运行锁已失效');
             if(!run.navigating) {
-                if(run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)throw new Error('用户切换了章节，已停止解锁');
-                if(run.expectedTab&&courseTabSnapshot(owner).activeId!==run.expectedTab)throw new Error('当前栏目已变化，已停止解锁');
+                if(run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)throw navigationChanged();
+                if(run.expectedTab&&courseTabSnapshot(owner).activeId!==run.expectedTab)throw navigationChanged();
             }
             const tree=courseFrameTree(owner);
             for(const doc of tree.documents.slice(1)) {
@@ -10700,7 +10948,10 @@ Typr["U"] = {
                     if(!video.paused)video.pause();
                 }
             }
-            verification.poll(tree,run.activeVideo);
+            // Do not bind a gate from the chapter the user temporarily opened.
+            if(run.reconnecting||run.navigating&&run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)return tree;
+            try{verification.poll(tree,run.activeVideo);}
+            catch(error){if(error.code==='COURSE_VERIFICATION_TARGET_CHANGED')throw navigationChanged();throw error;}
             const blocker=courseBlocker(tree.documents,null,verification);
             if(blocker)throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
             if(!loading&&!run.navigating&&tree.inaccessible.length)throw Object.assign(new Error('任务框架无法读取，请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE'});
@@ -10709,13 +10960,14 @@ Typr["U"] = {
         };
         run.validate=guard;
         const ready=async()=>{
+            if(run.step?.skipped)throw courseStepSkippedError();
             guard(true);
             while(verification.pending){await Promise.race([sleep(limits.pollMs),run.cancelWait,run.chapter.wait]);guard(true);}
             guard();
         };
         const wait=async ms=>{
             const deadline=clock()+ms;
-            do {await ready();if(clock()>=deadline)break;await Promise.race([sleep(Math.min(limits.pollMs,deadline-clock())),run.cancelWait,run.chapter.wait]);}while(true);
+            do {await ready();if(clock()>=deadline)break;await Promise.race([sleep(Math.min(limits.pollMs,deadline-clock())),run.cancelWait,run.chapter.wait,...(run.step?[run.step.wait]:[])]);}while(true);
             await ready();
         };
         const until=async(test,message)=>{
@@ -10747,16 +10999,16 @@ Typr["U"] = {
             video.addEventListener('playing',onPlaying);
             try {
                 await ready();
-                if(!video.isConnected)throw new Error('视频控件已替换，请重新确认任务');
+                if(!video.isConnected)throw navigationChanged();
                 const button=courseVideoStartButton(video);
-                if(!button){task.status='pending';task.reason='没有唯一的原生播放入口，留待人工触发';await wait(2000);return;}
+                if(!button){task.status='pending';task.reason='没有唯一的原生播放入口，留待人工触发';return;}
                 const passes=verification.passes;
                 guard();button.click();
                 guard(true);if(!video.paused)video.pause();
                 const deadline=clock()+2000;
                 while(true) {
                     await ready();
-                    if(!video.isConnected)throw new Error('视频控件已替换，请重新确认任务');
+                    if(!video.isConnected)throw navigationChanged();
                     if(!video.paused)video.pause();
                     if(verification.passes>passes){task.status='verified';return;}
                     if(clock()>=deadline){task.status='visited';return;}
@@ -10777,12 +11029,14 @@ Typr["U"] = {
                     await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
                         &&courseContentChanged(before,courseContentFingerprint(owner)),'章节内容未成功切换');
                 }
-                await load();
+                await load();run.reconnecting=false;
             } finally {run.navigating=false;}
-            const visited=new Set();
+            const checkpoint=checkpoints.get(record.id)||{visited:new Set(),tasks:new Map()};
+            checkpoints.set(record.id,checkpoint);
+            const visited=checkpoint.visited;
             while(true) {
                 await ready();const state=courseTabSnapshot(owner);
-                if(!state.ready)throw new Error('栏目状态无法确认，已停止解锁');
+                if(!state.ready)throw navigationChanged();
                 const tabs=state.tabs.length?state.tabs:[{id:'current',title:'当前页面',active:true}],tab=tabs.find(item=>!visited.has(item.id));
                 if(!tab)break;
                 if(tab.disabled)throw new Error('章节栏目尚未解锁，请先处理平台前置任务');
@@ -10790,30 +11044,44 @@ Typr["U"] = {
                     run.expectedTab=null;run.navigating=true;
                     try {
                         guard();const live=courseTabSnapshot(owner).tabs.find(item=>item.id===tab.id);
-                        if(!live?.node?.isConnected||live.disabled)throw new Error('栏目原生入口已变化');
+                        if(!live?.node?.isConnected)throw navigationChanged();
+                        if(live.disabled)throw new Error('章节栏目尚未解锁，请先处理平台前置任务');
                         live.node.click();
                         await until(()=>courseTabSnapshot(owner).activeId===tab.id,'栏目内容未成功切换');await load();
                     } finally {run.navigating=false;}
                 }
                 run.expectedTab=tab.id==='current'?null:tab.id;
                 notify(`正在解锁：${record.number} ${record.title} · ${tab.title}`);
-                const processed=new Set();let found=false,observedEmpty=false;
+                const processed=new Set();let found=[...checkpoint.tasks.values()].some(task=>task.tab===tab.id),observedEmpty=false;
                 while(true) {
                     await ready();const tree=guard();
                     const items=coursePageTasks(tree).filter(item=>courseTaskRequired(item.node)!==false);
-                    const item=items.find(item=>!processed.has(item.node));
+                    const item=items.find((item,index)=>{
+                        const previous=checkpoint.tasks.get(tab.id+':'+index+':'+item.type);
+                        return !processed.has(item.node)&&!previous?.userSkipped&&!['already','verified','visited'].includes(previous?.status);
+                    });
                     if(!item) {
                         if(!found&&!observedEmpty){observedEmpty=true;await wait(2000);continue;}
                         break;
                     }
                     found=true;
-                    const task={tab:tab.id,type:item.type,status:'pending'};record.tasks.push(task);
-                    if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
-                    else if(item.type==='video')await inspectVideo(item.node,task);
-                    else {
-                        const passes=verification.passes;await wait(2000);
-                        task.status=verification.passes>passes?'verified':'visited';
-                    }
+                    const taskKey=tab.id+':'+items.indexOf(item)+':'+item.type;
+                    let task=checkpoint.tasks.get(taskKey);
+                    if(!task){task={tab:tab.id,type:item.type,status:'pending'};record.tasks.push(task);checkpoint.tasks.set(taskKey,task);}
+                    const step=courseBeginStep(run,task);owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
+                    try {
+                        if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
+                        else if(item.type==='video')await inspectVideo(item.node,task);
+                        else {
+                            const passes=verification.passes;await wait(2000);
+                            task.status=verification.passes>passes?'verified':'visited';
+                        }
+                    } catch(error) {
+                        if(error.code!=='COURSE_STEP_SKIPPED')throw error;
+                        step.finish();guard();
+                        task.status='pending';task.userSkipped=true;task.reason='用户跳过当前步骤，未计为完成';
+                        notify('已跳过当前步骤，继续后续操作…');
+                    } finally {step.finish();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));}
                     processed.add(item.node);save();
                 }
                 if(!found) {
@@ -10836,7 +11104,7 @@ Typr["U"] = {
                 owner.defaultView.addEventListener('pagehide',onUnload,{once:true});
                 watchdog=owner.defaultView.setInterval(()=>{
                     try{guard(true);if(now()-lastSaved>2500)save();}
-                    catch(error){if(error.code==='CHAPTER_SKIPPED')return;run.stopError=error;run.cancelled=true;run.cancelWake();}
+                    catch(error){if(['CHAPTER_SKIPPED','COURSE_UNLOCK_RECONNECT'].includes(error.code))return;run.stopError=error;run.cancelled=true;run.cancelWake();}
                 },limits.pollMs);
                 for(;chapterIndex<report.chapters.length;chapterIndex++) {
                     const record=report.chapters[chapterIndex];
@@ -10849,7 +11117,25 @@ Typr["U"] = {
                         if(!entry?.node?.isConnected)throw new Error('课程目录发生变化，已停止解锁');
                         if(entry.completed===true){record.status='already';protection.consecutiveFailures=0;continue;}
                         await ready();
-                        record.status='running';await visitChapter(record);protection.consecutiveFailures=0;
+                        record.status='running';
+                        while(true){
+                            try{await visitChapter(record);break;}
+                            catch(error){
+                                if(error.code!=='COURSE_UNLOCK_RECONNECT')throw error;
+                                run.reconnecting=true;
+                                verification.reset();
+                                run.activeVideo?.pause();run.activeVideo=null;
+                                run.expected=null;run.expectedTab=null;run.navigating=false;
+                                notify('页面已切换，正在返回原解锁进度');
+                                save();
+                                loading=true;
+                                try{
+                                    await Promise.race([sleep(limits.settleMs),run.cancelWait,run.chapter.wait]);
+                                    await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===record.id&&item.node?.isConnected),'等待章节目录恢复超时');
+                                }finally{loading=false;}
+                            }
+                        }
+                        protection.consecutiveFailures=0;
                     } catch(error) {
                         if(run.chapter.skipped){record.status='skipped';record.reason='用户跳过本章节';}
                         else if(continueOnTimeout&&['COURSE_TIMEOUT','TIMEOUT'].includes(error.code)) {
@@ -12403,23 +12689,25 @@ Typr["U"] = {
                 if(body.textContent!==text)body.textContent=text;
             }
         }
-        const help=s.getElementById('course-speed-help'),tip=s.getElementById('course-speed-tooltip');
-        let shown=false;
-        const hide=()=>{if(shown)tip.hidePopover();shown=false;tip.hidden=true;};
-        const show=()=>{
-            if(typeof tip.showPopover!=='function'){help.title=tip.textContent;return;}
-            if(shown)return;
-            const panel=s.getElementById('panel').getBoundingClientRect();tip.style.maxWidth=`${Math.max(80,panel.width-16)}px`;
-            tip.hidden=false;tip.showPopover();shown=true;
-            const box=tip.getBoundingClientRect(),button=help.getBoundingClientRect();
-            tip.style.left=`${Math.max(panel.left+8,Math.min(button.left,panel.right-box.width-8))}px`;
-            tip.style.top=`${Math.max(panel.top+8,Math.min(button.bottom+7,panel.bottom-box.height-8))}px`;
-        };
-        help.addEventListener('pointerenter',show);help.addEventListener('pointerleave',hide);help.addEventListener('focus',show);help.addEventListener('blur',hide);
-        help.onclick=event=>{event.preventDefault();show();};
-        s.addEventListener('scroll',hide,true);s.addEventListener('keydown',event=>{if(event.key==='Escape')hide();});
-        s.addEventListener('click',event=>{if(event.target.closest('#close,#minimize,[data-panel-view],[data-chapter-view]'))hide();});
-        doc.defaultView.addEventListener('resize',hide);doc.defaultView.addEventListener('pagehide',hide,{once:true});
+        for(const [helpId,tipId] of [['course-speed-help','course-speed-tooltip'],['course-unlock-help','course-unlock-tooltip']]) {
+            const help=s.getElementById(helpId),tip=s.getElementById(tipId);
+            let shown=false;
+            const hide=()=>{if(shown)tip.hidePopover();shown=false;tip.hidden=true;};
+            const show=()=>{
+                if(typeof tip.showPopover!=='function'){help.title=tip.textContent;return;}
+                if(shown)return;
+                const panel=s.getElementById('panel').getBoundingClientRect();tip.style.maxWidth=`${Math.max(80,panel.width-16)}px`;
+                tip.hidden=false;tip.showPopover();shown=true;
+                const box=tip.getBoundingClientRect(),button=help.getBoundingClientRect();
+                tip.style.left=`${Math.max(panel.left+8,Math.min(button.left,panel.right-box.width-8))}px`;
+                tip.style.top=`${Math.max(panel.top+8,Math.min(button.bottom+7,panel.bottom-box.height-8))}px`;
+            };
+            help.addEventListener('pointerenter',show);help.addEventListener('pointerleave',hide);help.addEventListener('focus',show);help.addEventListener('blur',hide);
+            help.onclick=event=>{event.preventDefault();show();};
+            s.addEventListener('scroll',hide,true);s.addEventListener('keydown',event=>{if(event.key==='Escape')hide();});
+            s.addEventListener('click',event=>{if(event.target.closest('#close,#minimize,[data-panel-view],[data-chapter-view]'))hide();});
+            doc.defaultView.addEventListener('resize',hide);doc.defaultView.addEventListener('pagehide',hide,{once:true});
+        }
         view.renderCoursePreview=render;render();return render;
     }
     // 课程面板控件与状态展示；课程执行逻辑保留在 course-runner.js。
@@ -12447,6 +12735,7 @@ Typr["U"] = {
         const canStart=()=>queue?.list?queue.available:Boolean(courseRunController(owner)||home?.available);
         const stopButton=s.getElementById('course-stop');
         const unlockButton=s.getElementById('course-unlock');
+        const skipStepButton=s.getElementById('course-step-skip');
         let stopRunId=null,stopUntil=0,stopTimer=null,stopCountdownTimer=null;
         const clearStopConfirmation=()=>{
             if(stopTimer!==null)doc.defaultView?.clearTimeout(stopTimer);
@@ -12621,6 +12910,7 @@ Typr["U"] = {
             setAssistantControlDisabled(s.getElementById('course-stop'),home?!home.pending:!hasCommands||!running,home?'当前没有待取消的启动任务':!hasCommands?'请通过课程主页面的助手停止自动学习':'当前没有运行中的自动学习');
             if(queue?.active)setAssistantControlDisabled(stopButton,false);
             if(home&&!stopRunId)stopButton.textContent=home.pending?'取消启动':'停止';
+            setAssistantControlDisabled(skipStepButton,!courseRunController(owner)?.canSkipStep,verifying?'请先完成或关闭平台核验':running?'当前步骤暂不能跳过':'当前没有正在执行的步骤');
             setAssistantControlDisabled(s.getElementById('course-skip'),!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : report?.mode==='unlock'||!courseSkipResume(owner)),!hasCommands?'请在课程学习页面跳过章节':running?'当前处理阶段暂不能跳过章节':'当前没有可跳过并继续的章节');
             autoSubmit.checked=running ? courseRunController(owner)?.autoSubmitEnabled===true : submitPreference();
             if(queue?.active&&!running)autoSubmit.checked=queue.record.submitAuthorized===true;
@@ -12654,6 +12944,7 @@ Typr["U"] = {
         };
         s.getElementById('course-queue-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-queue-skip')))queue?.skip();};
         s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
+        skipStepButton.onclick=event=>{if(trustedAssistantActivation(event,skipStepButton))courseRunController(owner)?.skipStep();};
         stopButton.onclick=event=>{
             if(!trustedAssistantActivation(event,stopButton))return;
             if(home&&!queue?.active){home.cancel();return;}
@@ -12988,8 +13279,7 @@ Typr["U"] = {
             if(closed||courseRunActive(owner)||!video.isConnected||video.ended||video.error||video.seeking)return false;
             const tree=courseFrameTree(owner);
             if(tree.inaccessible.length||courseBlocker(tree.documents))return false;
-            const policy=courseVideoForegroundPolicy(video),foreground=courseOwnerForegroundState(owner);
-            return !policy.required||foreground.visible&&foreground.focused;
+            return true;
         };
         const bind=video=>{
             release();
@@ -13023,8 +13313,6 @@ Typr["U"] = {
             local.lastTime=seconds;local.lastAt=at;local.rate=Number(video.playbackRate)||1;
             if(local.progress>=progressSeconds){local.attempts=0;local.blocked=false;local.progress=0;}
             if(!allowed(video)) {
-                const foreground=courseOwnerForegroundState(owner);
-                if(courseVideoForegroundPolicy(video).required&&(!foreground.visible||!foreground.focused)&&!video.paused)video.pause();
                 status='等待页面观看条件或人工处理';return;
             }
             if(local.manualPaused){status='已手动暂停，等待你继续播放';return;}
@@ -13298,7 +13586,7 @@ Typr["U"] = {
             if(tree.inaccessible.length || !tree.documents.includes(video.ownerDocument) || courseBlocker(tree.documents)
                 || courseVideoQuizCandidate(video))return false;
             const foreground=courseOwnerForegroundState(document);
-            return !courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
+            return courseForcePlaybackEnabled()||!courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
         };
         const recover = async (record, explicit=false) => {
             const video=record.video;
@@ -13330,7 +13618,14 @@ Typr["U"] = {
                     }
                 };
                 doc.addEventListener('playing',discover,true);doc.addEventListener('load',discover,true);
-                documents.set(doc,()=>{doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);});
+                if(doc!==document){
+                    doc.addEventListener('visibilitychange',onBackground,true);
+                    doc.defaultView?.addEventListener('blur',onBackground,true);
+                }
+                documents.set(doc,()=>{
+                    doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);
+                    if(doc!==document){doc.removeEventListener('visibilitychange',onBackground,true);doc.defaultView?.removeEventListener('blur',onBackground,true);}
+                });
             }
             const found=new Set(tree.documents.slice(1).flatMap(doc=>[...doc.querySelectorAll('video')].filter(courseElementVisible)));
             for(const [video,record] of videos)if(!found.has(video)) {record.close();videos.delete(video);changedNodes=true;}
@@ -13386,7 +13681,7 @@ Typr["U"] = {
         const onMouseExit = event => {
             if (closed || event.relatedTarget !== null) return;
             const record=!active&&standalone();
-            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual&&!courseVideoForegroundPolicy(record.video).required,onSuppressed:()=>{}};
+            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual,onSuppressed:()=>{}};
             if(!context)return;
             try {
                 if (!context.video.isConnected || context.video.paused || context.video.ended
@@ -13395,6 +13690,19 @@ Typr["U"] = {
                 event.stopPropagation();
                 context.onSuppressed();
             } catch { /* 状态无法确认时不拦截，也不在页面事件中抛错。 */ }
+        };
+        const onBackground=event=>{
+            if(closed)return;
+            if(event.type==='blur'&&event.target!==event.currentTarget)return;
+            if(event.type==='visibilitychange'&&event.target.visibilityState==='visible')return;
+            const record=!active&&standalone();
+            const context=active||record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual};
+            if(!context?.video.isConnected||context.video.paused||context.video.ended)return;
+            try{
+                if(!context.canProtect())return;
+                active?.wake?.();
+                event.stopImmediatePropagation();event.stopPropagation();
+            }catch{ /* Stale playback ownership is handled by the runner. */ }
         };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
@@ -13445,6 +13753,8 @@ Typr["U"] = {
                 for(const record of videos.values())record.close();videos.clear();
                 for(const close of documents.values())close();documents.clear();
                 window.removeEventListener('mouseout', onMouseExit, true);
+                window.removeEventListener('blur',onBackground,true);
+                document.removeEventListener('visibilitychange',onBackground,true);
                 document.removeEventListener('visibilitychange',onForeground);
                 window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
@@ -13452,6 +13762,8 @@ Typr["U"] = {
             }
         };
         window.addEventListener('mouseout', onMouseExit, true);
+        window.addEventListener('blur',onBackground,true);
+        document.addEventListener('visibilitychange',onBackground,true);
         const onForeground=()=>{active?.wake?.();tick();};
         const timer=window.setInterval(tick,500);
         document.addEventListener('DOMContentLoaded',tick,{once:true});
@@ -13888,7 +14200,7 @@ Typr["U"] = {
     }
     const PROJECT_GITHUB_URL = 'https://github.com/zhu-hailin/chaoxing-ai-assistant';
     // 题目结果、原图、逐题操作与复制展示。
-    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', matching:'连线题', unknown: '未识别题型' };
+    const QUESTION_TYPE_LABELS = { single: '单选题', multiple: '多选题', judge: '判断题', blank: '填空题', essay: '简答题', matching:'连线题', sort:'排序题', unknown: '未识别题型' };
 
     function readableAnswer(question, entry) {
         if (!entry?.answer?.length) return '暂无有效答案，请人工核对';
@@ -13920,7 +14232,8 @@ Typr["U"] = {
         const written=data.prefill?.perQuestion?.find(item=>item.questionId===question.id);
         const prefillPolicy=questionPrefillPolicy(question,entry || {answerPolicy:policy});
         const ueditorIssue=question.diagnostics?.find(reason=>reason.startsWith('UEditor：'));
-        const restriction=questionManualPrefillPolicy(question)||(['manual','uncertain'].includes(policy.status)?policy:null);
+        const restriction=['manual','uncertain'].includes(policy.status)?policy:null;
+        const requirementHint=policy?.requirementHint || question.requirementHint || questionRequirementHint?.(question)?.reason || '';
         const ueditorReason=ueditorIssue?[...new Set([restriction?.reason,ueditorIssue].filter(Boolean))].join('；'):'';
         const prefill=written ? ({filled:'已填写',already:'已有相同答案',unverified:'写入状态待核对',skipped:written.reason || prefillPolicy.reason || '已跳过，请手动填写'}[written.status] || '请核对写入状态')
             : !entry?.answer?.length&&!['manual','uncertain'].includes(policy.status) ? ''
@@ -13930,7 +14243,7 @@ Typr["U"] = {
         const prefillWarning=question.capabilities?.prefill===false||['manual','uncertain'].includes(prefillPolicy.status)
             ||['skipped','unverified'].includes(written?.status)
             ? ueditorReason||written?.reason||(written?.status==='unverified'?'写入状态待核对，请手动检查答案':written?.status==='skipped'?'本题已跳过，请手动填写':prefillPolicy.reason)||'当前作答区域暂不支持自动填写，请手动填写' : '';
-        return {analysis,prefill,prefillWarning};
+        return {analysis,prefill,prefillWarning,requirementHint};
     }
     function resultImageCaption(image, question) {
         if (image.location === 'shared' || question?.contextImageIds?.includes(image.id) || image.sourceMaterialId && image.sourceQuestionNumber == null) return '共用材料';
@@ -14180,7 +14493,8 @@ Typr["U"] = {
                 media.details.replaceChildren(fragment);
             }
             const states = questionResultStatuses(data,question,entry);
-            const statusText = states.prefillWarning ? [`不可预填：${states.prefillWarning}`] : [];
+            const statusText = [...(states.prefillWarning ? [`不可预填：${states.prefillWarning}`] : []),
+                ...(states.requirementHint ? [`提示：${states.requirementHint}，已按可写控件处理，请自行核对`] : [])];
             const statusKey = JSON.stringify(statusText);
             if (item.statusKey !== statusKey) { item.statusKey = statusKey; item.statuses.hidden=!statusText.length; item.statuses.replaceChildren(...statusText.map(text => node('p','note prefill-warning',text))); }
             const canRetry = Boolean((question.responseUnits?.length ? question.responseUnits.map(unit => unit.id) : [question.id])
@@ -14222,8 +14536,22 @@ Typr["U"] = {
         else output.scrollTop = previousTop;
     }
 
-    // Current account presentation only; never persist or expose authentication tokens.
+    // Only public profile fields are cached, separately for each verified UID.
     const ACCOUNT_HIDE_AVATAR_KEY='cx_account_hide_avatar';
+    const ACCOUNT_PROFILE_PREFIX='cx_account_profile:';
+    function normalizedAssistantProfile(value) {
+        const uid=String(value?.uid||'');
+        if(!/^\d{1,20}$/.test(uid))return null;
+        const profile={uid,fid:String(value.fid||''),roleId:String(value.roleId||''),
+            name:clean(value.name).slice(0,80),school:clean(value.school).slice(0,160),role:clean(value.role).slice(0,80),
+            avatar:'https://photo.chaoxing.com/p/'+uid+'_80'};
+        for(const field of ['fid','roleId'])if(!/^\d{1,20}$/.test(profile[field]))profile[field]='';
+        try{
+            const avatar=new URL(value.avatar);
+            if(avatar.origin==='https://photo.chaoxing.com'&&new RegExp('^/p/'+uid+'_(80|160)$').test(avatar.pathname))profile.avatar=avatar.origin+avatar.pathname;
+        }catch{}
+        return profile;
+    }
     function assistantAccountIdentifiers(doc) {
         const fields={},allowed=new Set(['UID','_uid','fid','spaceFid','siteRole','spaceRoleId']);
         try {
@@ -14278,7 +14606,7 @@ Typr["U"] = {
         const hideAvatar=shadow.getElementById('account-hide-avatar');
         const status=shadow.getElementById('account-status'),details=shadow.getElementById('account-details');
         const portraits=[shadow.getElementById('account-nav-image'),shadow.getElementById('account-image')];
-        let pending=null,generation=0,closed=false,currentUID='',currentName='',privacyListener=null;
+        let pending=null,generation=0,closed=false,currentUID='',currentName='',privacyListener=null,profileListener=null,listenedUID='',rendered='';
         const syncAvatarPrivacy=()=>{
             const hidden=get(ACCOUNT_HIDE_AVATAR_KEY,false)===true,name=hidden?'':currentName;
             hideAvatar.checked=hidden;trigger.dataset.privateAvatar=String(hidden);
@@ -14288,6 +14616,9 @@ Typr["U"] = {
             if(privacyListener===null&&typeof GM_addValueChangeListener==='function')privacyListener=GM_addValueChangeListener(ACCOUNT_HIDE_AVATAR_KEY,syncAvatarPrivacy);
         };
         const render=profile=>{
+            const signature=JSON.stringify(profile);
+            if(signature===rendered)return;
+            rendered=signature;
             const name=profile.name||'当前账号';
             currentUID=profile.uid||'';
             currentName=profile.name||'';syncAvatarPrivacy();
@@ -14307,20 +14638,48 @@ Typr["U"] = {
         const localProfile=()=>assistantAccountProfile(doc,assistantAccountIdentifiers(doc),pageURL(doc)?.href);
         const reset=()=>render({uid:'',fid:'',roleId:'',name:'',school:'',role:'',avatar:''});
         for(const image of portraits)image.addEventListener('error',()=>{image.hidden=true;image.nextElementSibling.hidden=false;});
-        const updateLocal=()=>{try{render(localProfile());}catch{reset();}};
-        const load=async({allowRemote=false}={})=>{
+        const cached=uid=>{
+            const profile=uid?normalizedAssistantProfile(get(ACCOUNT_PROFILE_PREFIX+uid,null)):null;
+            return profile?.uid===uid?profile:null;
+        };
+        const save=profile=>{
+            const normalized=normalizedAssistantProfile(profile);
+            if(!normalized?.name)return;
+            if(JSON.stringify(cached(normalized.uid))!==JSON.stringify(normalized))set(ACCOUNT_PROFILE_PREFIX+normalized.uid,normalized);
+        };
+        const listenProfile=uid=>{
+            if(uid===listenedUID)return;
+            if(profileListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(profileListener);
+            profileListener=null;listenedUID=uid;
+            if(uid&&typeof GM_addValueChangeListener==='function')profileListener=GM_addValueChangeListener(ACCOUNT_PROFILE_PREFIX+uid,()=>{
+                const profile=cached(uid);
+                if(!closed&&profile&&assistantAccountIdentifiers(doc).uid===uid)render(profile);
+            });
+        };
+        const updateLocal=()=>{
+            const local=localProfile();
+            listenProfile(local.uid);
+            const saved=cached(local.uid);
+            const profile=local.name?normalizedAssistantProfile(local):saved?{...saved,...(local.fid?{fid:local.fid}:{}),...(local.roleId?{roleId:local.roleId}:{})}:local;
+            if(local.name||saved)save(profile);
+            render(profile);return profile;
+        };
+        const load=async({allowRemote=false,onlyMissing=false}={})=>{
             const current=++generation;pending?.abort();pending=null;status.textContent='';
             try {
-                const local=localProfile();render(local);
-                if(local.name)return;
-                if(!allowRemote){status.textContent='点击头像读取账号资料';return;}
+                const local=updateLocal();
+                if(local.name&&(onlyMissing||pageURL(doc)?.origin==='https://i.chaoxing.com'&&pageURL(doc)?.pathname==='/base'))return;
+                if(!allowRemote){status.textContent=local.name?'':'点击头像读取账号资料';return;}
+                const requestedUID=assistantAccountIdentifiers(doc).uid;
                 status.textContent='正在读取账号资料…';pending=requestAssistantAccountProfile();
                 const source=await pending.promise;
                 if(closed||current!==generation)return;
+                if(assistantAccountIdentifiers(doc).uid!==requestedUID){updateLocal();status.textContent='';return;}
                 const profile=assistantAccountProfile(source.doc,assistantAccountIdentifiers(doc),source.url);
                 if(!profile.name||!profile.uid)throw new Error('请先登录学习通后重试');
-                render(profile);status.textContent='';
-            }catch(error){if(!closed&&current===generation){reset();status.textContent=error.message;}}
+                if(requestedUID&&profile.uid!==requestedUID)throw new Error('当前登录账号已变化，请刷新页面');
+                save(profile);listenProfile(profile.uid);render(normalizedAssistantProfile(profile));status.textContent='';
+            }catch(error){if(!closed&&current===generation){try{updateLocal();}catch{reset();}status.textContent=error.message;}}
             finally{if(current===generation)pending=null;}
         };
         const cancel=()=>{generation++;pending?.abort();pending=null;};
@@ -14330,13 +14689,38 @@ Typr["U"] = {
             set(ACCOUNT_HIDE_AVATAR_KEY,hideAvatar.checked);syncAvatarPrivacy();
         };
         const focus=()=>{
-            if(panelView?.activeView!=='account'){updateLocal();return;}
-            try {const local=localProfile();if(local.name||local.uid&&local.uid!==currentUID){cancel();render(local);status.textContent=local.name?'':'点击头像读取账号资料';}}catch{cancel();reset();}
+            try{
+                const uid=assistantAccountIdentifiers(doc).uid;
+                if(uid!==currentUID){cancel();void load({allowRemote:Boolean(uid),onlyMissing:true});}
+                else updateLocal();
+            }catch{cancel();reset();}
+        };
+        const profileSelector='.user-block,.user,#siteName';
+        const observer=new doc.defaultView.MutationObserver(records=>{
+            if(closed)return;
+            const changed=records.some(record=>{
+                const target=record.target.nodeType===1?record.target:record.target.parentElement;
+                return target?.closest(profileSelector)||[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches(profileSelector)||node.querySelector(profileSelector)));
+            });
+            if(changed)focus();
+        });
+        const observe=()=>{
+            const url=pageURL(doc);
+            if(url?.origin==='https://i.chaoxing.com'&&/^\/base\/?$/.test(url.pathname))
+                observer.observe(doc.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['src']});
         };
         doc.defaultView.addEventListener('focus',focus);
-        doc.defaultView.addEventListener('pagehide',()=>{closed=true;cancel();reset();if(privacyListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(privacyListener);privacyListener=null;});
-        doc.defaultView.addEventListener('pageshow',()=>{closed=false;listenAvatarPrivacy();updateLocal();});
-        syncAvatarPrivacy();listenAvatarPrivacy();updateLocal();
+        doc.defaultView.addEventListener('pagehide',()=>{
+            closed=true;observer.disconnect();cancel();reset();
+            if(typeof GM_removeValueChangeListener==='function'){
+                if(privacyListener!==null)GM_removeValueChangeListener(privacyListener);
+                if(profileListener!==null)GM_removeValueChangeListener(profileListener);
+            }
+            privacyListener=null;profileListener=null;listenedUID='';
+        });
+        doc.defaultView.addEventListener('pageshow',()=>{closed=false;listenAvatarPrivacy();observe();focus();});
+        syncAvatarPrivacy();listenAvatarPrivacy();observe();
+        void load({allowRemote:Boolean(assistantAccountIdentifiers(doc).uid),onlyMissing:true});
     }
     // 题目、章节、设置与跨面板导航。
     // Only move existing controls; their handlers, disabled reasons and trust checks stay attached.
@@ -14666,7 +15050,7 @@ Typr["U"] = {
           #model-test-status[data-state="ok"]{color:#226342}#model-test-status[data-state="error"]{color:#b13b32}
           .other-feature{padding:16px 0;border-bottom:1px solid var(--line)}.other-feature:first-of-type{padding-top:0}.other-feature:last-child{border:0}.other-feature .check-label{font-weight:600}.other-feature p{margin:7px 0 0 23px}.other-feature-status{font-size:12px;color:var(--accent)}
           .course-menu-heading{font-size:13px;font-weight:600;margin:0}.other-feature .course-menu-note{margin:6px 0 0}.course-menu-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:8px;margin-top:12px}.course-menu-row{display:flex;align-items:stretch;gap:4px;min-width:0;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:#f8fafc}.course-menu-toggle{flex:none;padding:9px 5px;cursor:pointer}.course-menu-link{display:flex;align-items:center;gap:9px;flex:1;min-width:0;padding:9px 7px;background:transparent;color:var(--ink);text-align:left;font-size:12px}.course-menu-link:hover:not(:disabled){background:#edf2fa;filter:none}.course-menu-link:disabled{opacity:.55}.course-menu-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.course-menu-icon{position:relative;display:block;flex:none;width:22px;height:22px;overflow:hidden;pointer-events:none}.course-menu-icon:empty{display:none}.course-menu-icon-frame{position:absolute;display:block;left:50%;top:50%;overflow:hidden;transform-origin:center;pointer-events:none}.course-menu-icon img,.course-menu-icon svg{display:block;width:20px;height:20px;object-fit:contain}
-          .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+          .model-picker{position:relative;flex:0 1 320px;max-width:100%;min-width:0;width:320px}.model-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px;background:#fff;color:var(--ink);border:1px solid #cbd5e3;text-align:left}.model-picker-value,.model-picker-option{display:flex;align-items:center;gap:8px;min-width:0}.provider-logo{width:24px;height:24px;flex:none;object-fit:contain;padding:1px;background:#fff;border-radius:4px}.model-picker-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-picker-list{position:absolute;z-index:6;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #cbd5e3;border-radius:7px;box-shadow:0 6px 18px #172b4a20}.model-picker-option{padding:7px 8px;border-radius:4px;cursor:pointer}.model-picker-option.is-active{background:#edf3fc}.model-picker-option[aria-selected=true]{font-weight:600;color:var(--accent)}.model-picker-option[aria-disabled=true]{opacity:.5;cursor:not-allowed}
           .model-setup-notice{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 11px;margin:0 0 12px;border:1px solid #dae4f4;border-radius:7px;background:#f4f7fc;color:#445b7d;font-size:12px}.model-setup-notice button{flex:none;padding:5px 9px;font-size:12px}#view-questions{display:flex;flex-direction:column;overflow:hidden}.actions{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}.actions button{font-size:13px;padding:7px 10px}#output{flex:1;min-height:0;width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;overscroll-behavior:contain;overflow-wrap:anywhere;background:#fff}#output:focus-visible{outline:2px solid #729adc;outline-offset:-2px}.result-empty{margin:0;color:#8290a1;font-size:13px}.result-summary{margin:0 0 12px;font-size:12px;color:var(--muted)}.question-list,.option-list{list-style:none;margin:0;padding:0}.question-card{padding:14px 0;border-top:1px solid #e7ebf2}.question-card:first-child{border:0;padding-top:0}.question-card:last-child{padding-bottom:0}.question-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}.question-number{font-weight:700;color:#273a56}.question-type{background:#f2f5fa;border-radius:4px;padding:2px 6px}.question-text{margin:7px 0 10px;white-space:pre-wrap}.option-list{display:grid;gap:5px}.option-item{display:flex;gap:8px;padding:4px 7px;border-radius:4px}.option-key{min-width:22px;flex:none;color:var(--muted)}.option-content{flex:1;min-width:0}.option-content .media-list{margin:5px 0}.option-text{white-space:pre-wrap}.option-item.is-answer{background:#edf5f0;color:#226342}.option-item.is-answer .option-key{color:#226342;font-weight:700}.ai-answer{margin:10px 0 4px;color:#226342;font-weight:600;white-space:pre-wrap}.ai-answer.needs-review{color:#996021}.answer-reason{margin:4px 0;color:#556277;font-size:13px;white-space:pre-wrap}.answer-sources{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px}.answer-sources a{color:var(--accent)}.note{font-size:12px;color:var(--muted)}
           .media-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.media-item{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.media-caption{margin:0 0 6px;color:var(--muted);font-size:12px}.question-image{display:block;max-width:100%;height:auto;border-radius:3px}.image-summary{white-space:pre-wrap;font-size:13px}.image-details{margin:6px 0;padding-left:20px;font-size:13px}.image-table-wrap{max-width:100%;overflow:auto}.image-table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}.image-table th,.image-table td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}.image-table th{background:#f6f8fc}
           #view-chapters{overflow:hidden}#course-nav{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}.catalog-heading{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}.catalog-heading h2{font-size:17px;margin:0;line-height:1.4}#catalog-refresh{font-size:12px;padding:5px 9px}#catalog-search{flex:none;width:100%;min-width:0;font-size:13px;padding:8px 10px}#catalog-status{flex:none;font-size:12px;color:var(--muted);margin:10px 0 12px}#catalog-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#c8d2e0 transparent}#catalog-list,.catalog-children{list-style:none;margin:0;padding:0}#catalog-list{padding-right:7px;padding-bottom:4px}#catalog-list::-webkit-scrollbar{width:5px}#catalog-list::-webkit-scrollbar-thumb{background:#c8d2e0;border-radius:8px}#catalog-list::-webkit-scrollbar-track{background:transparent}#catalog-list>.catalog-item.is-group-item{margin:0 0 10px;border:1px solid #e2e8f1;border-radius:9px;overflow:hidden;background:#fff}.catalog-row{position:relative;display:flex;align-items:center;gap:0;min-width:0;border-radius:6px}.catalog-row.is-group{padding:2px 5px;background:#f6f8fc}.catalog-row.is-active{background:#edf3ff;box-shadow:inset 3px 0 0 var(--accent)}.catalog-children{margin:0;padding:3px 5px 5px}.catalog-children .catalog-children{margin:0 0 2px 14px;padding-left:7px;border-left:1px solid #e5ebf4}.catalog-children>.catalog-item+.catalog-item>.catalog-row:not(.is-group){border-top:1px solid #f0f3f7}.catalog-link{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px;min-width:0;flex:1;text-align:left;background:transparent;color:var(--ink);border-radius:6px;padding:10px 11px;font-size:13px;line-height:1.5}.catalog-link:hover:not(:disabled){background:#f2f5fb;filter:none}.catalog-row.is-active .catalog-link:hover:not(:disabled){background:#e7efff}.catalog-link:disabled{opacity:1;cursor:default}.catalog-link[data-navigation-available=false] .catalog-main{color:#8794a8}.catalog-link[aria-current=page] .catalog-title{color:var(--accent);font-weight:600}.catalog-main{display:flex;align-items:baseline;gap:10px;min-width:0}.catalog-number{flex:none;min-width:32px;font-size:12px;font-weight:500;color:#8592a7;font-variant-numeric:tabular-nums;white-space:nowrap}.catalog-title{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;line-height:1.55}.catalog-row.is-group>.catalog-link{padding:9px 8px}.catalog-row.is-group>.catalog-link .catalog-main{gap:9px}.catalog-row.is-group>.catalog-link .catalog-title{font-weight:600;color:#35445d}.catalog-row.is-group>.catalog-link .catalog-number{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 5px;border:1px solid #e1e7f1;border-radius:6px;background:#fff;color:#64748d;font-size:11px}.catalog-link[aria-current=page] .catalog-number{color:var(--accent)}.catalog-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;max-width:176px;font-size:11px;color:#8190a4}.catalog-state,.catalog-current,.catalog-score{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:2px 6px;border-radius:4px;background:#f0f3f7;color:#7b879b;white-space:nowrap;line-height:1.5;font-weight:400}.catalog-state.is-complete{background:#edf7f1;color:#39805e}.catalog-state.is-complete:not(.is-group-count)::before{content:'✓';font-size:10px;font-weight:700}.catalog-state.is-pending{background:#fff6e8;color:#99713a}.catalog-state.is-locked{background:#f0f2f6;color:#8c96a7}.catalog-current{background:#e4ebff;color:var(--accent)}.catalog-score{background:#f6f0e8;color:#9a7047}.catalog-state.is-group-count{padding:0;background:transparent;color:#8693a7;font-variant-numeric:tabular-nums;font-size:11px}.catalog-state.is-group-count.is-complete{color:#39805e}.catalog-group-progress{appearance:none;flex:none;width:42px;height:4px;border:0;border-radius:4px;overflow:hidden;background:#e2e9f0;accent-color:#6a9a80}.catalog-group-progress::-webkit-progress-bar{background:#e2e9f0;border-radius:4px}.catalog-group-progress::-webkit-progress-value{background:#6a9a80;border-radius:4px}.catalog-group-progress::-moz-progress-bar{background:#6a9a80;border-radius:4px}.catalog-fold{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:28px;padding:0;margin:0;background:transparent;color:#8b98ac;border-radius:5px}.catalog-fold::before{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}.catalog-fold[aria-expanded=true]::before{transform:rotate(45deg) translate(-1px,-1px)}.catalog-fold:hover:not(:disabled){color:var(--accent);background:#eaf0fa;filter:none}.catalog-fold-space{display:none}.catalog-empty{padding:24px 12px;text-align:center;font-size:12px;color:var(--muted)}@media(max-width:480px){.catalog-link{column-gap:7px;padding:9px 8px}.catalog-main{gap:6px}.catalog-number{min-width:27px;font-size:11px}.catalog-meta{max-width:112px;gap:4px}.catalog-state,.catalog-current,.catalog-score{padding:2px 5px;font-size:10px}.catalog-group-progress{width:28px}.catalog-row.is-group>.catalog-link{padding:9px 5px}.catalog-row.is-group>.catalog-link .catalog-main{gap:6px}}
@@ -14733,6 +15117,7 @@ Typr["U"] = {
           #view-account .account-identity{display:flex;align-items:center;gap:14px;padding:8px 0 22px}.account-avatar-large{width:52px;height:52px;flex:none}.account-avatar-large .account-avatar-fallback{font-size:22px}#account-name{font-size:18px;font-weight:600}#account-role{margin-top:3px;font-size:12px;color:var(--muted)}#account-details{max-width:440px;margin:0;padding:0}#account-details>div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:14px;padding:13px 0;border-bottom:1px solid var(--line);font-size:12px}#account-details dt{color:var(--muted)}#account-details dd{margin:0;overflow-wrap:anywhere}#account-details>div:last-child{border-bottom:0}#account-status{margin:0;padding:6px 0;font-size:12px;color:var(--muted)}#account-status:empty{display:none}.account-page-foot{padding-top:20px;font-size:11px;color:var(--muted)}.account-page-foot a{color:var(--accent);text-decoration:none}
           #nav-account .account-nav-generic{display:none;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:var(--soft);color:var(--accent)}#nav-account[data-private-avatar=true]>.account-portrait,#nav-account[data-private-avatar=true]>.account-avatar-fallback{display:none!important}#nav-account[data-private-avatar=true]>.account-nav-generic{display:flex}.account-avatar-setting{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:400;color:var(--muted);cursor:pointer}#account-hide-avatar{position:relative;appearance:none;-webkit-appearance:none;width:32px;height:18px;flex:none;margin:0;padding:0;border:0;border-radius:10px;background:#cdd3dc;cursor:pointer;transition:background-color .13s ease}#account-hide-avatar::before{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .13s ease}#account-hide-avatar:checked{background:var(--accent)}#account-hide-avatar:checked::before{transform:translateX(14px)}
           #course-unlock{flex:none;white-space:nowrap;background:#f1f5ff;color:var(--accent);font-size:13px}
+          #course-unlock-help{align-self:center;width:16px;height:16px;min-height:0;padding:0;margin-left:-4px;font-size:11px}#course-unlock[hidden]+.course-unlock-help{display:none}.course-unlock-help:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
           .course-verification-page{position:absolute;inset:0;z-index:40;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:64px 24px 28px;gap:20px;cursor:grab;touch-action:none;user-select:none}
           .course-verification-page:active{cursor:grabbing}
           #course-verification-back{position:absolute;left:18px;top:16px;width:36px;height:36px;padding:8px;background:transparent;color:var(--ink);display:grid;place-items:center}
@@ -14742,7 +15127,7 @@ Typr["U"] = {
           #course-verification-open{flex:none;border:0;background:transparent;color:var(--accent);padding:2px 0;font-size:12px;white-space:nowrap}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.33.4</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
+          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.34</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-haspopup="dialog" aria-controls="about" aria-expanded="false" title="项目介绍">?</button>
@@ -14870,7 +15255,7 @@ Typr["U"] = {
                   </div>
                   <section id="chapter-queue-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-queue">
                     <details id="course-queue-selection" class="course-queue-selection" open hidden><summary><span>选择课程</span><span id="course-queue-selection-count">已选 0 门</span></summary><label class="check-label course-queue-select-all"><input type="checkbox" id="course-queue-all" /> 全选</label><div id="course-queue-choices" class="course-queue-choices"></div></details>
-                    <div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-unlock" class="secondary" hidden>解锁课程</button><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-queue-skip" class="secondary" hidden>跳过本课程</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button><button type="button" id="course-video-pause" class="secondary" disabled>暂停</button></div>
+                    <div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-unlock" class="secondary" hidden>解锁课程</button><button type="button" id="course-unlock-help" class="course-speed-help course-unlock-help" aria-label="解锁课程说明" aria-describedby="course-unlock-tooltip">?</button><span id="course-unlock-tooltip" class="course-speed-tooltip" role="tooltip" popover="manual" hidden>依次打开章节和栏目，触发官方扫码核验；二维码过期会自动刷新。解锁完成后仍需正常学习。</span><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-step-skip" class="secondary" title="跳过当前任务或等待，继续后续步骤；不标记任务完成" disabled>跳过当前步骤</button><button type="button" id="course-queue-skip" class="secondary" hidden>跳过本课程</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button><button type="button" id="course-video-pause" class="secondary" disabled>暂停</button></div>
                     <section class="course-run-preview" aria-label="运行队列预览"><div class="course-preview-heading"><span id="course-preview-scope">本课程</span></div><div class="course-wheel-shell" hidden><ol id="course-preview-list" class="course-wheel" role="listbox" tabindex="0" aria-label="待刷队列" aria-orientation="vertical"></ol></div><div id="course-preview-empty" class="course-preview-empty"><span id="course-preview-empty-text">章节目录加载中…</span><span id="course-list-loading" class="course-list-loading" role="progressbar" aria-label="正在连接课程列表" hidden></span><button type="button" id="course-preview-select" class="secondary" hidden>选择课程</button></div></section>
                   </section>
                   <section id="chapter-run-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-run" hidden>
@@ -15599,7 +15984,7 @@ Typr["U"] = {
         const total=result.analysisProgress.total;
         const grouped=(task.requestSnapshot||task.snapshot).questions.some(question=>question.ueditorBlankGroup);
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.33.4',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.34',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{...result.analysisProgress,status:task.status,completed:result.analyzedCount,total,

@@ -18,7 +18,7 @@
             if(tree.inaccessible.length || !tree.documents.includes(video.ownerDocument) || courseBlocker(tree.documents)
                 || courseVideoQuizCandidate(video))return false;
             const foreground=courseOwnerForegroundState(document);
-            return !courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
+            return courseForcePlaybackEnabled()||!courseVideoForegroundPolicy(video).required || foreground.visible&&foreground.focused;
         };
         const recover = async (record, explicit=false) => {
             const video=record.video;
@@ -50,7 +50,14 @@
                     }
                 };
                 doc.addEventListener('playing',discover,true);doc.addEventListener('load',discover,true);
-                documents.set(doc,()=>{doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);});
+                if(doc!==document){
+                    doc.addEventListener('visibilitychange',onBackground,true);
+                    doc.defaultView?.addEventListener('blur',onBackground,true);
+                }
+                documents.set(doc,()=>{
+                    doc.removeEventListener('playing',discover,true);doc.removeEventListener('load',discover,true);
+                    if(doc!==document){doc.removeEventListener('visibilitychange',onBackground,true);doc.defaultView?.removeEventListener('blur',onBackground,true);}
+                });
             }
             const found=new Set(tree.documents.slice(1).flatMap(doc=>[...doc.querySelectorAll('video')].filter(courseElementVisible)));
             for(const [video,record] of videos)if(!found.has(video)) {record.close();videos.delete(video);changedNodes=true;}
@@ -106,7 +113,7 @@
         const onMouseExit = event => {
             if (closed || event.relatedTarget !== null) return;
             const record=!active&&standalone();
-            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual&&!courseVideoForegroundPolicy(record.video).required,onSuppressed:()=>{}};
+            const context = active || record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual,onSuppressed:()=>{}};
             if(!context)return;
             try {
                 if (!context.video.isConnected || context.video.paused || context.video.ended
@@ -115,6 +122,19 @@
                 event.stopPropagation();
                 context.onSuppressed();
             } catch { /* 状态无法确认时不拦截，也不在页面事件中抛错。 */ }
+        };
+        const onBackground=event=>{
+            if(closed)return;
+            if(event.type==='blur'&&event.target!==event.currentTarget)return;
+            if(event.type==='visibilitychange'&&event.target.visibilityState==='visible')return;
+            const record=!active&&standalone();
+            const context=active||record&&{video:record.video,canProtect:()=>courseForcePlaybackEnabled()&&allowed(record)&&!record.manual};
+            if(!context?.video.isConnected||context.video.paused||context.video.ended)return;
+            try{
+                if(!context.canProtect())return;
+                active?.wake?.();
+                event.stopImmediatePropagation();event.stopPropagation();
+            }catch{ /* Stale playback ownership is handled by the runner. */ }
         };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
@@ -165,6 +185,8 @@
                 for(const record of videos.values())record.close();videos.clear();
                 for(const close of documents.values())close();documents.clear();
                 window.removeEventListener('mouseout', onMouseExit, true);
+                window.removeEventListener('blur',onBackground,true);
+                document.removeEventListener('visibilitychange',onBackground,true);
                 document.removeEventListener('visibilitychange',onForeground);
                 window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
@@ -172,6 +194,8 @@
             }
         };
         window.addEventListener('mouseout', onMouseExit, true);
+        window.addEventListener('blur',onBackground,true);
+        document.addEventListener('visibilitychange',onBackground,true);
         const onForeground=()=>{active?.wake?.();tick();};
         const timer=window.setInterval(tick,500);
         document.addEventListener('DOMContentLoaded',tick,{once:true});

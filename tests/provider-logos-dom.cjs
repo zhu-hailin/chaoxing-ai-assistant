@@ -45,7 +45,7 @@ function choose(f,provider) {
   if(provider!=='custom')seedModels(f,provider);
 }
 async function main() {
-  await test('五个官方标识与原始文件校验一致，内嵌资源无需请求网络', () => {
+  await test('官方原始资源及本地显示版本分别有校验，内嵌资源无需请求网络', () => {
     const f = fixture();
     try {
       const provenance = JSON.parse(fs.readFileSync(path.join(root,'assets/provider-logos/provenance.json')));
@@ -61,6 +61,19 @@ async function main() {
       assert.equal(f.api.getModelProvider('custom').logo,undefined);
       assert.equal(f.requests.length,0);
     } finally {f.close();}
+  });
+  await test('OpenAI 与 Kimi 固定白底深色，智谱使用开放平台标识', () => {
+    const f=fixture();try{
+      for(const provider of ['openai','kimi']){
+        const raw=Buffer.from(f.api.getModelProvider(provider).logo.split(',')[1],'base64').toString('utf8');
+        const svg=new f.w.DOMParser().parseFromString(raw,'image/svg+xml');
+        assert.equal(svg.querySelector('parsererror'),null);assert.equal(svg.querySelector('style'),null);
+        assert(svg.querySelector('rect[fill="#fff"]'));assert(svg.querySelector('path[fill="#000"]'));assert(!raw.includes('prefers-color-scheme'));
+      }
+      const manifest=JSON.parse(fs.readFileSync(path.join(root,'assets/provider-logos/provenance.json')));
+      const glm=manifest.find(item=>item.provider==='glm');assert.equal(glm.officialPage,'https://bigmodel.cn/');assert.equal(glm.runtimeFile,'glm-platform.svg');assert(!glm.sourceURL.includes('chatglm.cn'));
+      const deepseek=Buffer.from(f.api.getModelProvider('deepseek').logo.split(',')[1],'base64').toString('utf8');assert(deepseek.includes('#4D6BFE'));
+    }finally{f.close();}
   });
   await test('平台及两个模型列表每一行都显示所属平台标识，自定义无标识', () => {
     const f = fixture();

@@ -18,6 +18,7 @@ paths = ['.gitignore', 'AGENTS.md', 'LICENSE', 'README.md', 'CHANGELOG.md', '学
          'tests/build_course_preview.py', 'tests/build_homework_preview.py',
          'tests/run-dom.cjs', 'tests/study-dom.cjs', 'tests/parser-dom.cjs',
          'tests/media-dom.cjs', 'tests/course-runner-dom.cjs', 'tests/course-preview-dom.cjs',
+         'tests/course-verification-dom.cjs',
          'tests/analysis-task-dom.cjs', 'tests/model-providers-dom.cjs', 'tests/course-context-dom.cjs', 'tests/course-video-info-dom.cjs', 'tests/model-capability-dom.cjs', 'tests/course-info-integration-dom.cjs', 'tests/panel-window-dom.cjs', 'tests/credential-settings-dom.cjs', 'tests/provider-logos-dom.cjs', 'tests/p0-page-actions-dom.cjs', 'tests/p0-browser-smoke.cjs', 'tests/自动课程模拟.html']
 paths += [str(p.relative_to(root)) for p in (root / 'sources').iterdir() if p.suffix in ('.js', '.html')]
 paths += [str(p.relative_to(root)) for p in (root / 'docs').glob('*.md')]

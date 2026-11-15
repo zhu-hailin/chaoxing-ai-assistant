@@ -23,6 +23,7 @@
         const canStart=()=>queue?.list?queue.available:Boolean(courseRunController(owner)||home?.available);
         const stopButton=s.getElementById('course-stop');
         const unlockButton=s.getElementById('course-unlock');
+        const skipStepButton=s.getElementById('course-step-skip');
         let stopRunId=null,stopUntil=0,stopTimer=null,stopCountdownTimer=null;
         const clearStopConfirmation=()=>{
             if(stopTimer!==null)doc.defaultView?.clearTimeout(stopTimer);
@@ -197,6 +198,7 @@
             setAssistantControlDisabled(s.getElementById('course-stop'),home?!home.pending:!hasCommands||!running,home?'当前没有待取消的启动任务':!hasCommands?'请通过课程主页面的助手停止自动学习':'当前没有运行中的自动学习');
             if(queue?.active)setAssistantControlDisabled(stopButton,false);
             if(home&&!stopRunId)stopButton.textContent=home.pending?'取消启动':'停止';
+            setAssistantControlDisabled(skipStepButton,!courseRunController(owner)?.canSkipStep,verifying?'请先完成或关闭平台核验':running?'当前步骤暂不能跳过':'当前没有正在执行的步骤');
             setAssistantControlDisabled(s.getElementById('course-skip'),!hasCommands||(running ? owner?.getElementById('cx-ai-course-lease')?.getAttribute('data-can-skip')!=='true' : report?.mode==='unlock'||!courseSkipResume(owner)),!hasCommands?'请在课程学习页面跳过章节':running?'当前处理阶段暂不能跳过章节':'当前没有可跳过并继续的章节');
             autoSubmit.checked=running ? courseRunController(owner)?.autoSubmitEnabled===true : submitPreference();
             if(queue?.active&&!running)autoSubmit.checked=queue.record.submitAuthorized===true;
@@ -230,6 +232,7 @@
         };
         s.getElementById('course-queue-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-queue-skip')))queue?.skip();};
         s.getElementById('course-skip').onclick=event=>{if(trustedAssistantActivation(event,s.getElementById('course-skip')))courseRunController(owner)?.skip();};
+        skipStepButton.onclick=event=>{if(trustedAssistantActivation(event,skipStepButton))courseRunController(owner)?.skipStep();};
         stopButton.onclick=event=>{
             if(!trustedAssistantActivation(event,stopButton))return;
             if(home&&!queue?.active){home.cancel();return;}

@@ -53,7 +53,7 @@
     }
     function courseBlocker(documents, videoQuizContext = null, verification = null) {
         for (const doc of documents) {
-            for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
+            for (const node of doc.querySelectorAll('.chapterVideoFaceMaskDiv,.chapterVideoFaceQrMaskDiv,#fcqrimg[src],.face-recognition,[data-face-verification]')) {
                 if (node.id === 'fcqrimg' && !node.getAttribute('src')) continue;
                 if (courseElementVisible(node) && !verification?.allows(node)) return '需要人脸识别，请自行处理；自动流程已停止';
             }

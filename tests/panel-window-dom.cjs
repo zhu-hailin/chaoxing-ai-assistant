@@ -156,6 +156,24 @@ async function main() {
       control.checked=false;control.dispatchEvent(new a.w.Event('change'));assert.equal(a.w.getComputedStyle(generic).display,'none');assert(!b.s.getElementById('account-hide-avatar').checked);assert(nav.title.includes('示例用户'));assertNoErrors(a);assertNoErrors(b);
     }finally{b.close();a.close();}
   });
+  await check('账号资料按 UID 持久化，缓存命中不请求且同内容不重复写入',async()=>{
+    const a=fixture();let b;
+    try{
+      a.setURL('https://i.chaoxing.com/base');a.d.cookie='UID=100001';
+      a.d.body.insertAdjacentHTML('beforeend','<div class="user-block"><img class="head-img" src="https://photo.chaoxing.com/p/100001_80"><p class="user-name">缓存用户</p></div><h3 id="siteName">示例大学(学生)</h3>');
+      a.w.dispatchEvent(new a.w.Event('focus'));const profileKey='cx_account_profile:100001';
+      assert.equal(a.storage.get(profileKey).name,'缓存用户');assert.equal(a.requests.length,0);
+      b=fixture({hub:a.hub});b.d.cookie='UID=100001';b.w.dispatchEvent(new b.w.Event('focus'));
+      assert.equal(b.s.getElementById('account-name').textContent,'缓存用户');assert.equal(b.requests.length,0);
+      const writes=a.hub.writes;for(let i=0;i<3;i++)b.w.dispatchEvent(new b.w.Event('focus'));assert.equal(a.hub.writes,writes);
+      a.d.querySelector('.user-name').textContent='更新用户';a.w.dispatchEvent(new a.w.Event('focus'));
+      assert.equal(a.storage.get(profileKey).name,'更新用户');assert.equal(b.s.getElementById('account-name').textContent,'更新用户');
+      assert.equal(a.hub.writes,writes+1);assert.equal(b.requests.length,0);
+      b.d.cookie='UID=100002';b.w.dispatchEvent(new b.w.Event('focus'));
+      assert.equal(b.s.getElementById('account-name').textContent,'当前账号');assert.equal(b.requests.length,1);
+      assert.equal(a.storage.get(profileKey).name,'更新用户');assert(!a.storage.has('cx_account_profile:100002'));
+    }finally{b?.close();a.close();}
+  });
   await check('其他功能导航位于章节下方，两个开关默认关闭并支持键盘切换',async()=>{
     const f=fixture();try{
       assert.deepEqual([...f.s.querySelectorAll('[data-panel-view]')].map(x=>x.dataset.panelView),['questions','chapters','other','model','account']);f.open('other');assert(!f.s.getElementById('view-other').hidden);assert.equal(f.s.getElementById('nav-other').getAttribute('aria-selected'),'true');assert(!f.s.getElementById('other-hide-platform-ai').checked);assert(!f.s.getElementById('other-keep-video-playing').checked);

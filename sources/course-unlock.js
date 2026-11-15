@@ -3,14 +3,17 @@
         const scope=courseScoreKey(owner),key=`cx_course_unlock:${scope}`,id=crypto.randomUUID();
         const catalog=readCourseCatalog(owner),entries=catalog?.entries.filter(item=>!item.isGroup)||[];
         const report={mode:'unlock',scope,status:'running',startedAt:now(),endedAt:null,reason:'',chapters:entries.map(item=>({id:item.id,number:item.number,title:item.title,status:'unvisited',tasks:[],issues:[]}))};
-        const run={id,mode:'unlock',report,cancelled:false,abort:new AbortController(),chapter:null,activeVideo:null,expected:null,expectedTab:null,navigating:false};
+        const run={id,mode:'unlock',report,cancelled:false,abort:new AbortController(),chapter:null,activeVideo:null,expected:null,expectedTab:null,navigating:false,reconnecting:false};
         run.cancelWait=new Promise(resolve=>{run.cancelWake=resolve;});
         let lease=null,claimed=false,lastSaved=0,loading=false,watchdog=null,chapterIndex=0;
         const playingDocuments=new Set();
+        const checkpoints=new Map();
+        const navigationChanged=()=>Object.assign(new Error('章节页面变化，正在接续解锁'),{code:'COURSE_UNLOCK_RECONNECT'});
         const pauseNativePlayback=event=>{
             if(run.cancelled||event.target?.tagName!=='VIDEO')return;
-            try{guard(true);event.target.pause();}
-            catch(error){run.stopError=error;run.cancelled=true;run.cancelWake();}
+            event.target.pause();
+            try{guard(true);}
+            catch(error){if(error.code==='COURSE_UNLOCK_RECONNECT')return;run.stopError=error;run.cancelled=true;run.cancelWake();}
         };
         const protection=report.protection=courseRunProtection(null,report.chapters,0,limits.maxConsecutiveChapterFailures,failureProtectionEnabled);
         const save=()=>{
@@ -36,8 +39,8 @@
             if(!scope||courseScoreKey(owner)!==scope)throw new Error('课程或账号已变化');
             if(owner.getElementById('cx-ai-course-lease')?.getAttribute('data-run-id')!==id||claimed&&get(key,null)?.ownerId!==id)throw new Error('解锁运行锁已失效');
             if(!run.navigating) {
-                if(run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)throw new Error('用户切换了章节，已停止解锁');
-                if(run.expectedTab&&courseTabSnapshot(owner).activeId!==run.expectedTab)throw new Error('当前栏目已变化，已停止解锁');
+                if(run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)throw navigationChanged();
+                if(run.expectedTab&&courseTabSnapshot(owner).activeId!==run.expectedTab)throw navigationChanged();
             }
             const tree=courseFrameTree(owner);
             for(const doc of tree.documents.slice(1)) {
@@ -47,7 +50,10 @@
                     if(!video.paused)video.pause();
                 }
             }
-            verification.poll(tree,run.activeVideo);
+            // Do not bind a gate from the chapter the user temporarily opened.
+            if(run.reconnecting||run.navigating&&run.expected&&readCourseCatalog(owner)?.entries.find(item=>item.active&&!item.isGroup)?.id!==run.expected)return tree;
+            try{verification.poll(tree,run.activeVideo);}
+            catch(error){if(error.code==='COURSE_VERIFICATION_TARGET_CHANGED')throw navigationChanged();throw error;}
             const blocker=courseBlocker(tree.documents,null,verification);
             if(blocker)throw Object.assign(new Error(blocker),{code:'COURSE_NATIVE_BLOCKER'});
             if(!loading&&!run.navigating&&tree.inaccessible.length)throw Object.assign(new Error('任务框架无法读取，请人工检查'),{code:'COURSE_FRAME_UNAVAILABLE'});
@@ -56,13 +62,14 @@
         };
         run.validate=guard;
         const ready=async()=>{
+            if(run.step?.skipped)throw courseStepSkippedError();
             guard(true);
             while(verification.pending){await Promise.race([sleep(limits.pollMs),run.cancelWait,run.chapter.wait]);guard(true);}
             guard();
         };
         const wait=async ms=>{
             const deadline=clock()+ms;
-            do {await ready();if(clock()>=deadline)break;await Promise.race([sleep(Math.min(limits.pollMs,deadline-clock())),run.cancelWait,run.chapter.wait]);}while(true);
+            do {await ready();if(clock()>=deadline)break;await Promise.race([sleep(Math.min(limits.pollMs,deadline-clock())),run.cancelWait,run.chapter.wait,...(run.step?[run.step.wait]:[])]);}while(true);
             await ready();
         };
         const until=async(test,message)=>{
@@ -94,16 +101,16 @@
             video.addEventListener('playing',onPlaying);
             try {
                 await ready();
-                if(!video.isConnected)throw new Error('视频控件已替换，请重新确认任务');
+                if(!video.isConnected)throw navigationChanged();
                 const button=courseVideoStartButton(video);
-                if(!button){task.status='pending';task.reason='没有唯一的原生播放入口，留待人工触发';await wait(2000);return;}
+                if(!button){task.status='pending';task.reason='没有唯一的原生播放入口，留待人工触发';return;}
                 const passes=verification.passes;
                 guard();button.click();
                 guard(true);if(!video.paused)video.pause();
                 const deadline=clock()+2000;
                 while(true) {
                     await ready();
-                    if(!video.isConnected)throw new Error('视频控件已替换，请重新确认任务');
+                    if(!video.isConnected)throw navigationChanged();
                     if(!video.paused)video.pause();
                     if(verification.passes>passes){task.status='verified';return;}
                     if(clock()>=deadline){task.status='visited';return;}
@@ -124,12 +131,14 @@
                     await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===entry.id&&item.active)
                         &&courseContentChanged(before,courseContentFingerprint(owner)),'章节内容未成功切换');
                 }
-                await load();
+                await load();run.reconnecting=false;
             } finally {run.navigating=false;}
-            const visited=new Set();
+            const checkpoint=checkpoints.get(record.id)||{visited:new Set(),tasks:new Map()};
+            checkpoints.set(record.id,checkpoint);
+            const visited=checkpoint.visited;
             while(true) {
                 await ready();const state=courseTabSnapshot(owner);
-                if(!state.ready)throw new Error('栏目状态无法确认，已停止解锁');
+                if(!state.ready)throw navigationChanged();
                 const tabs=state.tabs.length?state.tabs:[{id:'current',title:'当前页面',active:true}],tab=tabs.find(item=>!visited.has(item.id));
                 if(!tab)break;
                 if(tab.disabled)throw new Error('章节栏目尚未解锁，请先处理平台前置任务');
@@ -137,30 +146,44 @@
                     run.expectedTab=null;run.navigating=true;
                     try {
                         guard();const live=courseTabSnapshot(owner).tabs.find(item=>item.id===tab.id);
-                        if(!live?.node?.isConnected||live.disabled)throw new Error('栏目原生入口已变化');
+                        if(!live?.node?.isConnected)throw navigationChanged();
+                        if(live.disabled)throw new Error('章节栏目尚未解锁，请先处理平台前置任务');
                         live.node.click();
                         await until(()=>courseTabSnapshot(owner).activeId===tab.id,'栏目内容未成功切换');await load();
                     } finally {run.navigating=false;}
                 }
                 run.expectedTab=tab.id==='current'?null:tab.id;
                 notify(`正在解锁：${record.number} ${record.title} · ${tab.title}`);
-                const processed=new Set();let found=false,observedEmpty=false;
+                const processed=new Set();let found=[...checkpoint.tasks.values()].some(task=>task.tab===tab.id),observedEmpty=false;
                 while(true) {
                     await ready();const tree=guard();
                     const items=coursePageTasks(tree).filter(item=>courseTaskRequired(item.node)!==false);
-                    const item=items.find(item=>!processed.has(item.node));
+                    const item=items.find((item,index)=>{
+                        const previous=checkpoint.tasks.get(tab.id+':'+index+':'+item.type);
+                        return !processed.has(item.node)&&!previous?.userSkipped&&!['already','verified','visited'].includes(previous?.status);
+                    });
                     if(!item) {
                         if(!found&&!observedEmpty){observedEmpty=true;await wait(2000);continue;}
                         break;
                     }
                     found=true;
-                    const task={tab:tab.id,type:item.type,status:'pending'};record.tasks.push(task);
-                    if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
-                    else if(item.type==='video')await inspectVideo(item.node,task);
-                    else {
-                        const passes=verification.passes;await wait(2000);
-                        task.status=verification.passes>passes?'verified':'visited';
-                    }
+                    const taskKey=tab.id+':'+items.indexOf(item)+':'+item.type;
+                    let task=checkpoint.tasks.get(taskKey);
+                    if(!task){task={tab:tab.id,type:item.type,status:'pending'};record.tasks.push(task);checkpoint.tasks.set(taskKey,task);}
+                    const step=courseBeginStep(run,task);owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));
+                    try {
+                        if(courseTaskComplete(item.node)===true||item.type==='quiz'&&courseQuizComplete(item.doc))task.status='already';
+                        else if(item.type==='video')await inspectVideo(item.node,task);
+                        else {
+                            const passes=verification.passes;await wait(2000);
+                            task.status=verification.passes>passes?'verified':'visited';
+                        }
+                    } catch(error) {
+                        if(error.code!=='COURSE_STEP_SKIPPED')throw error;
+                        step.finish();guard();
+                        task.status='pending';task.userSkipped=true;task.reason='用户跳过当前步骤，未计为完成';
+                        notify('已跳过当前步骤，继续后续操作…');
+                    } finally {step.finish();owner.dispatchEvent(new owner.defaultView.Event('cx-ai-course-update'));}
                     processed.add(item.node);save();
                 }
                 if(!found) {
@@ -183,7 +206,7 @@
                 owner.defaultView.addEventListener('pagehide',onUnload,{once:true});
                 watchdog=owner.defaultView.setInterval(()=>{
                     try{guard(true);if(now()-lastSaved>2500)save();}
-                    catch(error){if(error.code==='CHAPTER_SKIPPED')return;run.stopError=error;run.cancelled=true;run.cancelWake();}
+                    catch(error){if(['CHAPTER_SKIPPED','COURSE_UNLOCK_RECONNECT'].includes(error.code))return;run.stopError=error;run.cancelled=true;run.cancelWake();}
                 },limits.pollMs);
                 for(;chapterIndex<report.chapters.length;chapterIndex++) {
                     const record=report.chapters[chapterIndex];
@@ -196,7 +219,25 @@
                         if(!entry?.node?.isConnected)throw new Error('课程目录发生变化，已停止解锁');
                         if(entry.completed===true){record.status='already';protection.consecutiveFailures=0;continue;}
                         await ready();
-                        record.status='running';await visitChapter(record);protection.consecutiveFailures=0;
+                        record.status='running';
+                        while(true){
+                            try{await visitChapter(record);break;}
+                            catch(error){
+                                if(error.code!=='COURSE_UNLOCK_RECONNECT')throw error;
+                                run.reconnecting=true;
+                                verification.reset();
+                                run.activeVideo?.pause();run.activeVideo=null;
+                                run.expected=null;run.expectedTab=null;run.navigating=false;
+                                notify('页面已切换，正在返回原解锁进度');
+                                save();
+                                loading=true;
+                                try{
+                                    await Promise.race([sleep(limits.settleMs),run.cancelWait,run.chapter.wait]);
+                                    await until(()=>readCourseCatalog(owner)?.entries.some(item=>item.id===record.id&&item.node?.isConnected),'等待章节目录恢复超时');
+                                }finally{loading=false;}
+                            }
+                        }
+                        protection.consecutiveFailures=0;
                     } catch(error) {
                         if(run.chapter.skipped){record.status='skipped';record.reason='用户跳过本章节';}
                         else if(continueOnTimeout&&['COURSE_TIMEOUT','TIMEOUT'].includes(error.code)) {
