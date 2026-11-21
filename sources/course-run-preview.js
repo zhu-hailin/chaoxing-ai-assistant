@@ -145,7 +145,9 @@
                     }
                 }
                 const eligible=items.filter(courseListItemSelectable),count=eligible.filter(item=>queue.selected.has(item.key)).length;
-                s.getElementById('course-queue-selection-count').textContent=`已选 ${count} 门`;
+                const selectionCount=s.getElementById('course-queue-selection-count');
+                selectionCount.hidden=!snapshot?.ready;
+                selectionCount.textContent=`已选 ${count} 门`;
                 all.checked=eligible.length>0&&count===eligible.length;all.indeterminate=count>0&&count<eligible.length;
                 setAssistantControlDisabled(all,locked||!eligible.length,locked?'课程队列运行中，请停止后修改选择':snapshot?.ready?'当前暂无可选择的课程':connectionReason);
             }

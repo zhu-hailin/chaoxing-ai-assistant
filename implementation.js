@@ -86,8 +86,10 @@
             mountCourseHomeChapterEntry(doc);return;
         }
         if(doc.defaultView!==doc.defaultView?.top || !isCourseHomeURL(pageURL(doc)) || !doc.body)return;
-        const titles=doc.querySelectorAll('.classDl'),title=titles.length===1?titles[0]:null;
-        if(!title)return;
+        if(doc.querySelectorAll('.classDl').length!==1) {
+            const record=courseQueueRecord();
+            if(!['navigating-course','starting-course'].includes(record?.phase)||!courseQueueValidContext(courseQueueToken(record),doc))return;
+        }
         if(!controller)controller=createAssistantController();
         createAssistantPanel(doc,controller);
         doc.getElementById('cx-ai-course-home-toolbar')?.remove();
@@ -153,5 +155,8 @@
     initializeAssistantFeature('课程启动通信',initCourseHomeLaunchTransport);
     initializeAssistantFeature('课程列表通信',initCourseListTransport);
     initializeAssistantFeature('课程队列通信',initCourseQueueTransport);
+    if(window===window.top&&isCourseHomeURL(pageURL(document)))courseQueueReady().then(()=>{
+        if(!courseHomeClosed)initializeAssistantFeature('课程主页入口',initCourseHomeAssistant);
+    });
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();

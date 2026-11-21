@@ -5,7 +5,7 @@
 // @icon         data:image/png;base64,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
 // @updateURL    https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
 // @downloadURL  https://raw.githubusercontent.com/zhu-hailin/chaoxing-ai-assistant/main/%E5%AD%A6%E4%B9%A0%E9%80%9AAI%E5%8A%A9%E6%89%8B.user.js
-// @version      1.34
+// @version      1.34.1
 // @description  字体解密、后台播放优化、多平台 AI 分析与预填、课程自动学习
 // @match        *://*.chaoxing.com/*
 // @match        *://*.xuexitong.com/*
@@ -24,6 +24,7 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_registerMenuCommand
+// @grant        GM_notification
 // @grant        unsafeWindow
 // @connect      api.deepseek.com
 // @connect      api.openai.com
@@ -2917,7 +2918,7 @@ Typr["U"] = {
 
     const ROOT_ID = 'cx-ai-study-root';
     const UI_HIDDEN_KEY = 'cx_ui_hidden';
-    const ASSISTANT_VERSION = '1.34';
+    const ASSISTANT_VERSION = '1.34.1';
     const QUESTION_SELECTOR = '.singleQuesId,.TiMu,.question-item[data-question-id],[data-questionid]';
     const DEEPSEEK_BASE = 'https://api.deepseek.com';
     const DEEPSEEK_SEARCH_URL = `${DEEPSEEK_BASE}/anthropic/v1/messages`;
@@ -2970,7 +2971,7 @@ Typr["U"] = {
         if (questions.some(q => GARBLED.test(q.question) || q.options.some(o => GARBLED.test(o.text)))) {
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         }
-        return { version: '1.34', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
+        return { version: '1.34.1', schemaVersion: parsed.schemaVersion, total: questions.length, questions, media:parsed.media };
     }
 
     // 不缓存旧题目的 AI 结果到不同章节：预填前必须重新校验全部 ID、题干和选项。
@@ -7542,7 +7543,7 @@ Typr["U"] = {
             // 按实际发送者回复，顶层请求不能回到中间 PDF 窗口。
             operate(data,response=>event.source.postMessage(response,event.origin));
         };
-        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.34');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
+        const mark=()=>{doc.documentElement?.setAttribute('data-cx-document-bridge','v1.34.1');doc.documentElement?.setAttribute('data-cx-document-bridge-route','ancestor-v2');};
         mark();if(!doc.documentElement)doc.addEventListener('DOMContentLoaded',mark,{once:true});
         view.addEventListener('message',receive);
         view.addEventListener('pagehide',()=>{
@@ -11178,6 +11179,7 @@ Typr["U"] = {
     const COURSE_HOME_CATALOG_STATE='cx_course_catalog_state:',COURSE_HOME_CATALOG_UPDATE='cx_course_catalog_update';
     const courseHomeCatalogStates=new Map();
     const courseHomeNavigations = new Set();
+    let courseHomeClickedLaunch=null,courseHomeEntryWait=null;
     const courseHomeFrameSnapshots = new WeakMap();
     let courseHomeParentFrame = null, courseHomeChildFrame = null;
     let courseHomeTransportReady = false, courseHomeClosed = false, courseHomeTabPromise = null;
@@ -11641,10 +11643,10 @@ Typr["U"] = {
     function courseHomeBoundary(id,entry) {
         const record=courseHomeRecord(id),locked=entry.navigation.status==='sequence-locked';
         if(!record)return;
-        courseHomeUpdate(id,{status:'blocked',message:locked?`章节“${entry.title}”尚未解锁，请先完成平台前置任务后重试`:`章节“${entry.title}”的原生入口尚未确认，请刷新目录后重试`,
+        courseHomeUpdate(id,{status:'blocked',message:locked?`章节“${entry.title}”尚未解锁，请先完成平台前置任务后重试`:`章节“${entry.title}”的原生入口未就绪，请手动打开该章节后重试`,
             navigationBoundary:{chapterId:entry.chapterId,status:locked?'sequence-locked':'unknown'},options:{...record.options,submit:false}});
     }
-    function courseHomeRowEntry(doc,identity,row) {
+    function courseHomeRowEntry(doc,identity,row,{requireHandler=false}={}) {
             if(!identity||!row?.isConnected||row.closest('[inert],[disabled],[aria-disabled="true"],[data-locked="true"]'))return null;
             const call=/^\s*(?:return\s+)?(?:window\.)?toOld\(\s*['"](\d+)['"]\s*,\s*['"](\d+)['"]\s*,\s*['"](\d+)['"]\s*(?:,\s*\d+\s*)?\)\s*;?\s*$/.exec(row.getAttribute('onclick')||'');
             if(call && call[1]===identity.course && call[3]===identity.classroom && row.id===`cur${call[2]}`
@@ -11656,6 +11658,7 @@ Typr["U"] = {
                         const nativeFrame=unsafeWindow.document.getElementById('frame_content-zj');
                         if(nativeFrame?.contentDocument===doc)page=nativeFrame.contentWindow;
                     }
+                    if(requireHandler&&typeof page.toOld!=='function')return null;
                     server=new URL(page.ServerHost?.mooc1Domain,doc.baseURI);
                 }catch{return null;}
                 if(!['https:','http:'].includes(server.protocol)||!isCourseStudyHost(server.hostname)||!['','/','/mooc-ans','/mooc-ans/'].includes(server.pathname))return null;
@@ -11678,44 +11681,55 @@ Typr["U"] = {
         return null;
     }
     async function courseHomeNavigate(id) {
-        if(courseHomeNavigations.has(id)||courseHomeClosed||!isCourseHomeURL(pageURL(document),true))return;
-        const tab=await courseHomeTab(),tabState=await courseHomeTabRead(),record=courseHomeRecord(id),identity=courseHomeIdentity();
-        if(!record||record.status!=='preparing'||record.sourceTab!==tab.cxCourseTabId||record.expiresAt<Date.now()
-            ||tabState.cxCourseLaunchId!==id||!sameCourseHomeIdentity(record.identity,identity))return;
-        let parentOK=false;try{parentOK=isCourseHomeURL(new URL(document.referrer));}catch{}
-        if(window===window.top||!parentOK)return;
-        const blocker=courseHomeBlocker(document);if(blocker){courseHomeFail(id,blocker);return;}
-        const catalog=readCourseCatalog(document),selection=courseHomeSelection(catalog,record.options.skipLearned);
-        if(selection.status==='unready'){if(record.message!==selection.message)courseHomeUpdate(id,{message:selection.message});return;}
-        if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:record.options.mode==='unlock'?'当前课程没有待解锁任务':selection.message,options:{...record.options,submit:false}});return;}
-        if(selection.entry.navigation.status!=='available') {
-            courseHomeBoundary(id,selection.entry);return;
-        }
-        if(courseHomeNavigations.has(id))return;
+        if(!courseHomeUUID(id)||courseHomeNavigations.has(id)||courseHomeClickedLaunch===id||courseHomeClosed
+            ||window===window.top||!isCourseHomeURL(pageURL(document),true))return;
+        if(courseHomeRecord(id)?.status!=='preparing')return;
         courseHomeNavigations.add(id);
-        await courseHomeBindTab(id);
-        const current=courseHomeRecord(id);
-        if(courseHomeClosed||current?.status!=='preparing'||current.expiresAt<Date.now()||!sameCourseHomeIdentity(courseHomeIdentity(),identity))return;
-        const fresh=courseHomeSelection(readCourseCatalog(document),current.options.skipLearned);
-        if(fresh.status!=='target'){courseHomeNavigations.delete(id);return;}
-        const entry=fresh.entry.navigation.status==='available'&&courseHomeRowEntry(document,identity,fresh.entry.node);
-        if(!entry){courseHomeBoundary(id,fresh.entry);return;}
-        const queueLaunch=Boolean(current.queueContext),originalTarget=entry.node.getAttribute('target');
-        if(queueLaunch&&entry.url)entry.node.setAttribute('target','_top');
-        const newTab=!queueLaunch&&entry.url && !['','_self','_top','_parent'].includes((entry.node.getAttribute('target')||'').toLowerCase());
-        const original=entry.node.getAttribute('href');
-        if(newTab) {
-            if(entry.url.hash){courseHomeFail(id,'该新窗口入口无法安全关联，请手动进入学习页面');return;}
-            entry.url.hash=`cx-ai-launch=${id}`;entry.node.setAttribute('href',entry.url.href);
-        }
-        courseHomeUpdate(id,{status:'navigating',chapterId:entry.chapterId,startPrefix:current.options.skipLearned?fresh.prefix:null,
-            expectedOrigin:entry.origin,allowNewTab:Boolean(newTab),message:`正在进入：${fresh.entry.title}`});
-        try {entry.node.click();}
-        catch {courseHomeFail(id,'原生章节导航失败，请重新开始');}
-        finally {
-            if(newTab)setTimeout(()=>{if(entry.node.isConnected && entry.node.getAttribute('href')===entry.url.href)entry.node.setAttribute('href',original);},0);
-            if(queueLaunch&&entry.url)setTimeout(()=>{if(entry.node.isConnected){if(originalTarget===null)entry.node.removeAttribute('target');else entry.node.setAttribute('target',originalTarget);}},0);
-        }
+        try {
+            // The homepage has already bound the launch. The chapter only verifies that binding.
+            const tab=await courseHomeTabRead(),record=courseHomeRecord(id),identity=courseHomeIdentity();
+            if(courseHomeClosed||record?.status!=='preparing'||record.sourceTab!==tab.cxCourseTabId||record.expiresAt<Date.now()
+                ||tab.cxCourseLaunchId!==id||!sameCourseHomeIdentity(record.identity,identity))return;
+            let parentOK=false;try{parentOK=isCourseHomeURL(new URL(document.referrer));}catch{}
+            if(!parentOK)return;
+            const blocker=courseHomeBlocker(document);if(blocker){courseHomeFail(id,blocker);return;}
+            const selection=courseHomeSelection(readCourseCatalog(document),record.options.skipLearned);
+            if(selection.status==='unready'){if(record.message!==selection.message)courseHomeUpdate(id,{message:selection.message});return;}
+            if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:record.options.mode==='unlock'?'当前课程没有待解锁任务':selection.message,options:{...record.options,submit:false}});return;}
+            const target=selection.entry;
+            if(target.navigation.status==='sequence-locked'){courseHomeBoundary(id,target);return;}
+            const now=Date.now();
+            if(courseHomeEntryWait?.id===id&&now>=courseHomeEntryWait.until) {
+                courseHomeEntryWait=null;courseHomeBoundary(id,target);return;
+            }
+            const entry=target.navigation.status==='available'&&courseHomeRowEntry(document,identity,target.node,{requireHandler:true});
+            if(!entry) {
+                if(courseHomeEntryWait?.id!==id)courseHomeEntryWait={id,until:now+10000};
+                const message=`正在等待章节“${target.title}”的原生入口就绪…`;
+                if(record.message!==message)courseHomeUpdate(id,{message});
+                return;
+            }
+            const current=courseHomeRecord(id);
+            if(courseHomeClosed||current?.status!=='preparing'||current.expiresAt<Date.now()||!sameCourseHomeIdentity(courseHomeIdentity(),identity))return;
+            courseHomeEntryWait=null;
+            const queueLaunch=Boolean(current.queueContext),originalTarget=entry.node.getAttribute('target');
+            if(queueLaunch&&entry.url)entry.node.setAttribute('target','_top');
+            const newTab=!queueLaunch&&entry.url && !['','_self','_top','_parent'].includes((entry.node.getAttribute('target')||'').toLowerCase());
+            const original=entry.node.getAttribute('href');
+            if(newTab) {
+                if(entry.url.hash){courseHomeFail(id,'该新窗口入口无法安全关联，请手动进入学习页面');return;}
+                entry.url.hash=`cx-ai-launch=${id}`;entry.node.setAttribute('href',entry.url.href);
+            }
+            courseHomeUpdate(id,{status:'navigating',chapterId:entry.chapterId,startPrefix:current.options.skipLearned?selection.prefix:null,
+                expectedOrigin:entry.origin,allowNewTab:Boolean(newTab),message:`正在进入：${target.title}`});
+            courseHomeClickedLaunch=id;
+            try {entry.node.click();}
+            catch {courseHomeFail(id,'原生章节点击失败，请手动打开该章节后重试');}
+            finally {
+                if(newTab)setTimeout(()=>{if(entry.node.isConnected && entry.node.getAttribute('href')===entry.url.href)entry.node.setAttribute('href',original);},0);
+                if(queueLaunch&&entry.url)setTimeout(()=>{if(entry.node.isConnected){if(originalTarget===null)entry.node.removeAttribute('target');else entry.node.setAttribute('target',originalTarget);}},0);
+            }
+        } finally {courseHomeNavigations.delete(id);}
     }
     // Cross-window messages only identify a private GM record; no page message can create a launch or supply settings.
     function initCourseHomeLaunchTransport() {
@@ -11757,7 +11771,7 @@ Typr["U"] = {
                 let origin;try{origin=new URL(event.origin);}catch{return;}
                 if(!isCourseStudyURL(new URL('/mycourse/studentstudy',origin))||!courseHomeUUID(data.hello))return;
                 (async()=>{
-                    const tab=await courseHomeTab(),record=courseHomeRecord(tab.cxCourseLaunchId),hello=get(COURSE_HOME_PREFIX+'hello:'+data.hello,null);
+                    const tab=await courseHomeTabRead(),record=courseHomeRecord(tab.cxCourseLaunchId),hello=get(COURSE_HOME_PREFIX+'hello:'+data.hello,null);
                     if(!record||record.status!=='navigating'||record.expiresAt<Date.now()||record.sourceTab!==tab.cxCourseTabId
                         ||!hello||hello.origin!==event.origin||Date.now()-hello.at>10000||!courseHomeUUID(hello.tabId)
                         ||!sameCourseHomeIdentity(record.identity,hello.identity)||hello.chapterId!==record.chapterId
@@ -11805,35 +11819,84 @@ Typr["U"] = {
             window.addEventListener('message',receive);const timer=setInterval(probe,500),deadline=setTimeout(finish,2500);probe();
         });
     }
+    function courseHomeChapterMenu(doc,identity) {
+        const rows=doc.querySelectorAll('li[dataname="zj"]');
+        const row=rows.length===1?rows[0]:null;
+        const activeRows=row?[...row.parentElement.children].filter(item=>item.matches('li.curNav'))
+            :[...doc.querySelectorAll('.stuNavigationList li.curNav,#boxscrollleft li.curNav')];
+        const otherActive=activeRows.some(item=>!item.matches('li[dataname="zj"]'));
+        const links=[...(row?.querySelectorAll('a[data-url]')||[])].filter(link=>{
+            try {
+                const url=new URL(link.getAttribute('data-url'),doc.baseURI),context=courseURLContext(url);
+                return isCourseHomeURL(url,true)&&!url.username&&!url.password&&!context.conflict
+                    &&['course','classroom','student'].every(key=>!context[key]||context[key]===identity[key]);
+            } catch {return false;}
+        });
+        const link=links.length===1?links[0]:null;
+        const assistantHidden=link?.closest(`[${COURSE_MENU_HIDE_ATTRIBUTE}="true"]`);
+        const entry=link&&!link.closest('[aria-disabled="true"],[disabled]')
+            &&platformMenuVisible(link,new Set(assistantHidden?[assistantHidden]:[]))?link:null;
+        return {entry,selected:Boolean(row?.classList.contains('curNav')&&!otherActive),otherActive};
+    }
     function createCourseHomeLauncher(doc,ctl) {
         if(window!==window.top||!isCourseHomeURL(pageURL(doc)))return null;
         let pending=null,timer=null,starting=false,generation=0;
+        let chapterMenuDeadline=null,chapterMenuClicks=0,lastChapterMenuClick=-Infinity;
         const active=()=>{const identity=courseHomeIdentity(doc);if(!identity)return false;const scope=COURSE_SCORE_PREFIX+[identity.course,identity.classroom,identity.student].map(encodeURIComponent).join(':');return ['cx_course_run:','cx_course_unlock:'].some(prefix=>{const run=get(prefix+scope,null);return run?.status==='running'&&Date.now()-run.heartbeat<15000;});};
-        const finish=(message,phase='error')=>{clearInterval(timer);timer=null;pending=null;starting=false;ctl.report(message,phase,false);};
+        const finish=(message,phase='error')=>{clearInterval(timer);timer=null;pending=null;starting=false;
+            chapterMenuDeadline=null;chapterMenuClicks=0;lastChapterMenuClick=-Infinity;ctl.report(message,phase,false);};
+        const fail=(record,message)=>{courseHomeFail(record.id,message);finish(message);};
+        const showFailure=(message,phase='error')=>{finish(message,phase);ctl.openPanel('chapters');};
+        const failChapterMenu=record=>{
+            const message='未能打开课程章节，请手动打开「章节」后重试';
+            courseHomeFail(record.id,message);showFailure(message);
+        };
         const poll=()=>{
             if(courseHomeClosed){clearInterval(timer);return;}
             const record=courseHomeRecord(pending);
             if(!record){finish('启动记录已失效，请重新开始');return;}
             if(!sameCourseHomeIdentity(record.identity,courseHomeIdentity(doc))){courseHomeFail(record.id,'课程或账号已变化');finish('课程或账号已变化，已取消启动');return;}
-            const currentFrame=doc.getElementById('frame_content-zj');
+            const menu=courseHomeChapterMenu(doc,record.identity);
+            const frames=doc.querySelectorAll('[id="frame_content-zj"]');
+            const currentFrame=frames.length===1?frames[0]:null;
             let declared;try{declared=new URL(currentFrame?.getAttribute('src'),doc.baseURI);}catch{}
-            if(isCourseHomeURL(declared,true)&&!sameCourseHomeIdentity(courseURLContext(declared),record.identity)) {
-                courseHomeFail(record.id,'章节页面的课程或账号已变化');finish('章节页面的课程或账号已变化，已取消启动');return;
+            const chapterFrame=isCourseHomeURL(declared,true)&&currentFrame?.localName==='iframe'&&courseElementVisible(currentFrame)&&!menu.otherActive;
+            if(chapterFrame) {
+                const identity=courseURLContext(declared);
+                if(identity.conflict||!sameCourseHomeIdentity(identity,record.identity)) {
+                    courseHomeFail(record.id,'章节页面的课程或账号已变化');finish('章节页面的课程或账号已变化，已取消启动');return;
+                }
             }
-            const chapterDoc=resolveCourseHomeCatalog(doc)?.sourceDoc;
+            const chapterDoc=chapterFrame?resolveCourseHomeCatalog(doc)?.sourceDoc:null;
             const blocker=courseHomeBlocker(doc)||(chapterDoc&&courseHomeBlocker(chapterDoc));
             if(blocker){courseHomeFail(record.id,blocker,/未解锁/.test(blocker)?'blocked':'failed');finish(blocker,/未解锁/.test(blocker)?'idle':'error');return;}
             if(record.status==='started'){finish('已在课程学习页面启动','done');return;}
             if(record.status==='complete'){finish(record.message,'done');return;}
-            if(record.status==='blocked'){finish(record.message,'idle');return;}
-            if(['failed','cancelled'].includes(record.status)){finish(record.message,record.status==='cancelled'?'idle':'error');return;}
-            if(Date.now()>record.expiresAt){courseHomeFail(record.id,'进入学习页面超时，请检查原生入口后重试');finish('进入学习页面超时，请检查原生入口后重试');return;}
+            if(record.status==='blocked'||record.status==='failed'){showFailure(record.message,record.status==='blocked'?'idle':'error');return;}
+            if(record.status==='cancelled'){finish(record.message,'idle');return;}
+            if(Date.now()>record.expiresAt) {
+                const message=['navigating','waiting'].includes(record.status)
+                    ?'已点击章节，但未进入学习页，请手动打开目标章节后重试'
+                    :'等待章节目录或原生入口就绪超时，请刷新后重试';
+                courseHomeFail(record.id,message);showFailure(message);return;
+            }
             if(record.message&&ctl.state.message!==record.message)ctl.report(record.message,'course-navigating',true);
             if(record.status==='preparing') {
-                const frame=doc.getElementById('frame_content-zj');
-                if(frame) {
-                    let url;try{url=new URL(frame.getAttribute('src'),doc.baseURI);}catch{return;}
-                    if(isCourseHomeURL(url,true)&&sameCourseHomeIdentity(courseURLContext(url),record.identity))frame.contentWindow?.postMessage({channel:COURSE_HOME_CHANNEL,kind:'navigate',id:record.id},url.origin);
+                if(record.queueContext&&!courseQueueValidContext(record.queueContext,doc)) {
+                    fail(record,'课程队列已停止或身份已变化');return;
+                }
+                if(chapterFrame) {
+                    currentFrame.contentWindow?.postMessage({channel:COURSE_HOME_CHANNEL,kind:'navigate',id:record.id},declared.origin);
+                    return;
+                }
+                if(menu.selected)return;
+                const now=Date.now();chapterMenuDeadline??=now+10000;
+                if(now>=chapterMenuDeadline) {
+                    failChapterMenu(record);return;
+                }
+                if(menu.entry&&doc.readyState!=='loading'&&chapterMenuClicks<2&&now-lastChapterMenuClick>=2000) {
+                    chapterMenuClicks++;lastChapterMenuClick=now;
+                    try {menu.entry.click();}catch {failChapterMenu(record);}
                 }
             }
         };
@@ -11851,9 +11914,6 @@ Typr["U"] = {
                     if(optionsSnapshot.mode!=='unlock'&&model!==courseHomeModelSignature())throw new Error('模型设置已变化，请重新开始');
                     if(api.active)throw new Error('本课程已有运行任务，请在学习页面查看');
                     const blocker=courseHomeBlocker(doc);if(blocker)throw new Error(blocker);
-                    const frame=doc.getElementById('frame_content-zj');
-                    const navigation=doc.querySelector('li[dataname="zj"] a[data-url="/mooc2-ans/mycourse/studentcourse"]');
-                    if(!frame&&!navigation)throw new Error('未找到原生章节入口，请先打开课程章节栏目');
                     if(tab.cxCourseLaunchId)courseHomeFail(tab.cxCourseLaunchId,'已由新的启动操作替代','cancelled');
                     const record={id,identity,sourceTab:tab.cxCourseTabId,targetTab:tab.cxCourseTabId,createdAt,expiresAt:createdAt+COURSE_HOME_TTL,status:'preparing',model,options:optionsSnapshot,message:optionsSnapshot.mode==='unlock'?'正在进入学习页面，准备解锁课程':'正在准备课程入口'};
                     if(options.queueContext) {
@@ -11862,9 +11922,6 @@ Typr["U"] = {
                     }
                     set(COURSE_HOME_PREFIX+id,record);pending=id;await courseHomeBindTab(id);
                     if(courseHomeClosed||turn!==generation||courseHomeRecord(id)?.status!=='preparing')return;
-                    if(!frame||!doc.querySelector('li[dataname="zj"].curNav')) {
-                        if(navigation)navigation.click();
-                    }
                     starting=false;timer=setInterval(poll,500);poll();
                     return id;
                 } catch(error){if(turn!==generation)return;if(pending)courseHomeFail(pending,error.message);finish(error.message);}
@@ -11948,7 +12005,7 @@ Typr["U"] = {
     }
     // Personal course list: read native cards in their own iframe; private GM records carry snapshots.
     const COURSE_LIST_CHANNEL='cx-ai-course-list-v1',COURSE_LIST_PREFIX='cx_course_list:',COURSE_LIST_CONNECT_TTL=15000;
-    let courseListParent=null,courseListChild=null,courseListBinding=null,courseListClosed=false,courseListAnnounced=false;
+    let courseListParent=null,courseListChild=null,courseListBinding=null,courseListClosed=false;
     function courseListConnection(status,reason='') {
         const root=document.documentElement;if(!root)return;
         if(root.dataset.cxCourseListConnection===status&&root.dataset.cxCourseListReason===reason)return;
@@ -12065,17 +12122,18 @@ Typr["U"] = {
                 doc.dispatchEvent(new doc.defaultView.Event('cx-ai-course-list-update'));
             }));
             set(key,{id:state.id,tabId:tab.cxCourseTabId,url:state.url,until:state.until});
-            const send=()=>{
+            state.send=()=>{
                 if(!courseListParentCurrent(state)){
                     if(courseListParent===state)closeCourseListParent();else clearInterval(state.timer);
                     return;
                 }
+                if(state.snapshot?.ready)return;
                 if(Date.now()>state.until){
                     retryCourseListBridge(state);return;
                 }
                 frame.contentWindow?.postMessage({channel:COURSE_LIST_CHANNEL,id:state.id},COURSE_HOME_ORIGIN);
             };
-            state.timer=setInterval(send,500);send();
+            state.timer=setInterval(state.send,500);state.send();
         }).catch(()=>{
             if(!courseListParentCurrent(state))return;
             clearInterval(state.timer);state.failed=true;
@@ -12166,7 +12224,7 @@ Typr["U"] = {
         const observer=new MutationObserver(()=>{clearTimeout(state.timer);state.timer=setTimeout(()=>{mountCourseListEntry();state.publish(false);},120);});
         observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['href','class','id']});
         state.close=()=>{observer.disconnect();clearTimeout(state.timer);GM_removeValueChangeListener(state.listener);if(get(key,null))set(key+':snapshot',{closed:true,documentId:state.documentId});else GM_deleteValue(key+':snapshot');};
-        courseListConnection('ready');mountCourseListEntry();state.publish(true);
+        courseListConnection('ready');state.publish(true);mountCourseListEntry();
     }
     function courseListEntryContext(doc=document) {
         if(!isCourseListFrameURL(pageURL(doc)))return null;
@@ -12200,10 +12258,6 @@ Typr["U"] = {
         let parentOrigin;try{parentOrigin=new URL(document.referrer).origin;}catch{}
         setAssistantControlDisabled(host.shadowRoot.querySelector('button'),courseListClosed||window===window.top||parentOrigin!=='https://i.chaoxing.com','请从个人空间课程列表打开助手');
         if(native.nextElementSibling!==host)native.after(host);
-        if(!courseListAnnounced&&!courseListClosed&&window!==window.top&&parentOrigin==='https://i.chaoxing.com') {
-            courseListAnnounced=true;
-            window.parent.postMessage({channel:COURSE_LIST_CHANNEL,kind:'list-ready'},parentOrigin);
-        }
     }
     function initCourseListTransport() {
         if(!isCourseListPage()&&!isCourseListFrameURL(pageURL(document)))return;
@@ -12214,12 +12268,27 @@ Typr["U"] = {
                 try{url=new URL(frame?.getAttribute('src'),document.baseURI);}catch{}
                 if(!frame?.isConnected||event.source!==frame.contentWindow||!isCourseListFrameURL(url))return;
                 if(!courseListParentCurrent()||courseListParent.failed)mountCourseListBridge(document,true);
+                else courseListParent.send?.();
                 if(event.data.kind==='open-panel')controller?.openPanel('chapters');return;
             }
             if(event.data?.channel===COURSE_LIST_CHANNEL&&event.origin==='https://i.chaoxing.com'&&(event.source===window.parent||event.source===null))
                 bindCourseListChild(event.data.id);
         });
-        document.addEventListener('load',event=>{if(isCourseListPage()&&event.target?.id==='frame_content'){closeCourseListParent();mountCourseListBridge(document);}},true);
+        if(isCourseListPage()) {
+            document.addEventListener('load',event=>{
+                if(courseListClosed||event.target?.id!=='frame_content'||event.target!==document.getElementById('frame_content'))return;
+                // A load during the initial handshake can leave its pending request and deadline intact.
+                if(courseListParentCurrent()&&!courseListParent.snapshot&&!courseListParent.failed)courseListParent.send?.();
+                else mountCourseListBridge(document,true);
+            },true);
+        } else if(window!==window.top) {
+            const announce=()=>{
+                if(courseListClosed||!document.body)return;
+                let parentOrigin;try{parentOrigin=new URL(document.referrer).origin;}catch{}
+                if(parentOrigin==='https://i.chaoxing.com')window.parent.postMessage({channel:COURSE_LIST_CHANNEL,kind:'list-ready'},parentOrigin);
+            };
+            if(document.body)announce();else document.addEventListener('DOMContentLoaded',announce,{once:true});
+        }
         window.addEventListener('pagehide',()=>{courseListClosed=true;closeCourseListParent();courseListBinding?.close();courseListChild?.close();courseListChild=null;},{once:true});
     }
     function initCourseListAssistant(doc=document) {
@@ -12640,7 +12709,9 @@ Typr["U"] = {
                     }
                 }
                 const eligible=items.filter(courseListItemSelectable),count=eligible.filter(item=>queue.selected.has(item.key)).length;
-                s.getElementById('course-queue-selection-count').textContent=`已选 ${count} 门`;
+                const selectionCount=s.getElementById('course-queue-selection-count');
+                selectionCount.hidden=!snapshot?.ready;
+                selectionCount.textContent=`已选 ${count} 门`;
                 all.checked=eligible.length>0&&count===eligible.length;all.indeterminate=count>0&&count<eligible.length;
                 setAssistantControlDisabled(all,locked||!eligible.length,locked?'课程队列运行中，请停止后修改选择':snapshot?.ready?'当前暂无可选择的课程':connectionReason);
             }
@@ -12730,6 +12801,7 @@ Typr["U"] = {
     }
     function initCourseRunControls(doc, ctl, view) {
         const owner=studyOwnerDocument(doc),s=view.shadow;
+        s.getElementById('course-tab-discarded').hidden=owner?.wasDiscarded!==true;
         const home=view.courseHomeLauncher=createCourseHomeLauncher(doc,ctl);
         const queue=view.courseQueue=createCourseQueueAdapter(doc,ctl,view,home);
         const canStart=()=>queue?.list?queue.available:Boolean(courseRunController(owner)||home?.available);
@@ -13407,9 +13479,11 @@ Typr["U"] = {
         const close=()=>{if(closed)return;closed=true;if(timer!==null)view.clearInterval(timer);protection?.close();
             courseMenus?.close();defaultCourse?.close();endedCourses?.close();
             if(listener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(listener);
+            if(controlsPlayback)doc.removeEventListener('resume',tick);
             doc.removeEventListener('cx-ai-course-update',tick);view.removeEventListener('pagehide',close);panels.clear();otherFeatureManagers.delete(doc);};
         const manager={apply,close,render,bind(shadow){panels.add(shadow);courseMenus?.bind(shadow);defaultCourse?.bind(shadow);render();}};
         otherFeatureManagers.set(doc,manager);doc.addEventListener('cx-ai-course-update',tick);view.addEventListener('pagehide',close,{once:true});
+        if(controlsPlayback)doc.addEventListener('resume',tick);
         if(doc===document&&!otherFeaturePageShows.has(doc)){otherFeaturePageShows.add(doc);view.addEventListener('pageshow',()=>{
             const current=initOtherFeatures(doc);if(panelView?.sourceDoc===doc&&panelView.host.isConnected)current.bind(panelView.shadow);
         });}
@@ -13704,6 +13778,20 @@ Typr["U"] = {
                 event.stopImmediatePropagation();event.stopPropagation();
             }catch{ /* Stale playback ownership is handled by the runner. */ }
         };
+        const onFreeze = event => {
+            if (!event.isTrusted || !document.hidden || typeof GM_notification !== 'function') return;
+            const runner = courseRunController(document);
+            const video = active?.video || standalone()?.video;
+            const playing = video?.isConnected && !video.paused && !video.ended;
+            if (!playing && !(runner?.busy && runner.mode === 'study')) return;
+            try {
+                GM_notification({
+                    title: '学习通 AI 助手',
+                    text: '课程标签页已被浏览器冻结，学习可能中断。请及时返回课程页面。',
+                    tag: 'cx-ai-course-frozen'
+                });
+            } catch { /* 系统通知不可用时，继续由浏览器处理页面冻结。 */ }
+        };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
             get controls() {
@@ -13756,6 +13844,8 @@ Typr["U"] = {
                 window.removeEventListener('blur',onBackground,true);
                 document.removeEventListener('visibilitychange',onBackground,true);
                 document.removeEventListener('visibilitychange',onForeground);
+                document.removeEventListener('freeze',onFreeze);
+                document.removeEventListener('resume',onForeground);
                 window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
                 document.removeEventListener('DOMContentLoaded',tick);
@@ -13768,6 +13858,8 @@ Typr["U"] = {
         const timer=window.setInterval(tick,500);
         document.addEventListener('DOMContentLoaded',tick,{once:true});
         document.addEventListener('visibilitychange',onForeground);
+        document.addEventListener('freeze',onFreeze);
+        document.addEventListener('resume',onForeground);
         window.addEventListener('focus',onForeground);
         window.addEventListener('pagehide', manager.close, { once: true });
         initBackgroundPlayback.instance = manager;
@@ -15127,7 +15219,7 @@ Typr["U"] = {
           #course-verification-open{flex:none;border:0;background:transparent;color:var(--accent);padding:2px 0;font-size:12px;white-space:nowrap}
         </style>
         <div id="panel" hidden data-active-view="questions">
-          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.34</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
+          <header class="head"><div class="head-title"><img class="head-logo" src="data:image/png;base64,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" width="24" height="24" alt="" aria-hidden="true" draggable="false"><strong>学习通AI助手 v1.34.1</strong><span id="course-mode-badge" class="course-mode-badge" hidden>课程模式</span></div><div class="head-actions">
             <button type="button" id="download-update" class="secondary" title="下载更新" aria-label="下载更新" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
             <button type="button" id="github" class="secondary" title="GitHub 项目主页" aria-label="GitHub 项目主页"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.768-.244.768-.543v-2.096c-3.13.68-3.791-1.329-3.791-1.329-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.25.08 1.725 1.25 1.725 1.25 1.005 1.722 2.637 1.254 3.279.936.102-.728.393-1.255.715-1.507-2.499-.284-5.126-1.25-5.126-5.566 0-1.25.44-2.232 1.25-3.02-.116-.285-.503-1.43.111-2.98 0 0 .945-.302 3.094 1.253a10.78 10.78 0 0 1 5.625 0c2.149-1.455 3.092-1.253 3.092-1.253.615 1.55.228 2.695.112 2.98.722.788 1.259 1.79 1.259 3.02 0 4.327-2.631 5.279-5.138 5.558.404.35.763 1.04.763 2.097v3.078c0 .302.203.653.774.542A11.252 11.252 0 0 0 12 .75Z"/></svg></button>
             <button type="button" id="about-toggle" class="secondary" aria-label="项目介绍" aria-haspopup="dialog" aria-controls="about" aria-expanded="false" title="项目介绍">?</button>
@@ -15253,6 +15345,7 @@ Typr["U"] = {
                     </div>
                     <div id="catalog-heading-actions" class="catalog-heading-actions" hidden><button type="button" id="catalog-locate" class="secondary" title="定位当前章节" hidden>定位当前</button><button type="button" id="catalog-refresh" class="secondary" hidden>刷新</button></div>
                   </div>
+                  <p id="course-tab-discarded" class="note" role="status" hidden>浏览器已回收此标签页，课程页面已重新加载。可在 Chrome 的「设置 → 性能」中将课程网站加入「始终让这些网站保持活动状态」。</p>
                   <section id="chapter-queue-page" class="chapter-page" role="tabpanel" aria-labelledby="chapter-tab-queue">
                     <details id="course-queue-selection" class="course-queue-selection" open hidden><summary><span>选择课程</span><span id="course-queue-selection-count">已选 0 门</span></summary><label class="check-label course-queue-select-all"><input type="checkbox" id="course-queue-all" /> 全选</label><div id="course-queue-choices" class="course-queue-choices"></div></details>
                     <div class="course-run-actions"><button type="button" id="course-start">开始刷课</button><button type="button" id="course-unlock" class="secondary" hidden>解锁课程</button><button type="button" id="course-unlock-help" class="course-speed-help course-unlock-help" aria-label="解锁课程说明" aria-describedby="course-unlock-tooltip">?</button><span id="course-unlock-tooltip" class="course-speed-tooltip" role="tooltip" popover="manual" hidden>依次打开章节和栏目，触发官方扫码核验；二维码过期会自动刷新。解锁完成后仍需正常学习。</span><button type="button" id="course-stop" class="secondary" disabled>停止</button><button type="button" id="course-step-skip" class="secondary" title="跳过当前任务或等待，继续后续步骤；不标记任务完成" disabled>跳过当前步骤</button><button type="button" id="course-queue-skip" class="secondary" hidden>跳过本课程</button><button type="button" id="course-skip" class="secondary" disabled>跳过本章节</button><button type="button" id="course-video-pause" class="secondary" disabled>暂停</button></div>
@@ -15984,7 +16077,7 @@ Typr["U"] = {
         const total=result.analysisProgress.total;
         const grouped=(task.requestSnapshot||task.snapshot).questions.some(question=>question.ueditorBlankGroup);
         const mediaPreviews=Object.fromEntries([...task.preparedMedia].filter(([,value])=>['svg','canvas'].includes(value.kind) && /^data:image\/png;base64,/.test(value.dataUrl || '')).map(([id,value])=>[id,value.dataUrl]));
-        controller.output({version: '1.34',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
+        controller.output({version: '1.34.1',schemaVersion:task.snapshot.schemaVersion,questions:task.snapshot.questions,media:task.snapshot.media,mediaPreviews,
             restoredReadOnly:task.restoredReadOnly===true,
             model:task.configuration.model,thinking:task.configuration.thinking,searchEnabled:task.configuration.search,total:task.snapshot.questions.length,
             ...details,...(answers.length || complete ? {answers} : {}),analysisProgress:{...result.analysisProgress,status:task.status,completed:result.analyzedCount,total,
@@ -16455,8 +16548,10 @@ Typr["U"] = {
             mountCourseHomeChapterEntry(doc);return;
         }
         if(doc.defaultView!==doc.defaultView?.top || !isCourseHomeURL(pageURL(doc)) || !doc.body)return;
-        const titles=doc.querySelectorAll('.classDl'),title=titles.length===1?titles[0]:null;
-        if(!title)return;
+        if(doc.querySelectorAll('.classDl').length!==1) {
+            const record=courseQueueRecord();
+            if(!['navigating-course','starting-course'].includes(record?.phase)||!courseQueueValidContext(courseQueueToken(record),doc))return;
+        }
         if(!controller)controller=createAssistantController();
         createAssistantPanel(doc,controller);
         doc.getElementById('cx-ai-course-home-toolbar')?.remove();
@@ -16522,6 +16617,9 @@ Typr["U"] = {
     initializeAssistantFeature('课程启动通信',initCourseHomeLaunchTransport);
     initializeAssistantFeature('课程列表通信',initCourseListTransport);
     initializeAssistantFeature('课程队列通信',initCourseQueueTransport);
+    if(window===window.top&&isCourseHomeURL(pageURL(document)))courseQueueReady().then(()=>{
+        if(!courseHomeClosed)initializeAssistantFeature('课程主页入口',initCourseHomeAssistant);
+    });
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startQuizObserver, { once: true });
     else startQuizObserver();
 

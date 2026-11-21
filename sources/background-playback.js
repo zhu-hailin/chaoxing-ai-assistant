@@ -136,6 +136,20 @@
                 event.stopImmediatePropagation();event.stopPropagation();
             }catch{ /* Stale playback ownership is handled by the runner. */ }
         };
+        const onFreeze = event => {
+            if (!event.isTrusted || !document.hidden || typeof GM_notification !== 'function') return;
+            const runner = courseRunController(document);
+            const video = active?.video || standalone()?.video;
+            const playing = video?.isConnected && !video.paused && !video.ended;
+            if (!playing && !(runner?.busy && runner.mode === 'study')) return;
+            try {
+                GM_notification({
+                    title: '学习通 AI 助手',
+                    text: '课程标签页已被浏览器冻结，学习可能中断。请及时返回课程页面。',
+                    tag: 'cx-ai-course-frozen'
+                });
+            } catch { /* 系统通知不可用时，继续由浏览器处理页面冻结。 */ }
+        };
         const manager = {
             installedAt: Date.now(), installedReadyState: document.readyState,
             get controls() {
@@ -188,6 +202,8 @@
                 window.removeEventListener('blur',onBackground,true);
                 document.removeEventListener('visibilitychange',onBackground,true);
                 document.removeEventListener('visibilitychange',onForeground);
+                document.removeEventListener('freeze',onFreeze);
+                document.removeEventListener('resume',onForeground);
                 window.removeEventListener('focus',onForeground);
                 window.removeEventListener('pagehide', manager.close);
                 document.removeEventListener('DOMContentLoaded',tick);
@@ -200,6 +216,8 @@
         const timer=window.setInterval(tick,500);
         document.addEventListener('DOMContentLoaded',tick,{once:true});
         document.addEventListener('visibilitychange',onForeground);
+        document.addEventListener('freeze',onFreeze);
+        document.addEventListener('resume',onForeground);
         window.addEventListener('focus',onForeground);
         window.addEventListener('pagehide', manager.close, { once: true });
         initBackgroundPlayback.instance = manager;

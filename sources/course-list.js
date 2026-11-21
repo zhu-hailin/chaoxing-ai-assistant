@@ -1,6 +1,6 @@
     // Personal course list: read native cards in their own iframe; private GM records carry snapshots.
     const COURSE_LIST_CHANNEL='cx-ai-course-list-v1',COURSE_LIST_PREFIX='cx_course_list:',COURSE_LIST_CONNECT_TTL=15000;
-    let courseListParent=null,courseListChild=null,courseListBinding=null,courseListClosed=false,courseListAnnounced=false;
+    let courseListParent=null,courseListChild=null,courseListBinding=null,courseListClosed=false;
     function courseListConnection(status,reason='') {
         const root=document.documentElement;if(!root)return;
         if(root.dataset.cxCourseListConnection===status&&root.dataset.cxCourseListReason===reason)return;
@@ -117,17 +117,18 @@
                 doc.dispatchEvent(new doc.defaultView.Event('cx-ai-course-list-update'));
             }));
             set(key,{id:state.id,tabId:tab.cxCourseTabId,url:state.url,until:state.until});
-            const send=()=>{
+            state.send=()=>{
                 if(!courseListParentCurrent(state)){
                     if(courseListParent===state)closeCourseListParent();else clearInterval(state.timer);
                     return;
                 }
+                if(state.snapshot?.ready)return;
                 if(Date.now()>state.until){
                     retryCourseListBridge(state);return;
                 }
                 frame.contentWindow?.postMessage({channel:COURSE_LIST_CHANNEL,id:state.id},COURSE_HOME_ORIGIN);
             };
-            state.timer=setInterval(send,500);send();
+            state.timer=setInterval(state.send,500);state.send();
         }).catch(()=>{
             if(!courseListParentCurrent(state))return;
             clearInterval(state.timer);state.failed=true;
@@ -218,7 +219,7 @@
         const observer=new MutationObserver(()=>{clearTimeout(state.timer);state.timer=setTimeout(()=>{mountCourseListEntry();state.publish(false);},120);});
         observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['href','class','id']});
         state.close=()=>{observer.disconnect();clearTimeout(state.timer);GM_removeValueChangeListener(state.listener);if(get(key,null))set(key+':snapshot',{closed:true,documentId:state.documentId});else GM_deleteValue(key+':snapshot');};
-        courseListConnection('ready');mountCourseListEntry();state.publish(true);
+        courseListConnection('ready');state.publish(true);mountCourseListEntry();
     }
     function courseListEntryContext(doc=document) {
         if(!isCourseListFrameURL(pageURL(doc)))return null;
@@ -252,10 +253,6 @@
         let parentOrigin;try{parentOrigin=new URL(document.referrer).origin;}catch{}
         setAssistantControlDisabled(host.shadowRoot.querySelector('button'),courseListClosed||window===window.top||parentOrigin!=='https://i.chaoxing.com','请从个人空间课程列表打开助手');
         if(native.nextElementSibling!==host)native.after(host);
-        if(!courseListAnnounced&&!courseListClosed&&window!==window.top&&parentOrigin==='https://i.chaoxing.com') {
-            courseListAnnounced=true;
-            window.parent.postMessage({channel:COURSE_LIST_CHANNEL,kind:'list-ready'},parentOrigin);
-        }
     }
     function initCourseListTransport() {
         if(!isCourseListPage()&&!isCourseListFrameURL(pageURL(document)))return;
@@ -266,12 +263,27 @@
                 try{url=new URL(frame?.getAttribute('src'),document.baseURI);}catch{}
                 if(!frame?.isConnected||event.source!==frame.contentWindow||!isCourseListFrameURL(url))return;
                 if(!courseListParentCurrent()||courseListParent.failed)mountCourseListBridge(document,true);
+                else courseListParent.send?.();
                 if(event.data.kind==='open-panel')controller?.openPanel('chapters');return;
             }
             if(event.data?.channel===COURSE_LIST_CHANNEL&&event.origin==='https://i.chaoxing.com'&&(event.source===window.parent||event.source===null))
                 bindCourseListChild(event.data.id);
         });
-        document.addEventListener('load',event=>{if(isCourseListPage()&&event.target?.id==='frame_content'){closeCourseListParent();mountCourseListBridge(document);}},true);
+        if(isCourseListPage()) {
+            document.addEventListener('load',event=>{
+                if(courseListClosed||event.target?.id!=='frame_content'||event.target!==document.getElementById('frame_content'))return;
+                // A load during the initial handshake can leave its pending request and deadline intact.
+                if(courseListParentCurrent()&&!courseListParent.snapshot&&!courseListParent.failed)courseListParent.send?.();
+                else mountCourseListBridge(document,true);
+            },true);
+        } else if(window!==window.top) {
+            const announce=()=>{
+                if(courseListClosed||!document.body)return;
+                let parentOrigin;try{parentOrigin=new URL(document.referrer).origin;}catch{}
+                if(parentOrigin==='https://i.chaoxing.com')window.parent.postMessage({channel:COURSE_LIST_CHANNEL,kind:'list-ready'},parentOrigin);
+            };
+            if(document.body)announce();else document.addEventListener('DOMContentLoaded',announce,{once:true});
+        }
         window.addEventListener('pagehide',()=>{courseListClosed=true;closeCourseListParent();courseListBinding?.close();courseListChild?.close();courseListChild=null;},{once:true});
     }
     function initCourseListAssistant(doc=document) {

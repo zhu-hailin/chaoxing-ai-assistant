@@ -18,6 +18,7 @@
     }
     function initCourseRunControls(doc, ctl, view) {
         const owner=studyOwnerDocument(doc),s=view.shadow;
+        s.getElementById('course-tab-discarded').hidden=owner?.wasDiscarded!==true;
         const home=view.courseHomeLauncher=createCourseHomeLauncher(doc,ctl);
         const queue=view.courseQueue=createCourseQueueAdapter(doc,ctl,view,home);
         const canStart=()=>queue?.list?queue.available:Boolean(courseRunController(owner)||home?.available);

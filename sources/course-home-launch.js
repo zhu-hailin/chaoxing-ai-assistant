@@ -6,6 +6,7 @@
     const COURSE_HOME_CATALOG_STATE='cx_course_catalog_state:',COURSE_HOME_CATALOG_UPDATE='cx_course_catalog_update';
     const courseHomeCatalogStates=new Map();
     const courseHomeNavigations = new Set();
+    let courseHomeClickedLaunch=null,courseHomeEntryWait=null;
     const courseHomeFrameSnapshots = new WeakMap();
     let courseHomeParentFrame = null, courseHomeChildFrame = null;
     let courseHomeTransportReady = false, courseHomeClosed = false, courseHomeTabPromise = null;
@@ -469,10 +470,10 @@
     function courseHomeBoundary(id,entry) {
         const record=courseHomeRecord(id),locked=entry.navigation.status==='sequence-locked';
         if(!record)return;
-        courseHomeUpdate(id,{status:'blocked',message:locked?`章节“${entry.title}”尚未解锁，请先完成平台前置任务后重试`:`章节“${entry.title}”的原生入口尚未确认，请刷新目录后重试`,
+        courseHomeUpdate(id,{status:'blocked',message:locked?`章节“${entry.title}”尚未解锁，请先完成平台前置任务后重试`:`章节“${entry.title}”的原生入口未就绪，请手动打开该章节后重试`,
             navigationBoundary:{chapterId:entry.chapterId,status:locked?'sequence-locked':'unknown'},options:{...record.options,submit:false}});
     }
-    function courseHomeRowEntry(doc,identity,row) {
+    function courseHomeRowEntry(doc,identity,row,{requireHandler=false}={}) {
             if(!identity||!row?.isConnected||row.closest('[inert],[disabled],[aria-disabled="true"],[data-locked="true"]'))return null;
             const call=/^\s*(?:return\s+)?(?:window\.)?toOld\(\s*['"](\d+)['"]\s*,\s*['"](\d+)['"]\s*,\s*['"](\d+)['"]\s*(?:,\s*\d+\s*)?\)\s*;?\s*$/.exec(row.getAttribute('onclick')||'');
             if(call && call[1]===identity.course && call[3]===identity.classroom && row.id===`cur${call[2]}`
@@ -484,6 +485,7 @@
                         const nativeFrame=unsafeWindow.document.getElementById('frame_content-zj');
                         if(nativeFrame?.contentDocument===doc)page=nativeFrame.contentWindow;
                     }
+                    if(requireHandler&&typeof page.toOld!=='function')return null;
                     server=new URL(page.ServerHost?.mooc1Domain,doc.baseURI);
                 }catch{return null;}
                 if(!['https:','http:'].includes(server.protocol)||!isCourseStudyHost(server.hostname)||!['','/','/mooc-ans','/mooc-ans/'].includes(server.pathname))return null;
@@ -506,44 +508,55 @@
         return null;
     }
     async function courseHomeNavigate(id) {
-        if(courseHomeNavigations.has(id)||courseHomeClosed||!isCourseHomeURL(pageURL(document),true))return;
-        const tab=await courseHomeTab(),tabState=await courseHomeTabRead(),record=courseHomeRecord(id),identity=courseHomeIdentity();
-        if(!record||record.status!=='preparing'||record.sourceTab!==tab.cxCourseTabId||record.expiresAt<Date.now()
-            ||tabState.cxCourseLaunchId!==id||!sameCourseHomeIdentity(record.identity,identity))return;
-        let parentOK=false;try{parentOK=isCourseHomeURL(new URL(document.referrer));}catch{}
-        if(window===window.top||!parentOK)return;
-        const blocker=courseHomeBlocker(document);if(blocker){courseHomeFail(id,blocker);return;}
-        const catalog=readCourseCatalog(document),selection=courseHomeSelection(catalog,record.options.skipLearned);
-        if(selection.status==='unready'){if(record.message!==selection.message)courseHomeUpdate(id,{message:selection.message});return;}
-        if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:record.options.mode==='unlock'?'当前课程没有待解锁任务':selection.message,options:{...record.options,submit:false}});return;}
-        if(selection.entry.navigation.status!=='available') {
-            courseHomeBoundary(id,selection.entry);return;
-        }
-        if(courseHomeNavigations.has(id))return;
+        if(!courseHomeUUID(id)||courseHomeNavigations.has(id)||courseHomeClickedLaunch===id||courseHomeClosed
+            ||window===window.top||!isCourseHomeURL(pageURL(document),true))return;
+        if(courseHomeRecord(id)?.status!=='preparing')return;
         courseHomeNavigations.add(id);
-        await courseHomeBindTab(id);
-        const current=courseHomeRecord(id);
-        if(courseHomeClosed||current?.status!=='preparing'||current.expiresAt<Date.now()||!sameCourseHomeIdentity(courseHomeIdentity(),identity))return;
-        const fresh=courseHomeSelection(readCourseCatalog(document),current.options.skipLearned);
-        if(fresh.status!=='target'){courseHomeNavigations.delete(id);return;}
-        const entry=fresh.entry.navigation.status==='available'&&courseHomeRowEntry(document,identity,fresh.entry.node);
-        if(!entry){courseHomeBoundary(id,fresh.entry);return;}
-        const queueLaunch=Boolean(current.queueContext),originalTarget=entry.node.getAttribute('target');
-        if(queueLaunch&&entry.url)entry.node.setAttribute('target','_top');
-        const newTab=!queueLaunch&&entry.url && !['','_self','_top','_parent'].includes((entry.node.getAttribute('target')||'').toLowerCase());
-        const original=entry.node.getAttribute('href');
-        if(newTab) {
-            if(entry.url.hash){courseHomeFail(id,'该新窗口入口无法安全关联，请手动进入学习页面');return;}
-            entry.url.hash=`cx-ai-launch=${id}`;entry.node.setAttribute('href',entry.url.href);
-        }
-        courseHomeUpdate(id,{status:'navigating',chapterId:entry.chapterId,startPrefix:current.options.skipLearned?fresh.prefix:null,
-            expectedOrigin:entry.origin,allowNewTab:Boolean(newTab),message:`正在进入：${fresh.entry.title}`});
-        try {entry.node.click();}
-        catch {courseHomeFail(id,'原生章节导航失败，请重新开始');}
-        finally {
-            if(newTab)setTimeout(()=>{if(entry.node.isConnected && entry.node.getAttribute('href')===entry.url.href)entry.node.setAttribute('href',original);},0);
-            if(queueLaunch&&entry.url)setTimeout(()=>{if(entry.node.isConnected){if(originalTarget===null)entry.node.removeAttribute('target');else entry.node.setAttribute('target',originalTarget);}},0);
-        }
+        try {
+            // The homepage has already bound the launch. The chapter only verifies that binding.
+            const tab=await courseHomeTabRead(),record=courseHomeRecord(id),identity=courseHomeIdentity();
+            if(courseHomeClosed||record?.status!=='preparing'||record.sourceTab!==tab.cxCourseTabId||record.expiresAt<Date.now()
+                ||tab.cxCourseLaunchId!==id||!sameCourseHomeIdentity(record.identity,identity))return;
+            let parentOK=false;try{parentOK=isCourseHomeURL(new URL(document.referrer));}catch{}
+            if(!parentOK)return;
+            const blocker=courseHomeBlocker(document);if(blocker){courseHomeFail(id,blocker);return;}
+            const selection=courseHomeSelection(readCourseCatalog(document),record.options.skipLearned);
+            if(selection.status==='unready'){if(record.message!==selection.message)courseHomeUpdate(id,{message:selection.message});return;}
+            if(selection.status==='complete'){courseHomeUpdate(id,{status:'complete',emptyCourse:selection.empty===true,message:record.options.mode==='unlock'?'当前课程没有待解锁任务':selection.message,options:{...record.options,submit:false}});return;}
+            const target=selection.entry;
+            if(target.navigation.status==='sequence-locked'){courseHomeBoundary(id,target);return;}
+            const now=Date.now();
+            if(courseHomeEntryWait?.id===id&&now>=courseHomeEntryWait.until) {
+                courseHomeEntryWait=null;courseHomeBoundary(id,target);return;
+            }
+            const entry=target.navigation.status==='available'&&courseHomeRowEntry(document,identity,target.node,{requireHandler:true});
+            if(!entry) {
+                if(courseHomeEntryWait?.id!==id)courseHomeEntryWait={id,until:now+10000};
+                const message=`正在等待章节“${target.title}”的原生入口就绪…`;
+                if(record.message!==message)courseHomeUpdate(id,{message});
+                return;
+            }
+            const current=courseHomeRecord(id);
+            if(courseHomeClosed||current?.status!=='preparing'||current.expiresAt<Date.now()||!sameCourseHomeIdentity(courseHomeIdentity(),identity))return;
+            courseHomeEntryWait=null;
+            const queueLaunch=Boolean(current.queueContext),originalTarget=entry.node.getAttribute('target');
+            if(queueLaunch&&entry.url)entry.node.setAttribute('target','_top');
+            const newTab=!queueLaunch&&entry.url && !['','_self','_top','_parent'].includes((entry.node.getAttribute('target')||'').toLowerCase());
+            const original=entry.node.getAttribute('href');
+            if(newTab) {
+                if(entry.url.hash){courseHomeFail(id,'该新窗口入口无法安全关联，请手动进入学习页面');return;}
+                entry.url.hash=`cx-ai-launch=${id}`;entry.node.setAttribute('href',entry.url.href);
+            }
+            courseHomeUpdate(id,{status:'navigating',chapterId:entry.chapterId,startPrefix:current.options.skipLearned?selection.prefix:null,
+                expectedOrigin:entry.origin,allowNewTab:Boolean(newTab),message:`正在进入：${target.title}`});
+            courseHomeClickedLaunch=id;
+            try {entry.node.click();}
+            catch {courseHomeFail(id,'原生章节点击失败，请手动打开该章节后重试');}
+            finally {
+                if(newTab)setTimeout(()=>{if(entry.node.isConnected && entry.node.getAttribute('href')===entry.url.href)entry.node.setAttribute('href',original);},0);
+                if(queueLaunch&&entry.url)setTimeout(()=>{if(entry.node.isConnected){if(originalTarget===null)entry.node.removeAttribute('target');else entry.node.setAttribute('target',originalTarget);}},0);
+            }
+        } finally {courseHomeNavigations.delete(id);}
     }
     // Cross-window messages only identify a private GM record; no page message can create a launch or supply settings.
     function initCourseHomeLaunchTransport() {
@@ -585,7 +598,7 @@
                 let origin;try{origin=new URL(event.origin);}catch{return;}
                 if(!isCourseStudyURL(new URL('/mycourse/studentstudy',origin))||!courseHomeUUID(data.hello))return;
                 (async()=>{
-                    const tab=await courseHomeTab(),record=courseHomeRecord(tab.cxCourseLaunchId),hello=get(COURSE_HOME_PREFIX+'hello:'+data.hello,null);
+                    const tab=await courseHomeTabRead(),record=courseHomeRecord(tab.cxCourseLaunchId),hello=get(COURSE_HOME_PREFIX+'hello:'+data.hello,null);
                     if(!record||record.status!=='navigating'||record.expiresAt<Date.now()||record.sourceTab!==tab.cxCourseTabId
                         ||!hello||hello.origin!==event.origin||Date.now()-hello.at>10000||!courseHomeUUID(hello.tabId)
                         ||!sameCourseHomeIdentity(record.identity,hello.identity)||hello.chapterId!==record.chapterId
@@ -633,35 +646,84 @@
             window.addEventListener('message',receive);const timer=setInterval(probe,500),deadline=setTimeout(finish,2500);probe();
         });
     }
+    function courseHomeChapterMenu(doc,identity) {
+        const rows=doc.querySelectorAll('li[dataname="zj"]');
+        const row=rows.length===1?rows[0]:null;
+        const activeRows=row?[...row.parentElement.children].filter(item=>item.matches('li.curNav'))
+            :[...doc.querySelectorAll('.stuNavigationList li.curNav,#boxscrollleft li.curNav')];
+        const otherActive=activeRows.some(item=>!item.matches('li[dataname="zj"]'));
+        const links=[...(row?.querySelectorAll('a[data-url]')||[])].filter(link=>{
+            try {
+                const url=new URL(link.getAttribute('data-url'),doc.baseURI),context=courseURLContext(url);
+                return isCourseHomeURL(url,true)&&!url.username&&!url.password&&!context.conflict
+                    &&['course','classroom','student'].every(key=>!context[key]||context[key]===identity[key]);
+            } catch {return false;}
+        });
+        const link=links.length===1?links[0]:null;
+        const assistantHidden=link?.closest(`[${COURSE_MENU_HIDE_ATTRIBUTE}="true"]`);
+        const entry=link&&!link.closest('[aria-disabled="true"],[disabled]')
+            &&platformMenuVisible(link,new Set(assistantHidden?[assistantHidden]:[]))?link:null;
+        return {entry,selected:Boolean(row?.classList.contains('curNav')&&!otherActive),otherActive};
+    }
     function createCourseHomeLauncher(doc,ctl) {
         if(window!==window.top||!isCourseHomeURL(pageURL(doc)))return null;
         let pending=null,timer=null,starting=false,generation=0;
+        let chapterMenuDeadline=null,chapterMenuClicks=0,lastChapterMenuClick=-Infinity;
         const active=()=>{const identity=courseHomeIdentity(doc);if(!identity)return false;const scope=COURSE_SCORE_PREFIX+[identity.course,identity.classroom,identity.student].map(encodeURIComponent).join(':');return ['cx_course_run:','cx_course_unlock:'].some(prefix=>{const run=get(prefix+scope,null);return run?.status==='running'&&Date.now()-run.heartbeat<15000;});};
-        const finish=(message,phase='error')=>{clearInterval(timer);timer=null;pending=null;starting=false;ctl.report(message,phase,false);};
+        const finish=(message,phase='error')=>{clearInterval(timer);timer=null;pending=null;starting=false;
+            chapterMenuDeadline=null;chapterMenuClicks=0;lastChapterMenuClick=-Infinity;ctl.report(message,phase,false);};
+        const fail=(record,message)=>{courseHomeFail(record.id,message);finish(message);};
+        const showFailure=(message,phase='error')=>{finish(message,phase);ctl.openPanel('chapters');};
+        const failChapterMenu=record=>{
+            const message='未能打开课程章节，请手动打开「章节」后重试';
+            courseHomeFail(record.id,message);showFailure(message);
+        };
         const poll=()=>{
             if(courseHomeClosed){clearInterval(timer);return;}
             const record=courseHomeRecord(pending);
             if(!record){finish('启动记录已失效，请重新开始');return;}
             if(!sameCourseHomeIdentity(record.identity,courseHomeIdentity(doc))){courseHomeFail(record.id,'课程或账号已变化');finish('课程或账号已变化，已取消启动');return;}
-            const currentFrame=doc.getElementById('frame_content-zj');
+            const menu=courseHomeChapterMenu(doc,record.identity);
+            const frames=doc.querySelectorAll('[id="frame_content-zj"]');
+            const currentFrame=frames.length===1?frames[0]:null;
             let declared;try{declared=new URL(currentFrame?.getAttribute('src'),doc.baseURI);}catch{}
-            if(isCourseHomeURL(declared,true)&&!sameCourseHomeIdentity(courseURLContext(declared),record.identity)) {
-                courseHomeFail(record.id,'章节页面的课程或账号已变化');finish('章节页面的课程或账号已变化，已取消启动');return;
+            const chapterFrame=isCourseHomeURL(declared,true)&&currentFrame?.localName==='iframe'&&courseElementVisible(currentFrame)&&!menu.otherActive;
+            if(chapterFrame) {
+                const identity=courseURLContext(declared);
+                if(identity.conflict||!sameCourseHomeIdentity(identity,record.identity)) {
+                    courseHomeFail(record.id,'章节页面的课程或账号已变化');finish('章节页面的课程或账号已变化，已取消启动');return;
+                }
             }
-            const chapterDoc=resolveCourseHomeCatalog(doc)?.sourceDoc;
+            const chapterDoc=chapterFrame?resolveCourseHomeCatalog(doc)?.sourceDoc:null;
             const blocker=courseHomeBlocker(doc)||(chapterDoc&&courseHomeBlocker(chapterDoc));
             if(blocker){courseHomeFail(record.id,blocker,/未解锁/.test(blocker)?'blocked':'failed');finish(blocker,/未解锁/.test(blocker)?'idle':'error');return;}
             if(record.status==='started'){finish('已在课程学习页面启动','done');return;}
             if(record.status==='complete'){finish(record.message,'done');return;}
-            if(record.status==='blocked'){finish(record.message,'idle');return;}
-            if(['failed','cancelled'].includes(record.status)){finish(record.message,record.status==='cancelled'?'idle':'error');return;}
-            if(Date.now()>record.expiresAt){courseHomeFail(record.id,'进入学习页面超时，请检查原生入口后重试');finish('进入学习页面超时，请检查原生入口后重试');return;}
+            if(record.status==='blocked'||record.status==='failed'){showFailure(record.message,record.status==='blocked'?'idle':'error');return;}
+            if(record.status==='cancelled'){finish(record.message,'idle');return;}
+            if(Date.now()>record.expiresAt) {
+                const message=['navigating','waiting'].includes(record.status)
+                    ?'已点击章节，但未进入学习页，请手动打开目标章节后重试'
+                    :'等待章节目录或原生入口就绪超时，请刷新后重试';
+                courseHomeFail(record.id,message);showFailure(message);return;
+            }
             if(record.message&&ctl.state.message!==record.message)ctl.report(record.message,'course-navigating',true);
             if(record.status==='preparing') {
-                const frame=doc.getElementById('frame_content-zj');
-                if(frame) {
-                    let url;try{url=new URL(frame.getAttribute('src'),doc.baseURI);}catch{return;}
-                    if(isCourseHomeURL(url,true)&&sameCourseHomeIdentity(courseURLContext(url),record.identity))frame.contentWindow?.postMessage({channel:COURSE_HOME_CHANNEL,kind:'navigate',id:record.id},url.origin);
+                if(record.queueContext&&!courseQueueValidContext(record.queueContext,doc)) {
+                    fail(record,'课程队列已停止或身份已变化');return;
+                }
+                if(chapterFrame) {
+                    currentFrame.contentWindow?.postMessage({channel:COURSE_HOME_CHANNEL,kind:'navigate',id:record.id},declared.origin);
+                    return;
+                }
+                if(menu.selected)return;
+                const now=Date.now();chapterMenuDeadline??=now+10000;
+                if(now>=chapterMenuDeadline) {
+                    failChapterMenu(record);return;
+                }
+                if(menu.entry&&doc.readyState!=='loading'&&chapterMenuClicks<2&&now-lastChapterMenuClick>=2000) {
+                    chapterMenuClicks++;lastChapterMenuClick=now;
+                    try {menu.entry.click();}catch {failChapterMenu(record);}
                 }
             }
         };
@@ -679,9 +741,6 @@
                     if(optionsSnapshot.mode!=='unlock'&&model!==courseHomeModelSignature())throw new Error('模型设置已变化，请重新开始');
                     if(api.active)throw new Error('本课程已有运行任务，请在学习页面查看');
                     const blocker=courseHomeBlocker(doc);if(blocker)throw new Error(blocker);
-                    const frame=doc.getElementById('frame_content-zj');
-                    const navigation=doc.querySelector('li[dataname="zj"] a[data-url="/mooc2-ans/mycourse/studentcourse"]');
-                    if(!frame&&!navigation)throw new Error('未找到原生章节入口，请先打开课程章节栏目');
                     if(tab.cxCourseLaunchId)courseHomeFail(tab.cxCourseLaunchId,'已由新的启动操作替代','cancelled');
                     const record={id,identity,sourceTab:tab.cxCourseTabId,targetTab:tab.cxCourseTabId,createdAt,expiresAt:createdAt+COURSE_HOME_TTL,status:'preparing',model,options:optionsSnapshot,message:optionsSnapshot.mode==='unlock'?'正在进入学习页面，准备解锁课程':'正在准备课程入口'};
                     if(options.queueContext) {
@@ -690,9 +749,6 @@
                     }
                     set(COURSE_HOME_PREFIX+id,record);pending=id;await courseHomeBindTab(id);
                     if(courseHomeClosed||turn!==generation||courseHomeRecord(id)?.status!=='preparing')return;
-                    if(!frame||!doc.querySelector('li[dataname="zj"].curNav')) {
-                        if(navigation)navigation.click();
-                    }
                     starting=false;timer=setInterval(poll,500);poll();
                     return id;
                 } catch(error){if(turn!==generation)return;if(pending)courseHomeFail(pending,error.message);finish(error.message);}

@@ -143,9 +143,11 @@
         const close=()=>{if(closed)return;closed=true;if(timer!==null)view.clearInterval(timer);protection?.close();
             courseMenus?.close();defaultCourse?.close();endedCourses?.close();
             if(listener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(listener);
+            if(controlsPlayback)doc.removeEventListener('resume',tick);
             doc.removeEventListener('cx-ai-course-update',tick);view.removeEventListener('pagehide',close);panels.clear();otherFeatureManagers.delete(doc);};
         const manager={apply,close,render,bind(shadow){panels.add(shadow);courseMenus?.bind(shadow);defaultCourse?.bind(shadow);render();}};
         otherFeatureManagers.set(doc,manager);doc.addEventListener('cx-ai-course-update',tick);view.addEventListener('pagehide',close,{once:true});
+        if(controlsPlayback)doc.addEventListener('resume',tick);
         if(doc===document&&!otherFeaturePageShows.has(doc)){otherFeaturePageShows.add(doc);view.addEventListener('pageshow',()=>{
             const current=initOtherFeatures(doc);if(panelView?.sourceDoc===doc&&panelView.host.isConnected)current.bind(panelView.shadow);
         });}
