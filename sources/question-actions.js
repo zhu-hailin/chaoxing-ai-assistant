@@ -345,6 +345,14 @@
             if(unit.text?questionActionDisabled(unit.input):[...binding.optionTargets.values()].some(questionActionDisabled))throw questionActionError('CX-CTL-004','作答控件不可编辑');
         };
         const write=action=>{writing=true;options.onWrite?.(true);try{action();}finally{options.onWrite?.(false);writing=false;}};
+        const choiceVerified=unit=>{
+            if(unit.binding.mooc2)return questionActionMooc2Verified(unit);
+            if(unit.chapterRows)return questionActionRowChoiceVerified(unit);
+            if(unit.chapterCheckbox)return questionActionCheckboxVerified(unit);
+            const state=questionActionState(unit.binding,unit.question,live.parseContext,null,unit.chapterInputs);
+            return !state.unknownSaved&&state.keys.length===unit.targetKeys.size&&state.keys.every(key=>unit.targetKeys.has(key))
+                &&(!unit.chapterInputs||questionActionNativeChoiceVerified(unit));
+        };
         const result=(unit,status,reason='')=>{
             summary[status]++;summary.perUnit.push({responseUnitId:unit.id,questionId:unit.parentId,status,
                 ...(reason?{reason:unit.question.blankSlotNumber?`第${unit.question.blankSlotNumber}空：${reason}`:reason}
@@ -485,10 +493,34 @@
                         // Capture after the platform's saved-answer timer; do not misclassify it as user input.
                         unit.state=questionActionState(unit.binding,unit.question,live.parseContext,unit.chapterCheckbox,unit.chapterInputs);
                     }
-                    const verified=()=>{if(unit.binding.mooc2)return questionActionMooc2Verified(unit);if(unit.chapterRows)return questionActionRowChoiceVerified(unit);if(unit.chapterCheckbox)return questionActionCheckboxVerified(unit);const state=questionActionState(unit.binding,unit.question,live.parseContext,null,unit.chapterInputs);return !state.unknownSaved && state.keys.length===unit.targetKeys.size && state.keys.every(key=>unit.targetKeys.has(key)) && (!unit.chapterInputs || questionActionNativeChoiceVerified(unit));};
+                    const verified=()=>choiceVerified(unit);
                     await waitFor(verified);validateUnit(unit,false);
                     if(verified())result(unit,'filled');else{result(unit,'unverified');summary.details.push(`第${unit.question.number}题：已触发点击，请手动检查是否选中`);break;}
                 }
+            }
+            if(options.recheckWrites&&!summary.unverified) {
+                // 后续控件的原生事件也可能清空前一题，整份测验写完后再读一遍。
+                const byUnit=new Map(summary.perUnit.map(item=>[item.responseUnitId,item]));
+                let formValues;
+                for(const unit of live.units) {
+                    const item=byUnit.get(unit.id);
+                    if(!item||!['filled','already'].includes(item.status))continue;
+                    validateUnit(unit,false);
+                    const editor=unit.binding.writer==='ueditor'?unit.binding.ueditor:null;
+                    let verified=unit.binding.matching?questionMatchingVerified(unit):editor
+                        ?questionUEVerified(unit):unit.text?unit.input.value===unit.value:choiceVerified(unit);
+                    if(verified&&editor&&options.submitSyncedEditors) {
+                        const {form,input,name}=editor;
+                        formValues??=new (form.ownerDocument.defaultView.FormData)(form);
+                        const values=formValues.getAll(name);
+                        verified=values.length===1&&values[0]===input.value;
+                    }
+                    if(verified)continue;
+                    summary[item.status]--;summary.unverified++;
+                    item.status='unverified';item.reason=editor?'富文本答案与原生表单未能核对一致，请人工检查':'提交前复核发现原生答案已变化，需人工核对';
+                    summary.details.push(`${questionActionLabel(unit.question)}：${item.reason}`);
+                }
+                if(formValues&&!summary.skipped&&!summary.unverified)delete summary.requiresManualSave;
             }
             return finishSummary();
         } catch(error) {

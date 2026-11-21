@@ -33,6 +33,16 @@ const text='<div class="singleQuesId" data="q1"><div class="Zy_TItle"><div class
   try{f.api.initQuizAssistant();await f.api.runAnswerFlow();assert(f.doc.querySelector('input[value=A]').checked,f.api.controller.state.message);assert.equal(f.api.controller.result.prefill.filled,1);assert.equal(f.api.controller.result.prefill.skipped,1);assert.equal(f.doc.querySelector('select').selectedIndex,0);assert.equal(f.api.controller.result.responseUnitCount,2);assert(f.api.controller.result.questionAnswers[0].answer[0].includes('A'));assert.match(f.doc.getElementById('cx-ai-study-root').shadowRoot.querySelector('.answer-policy').textContent,/需人工/);}finally{f.close();}
  });
  await test('课程复制摘要排除标题、原因、题目、答案和视频弹题历史',async()=>{const f=fixture();try{const report={status:'stopped',reason:'secret-reason',videos:1,documents:2,quizzes:3,chapters:[{title:'secret-title',status:'manual-pending',tasks:[{videoQuiz:[{answer:'secret-answer'}]}]}]};const result=f.api.safeCourseDiagnosticReport(report);assert(!/secret|videoQuiz|title|reason|answer/.test(result));assert.equal(JSON.parse(result).summary.chapters['manual-pending'],1);}finally{f.close();}});
+ await test('课程复制摘要输出失败序号、允许的阶段和错误码',()=>{
+  const f=fixture();try{
+   const result=f.api.safeCourseDiagnosticReport({chapters:[{status:'done'},
+    {status:'timed-out',failureStage:'video',failureCode:'CX-EXE-007',reason:'private-details'},
+    {status:'stopped',failureStage:'private-stage',failureCode:'private-code',title:'private-title'}]});
+   assert(!result.includes('private-'));
+   assert.deepEqual(JSON.parse(result).summary.failures,[{chapterIndex:2,status:'timed-out',stage:'视频播放',code:'CX-EXE-007'},
+     {chapterIndex:3,status:'stopped',stage:'阶段未记录',code:null}]);
+  }finally{f.close();}
+ });
  await test('自定义模型旁提示配置篡改猴请求域名白名单且默认不显示',async()=>{const f=fixture(text);try{f.api.initQuizAssistant();const shadow=f.doc.getElementById('cx-ai-study-root').shadowRoot;const block=shadow.getElementById('custom-model-block');assert(block.hidden);assert.match(block.textContent,/篡改猴.*用户域名白名单/);assert(!/^\/\/ @connect\s+\*/m.test(source));}finally{f.close();}});
  await test('明确label多作答区域经分类、模型请求、统一预填完整贯通',async()=>{const f=fixture(text,r=>{const payload=JSON.parse(r.data),input=JSON.parse(payload.messages[1].content);const isPolicy=input.task==='answer-policy';const data=isPolicy?{classifications:input.questions.map(q=>({id:q.id,status:'auto',category:'text-blank',reason:'文字名称',evidence:'填写名称'}))}:{answers:input.questions.map((q,i)=>({id:q.id,answer:[i?'汉语':'北京'],reason:'常识'}))};r.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(data)}}]})});});try{f.api.initQuizAssistant();await f.api.runAnswerFlow();assert.equal(f.api.controller.task.status,'complete',f.api.controller.state.message);assert.equal(f.doc.querySelector('input').value,'北京');assert.equal(f.doc.querySelector('textarea').value,'汉语');assert.equal(f.api.controller.result.responseUnitCount,2);assert.equal(f.api.controller.result.questions.length,1);assert.equal(f.api.controller.result.prefill.filled,2);assert.equal(f.requests.length,2);assert.equal(f.api.controller.result.questionAnswers.length,1);}finally{f.close();}});
  const summary={total:results.length,passed:results.filter(r=>r.passed).length,failed:results.filter(r=>!r.passed).length,results};

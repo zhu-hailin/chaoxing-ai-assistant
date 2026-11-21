@@ -8,9 +8,10 @@
         if(report && state.message===courseReportText(report)) {
             if(report.navigationBoundary)return report.reason;
             if(report.protection?.triggered)return report.reason||'连续超时，已保护性停止';
+            if(report.status==='stopped'&&['COURSE_QUIZ_REVIEW_REQUIRED','COURSE_MANUAL_ANSWER_REQUIRED','COURSE_SUBMISSION_UNCONFIRMED'].includes(report.stopCode))return report.reason;
             if(report.status==='running')return `自动学习进行中${report.protection?.consecutiveFailures?`；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`:''}`;
             const pending=coursePendingChapters(report);
-            return report.status==='done'?(pending.failed.length||pending.skipped.length||pending.manual.length||pending.waiting.length||pending.navigation.length||pending.unvisited.length?'遍历结束，仍有待处理章节':'自动学习已结束'):'自动学习已停止';
+            return report.status==='done'?(pending.failed.length||pending.skipped.length||pending.manual.length||pending.confirmation.length||pending.waiting.length||pending.navigation.length||pending.unvisited.length?'遍历结束，仍有待处理章节':'自动学习已结束'):'自动学习已停止';
         }
         if(report?.status==='running'&&report.protection?.consecutiveFailures&&!/连续超时/.test(state.message||''))
             return `${state.message||'自动学习进行中'}；连续超时 ${report.protection.consecutiveFailures}${report.protection.enabled===true?'/'+report.protection.limit:'，失败次数保护已关闭'}`;
@@ -146,12 +147,12 @@
         const renderPending=report=>{
             if(report?.mode==='unlock'){s.getElementById('course-pending').hidden=true;retryButton.hidden=true;clearRetryConfirmation();return;}
             const pending=coursePendingChapters(report),summary=s.getElementById('course-pending-summary'),list=s.getElementById('course-pending-list');
-            const hasManualTasks=report?.chapters?.some(chapter=>chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭'))));
-            const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.waiting.length+pending.navigation.length+pending.unvisited.length;
+            const hasManualTasks=report?.chapters?.some(chapter=>!chapter.directoryPending&&(chapter.remainingUnconfirmed===true||chapter.tasks?.some(task=>task.status==='manual-pending'&&(task.type==='knowledge-graph'||task.reason?.startsWith('自动提交章节测验已关闭')))));
+            const count=pending.failed.length+pending.skipped.length+pending.manual.length+pending.confirmation.length+pending.waiting.length+pending.navigation.length+pending.unvisited.length;
             s.getElementById('course-pending').hidden=!report||count===0&&pending.taskFree.length===0;
-            summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}${pending.waiting.length?`，待解锁 ${pending.waiting.length}`:''}${pending.navigation.length?`，入口未确认 ${pending.navigation.length}`:''}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;
+            summary.textContent=`待处理章节：失败 ${pending.failed.length}，用户跳过 ${pending.skipped.length}，${hasManualTasks?'需人工处理':'无法答题'} ${pending.manual.length}${pending.confirmation.length?`，目录待确认 ${pending.confirmation.length}`:''}${pending.waiting.length?`，待解锁 ${pending.waiting.length}`:''}${pending.navigation.length?`，入口未确认 ${pending.navigation.length}`:''}，尚未处理 ${pending.unvisited.length}${pending.taskFree.length?`；无任务 ${pending.taskFree.length}`:''}`;
             list.replaceChildren();
-            for(const [key,label] of [['failed','失败'],['skipped','用户跳过'],['manual',hasManualTasks?'需人工处理（已跳过）':'无法自动答题（未提交）'],['waiting','待解锁'],['navigation','入口未确认'],['unvisited','尚未处理'],['taskFree','无任务']])for(const item of pending[key]){
+            for(const [key,label] of [['failed','失败'],['confirmation','目录待确认'],['skipped','用户跳过'],['manual',hasManualTasks?'需人工处理（已跳过）':'无法自动答题（未提交）'],['waiting','待解锁'],['navigation','入口未确认'],['unvisited','尚未处理'],['taskFree','无任务']])for(const item of pending[key]){
                 const li=doc.createElement('li');li.textContent=`${label} · ${item.number} ${item.title}${item.reason?'：'+item.reason:''}`;list.append(li);
             }
             const candidate=retryCandidate();setAssistantControlDisabled(retryButton,!courseRunController(owner)||ctl.state.busy||!candidate.allowed,ctl.state.busy?'当前操作进行中，请结束后重试':candidate.reason || '请在课程学习页面重试');retryButton.hidden=!report;

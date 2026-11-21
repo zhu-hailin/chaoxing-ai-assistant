@@ -276,7 +276,7 @@
             &&before.records.every((record,index)=>['key','value','marker','row','label','content','clear','handler'].every(key=>record[key]===after.records[index][key]));
     }
     function readQuestionUEditorBlanks(node,id,candidates) {
-        const invalid=reason=>({valid:false,diagnostics:[`UEditor：${reason}`]});
+        const invalid=(reason,initializing=false)=>({valid:false,initializing,diagnostics:[`UEditor：${reason}`]});
         // Only the native blank rows and explicit visible blank numbers establish slot order.
         // Editor IDs and UE registry order are never used to infer the blank number.
         const owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
@@ -307,7 +307,7 @@
                 return invalid(`第${index+1}空的原生编号或答案字段无法唯一对应`);
             const number=Number(match[1]);numbers.add(number);
             const ueditor=readQuestionUEditor(node,id,input);
-            if(!ueditor?.valid)return invalid(`第${number}空：${ueditor?.diagnostics?.map(reason=>reason.replace(/^UEditor：/,'')).join('；')||'编辑器关联无法确认'}`);
+            if(!ueditor?.valid)return invalid(`第${number}空：${ueditor?.diagnostics?.map(reason=>reason.replace(/^UEditor：/,'')).join('；')||'编辑器关联无法确认'}`,ueditor?.initializing===true);
             slots.push({id:input.id,number,domIndex:index,text:`第${number}空（本题共${rows.length}空，仅返回此空答案）`,
                 label,row,control:input,ueditor});
         }
@@ -359,7 +359,7 @@
         catch{return null;}
         const fields=[...node.querySelectorAll('textarea[id^="answer"]')];
         if(!fields.length)return null;
-        const invalid=reason=>({valid:false,diagnostics:[`UEditor：${reason}`]});
+        const invalid=(reason,initializing=false)=>({valid:false,initializing,diagnostics:[`UEditor：${reason}`]});
         const same=(a,b)=>Boolean(a&&b&&typeof a.isSameNode==='function'&&a.isSameNode(b));
         const owner=element=>element.closest('.singleQuesId,.question-item[data-question-id],[data-questionid]')||element.closest('.TiMu');
         const legacy=fields.some(input=>input.id.startsWith('answerEditor'));
@@ -402,12 +402,12 @@
             if(!input.name.trim()||input.name!==input.name.trim()||[...form.elements].filter(element=>element.name===input.name).length!==1)
                 return invalid('答案字段名称无效或表单中存在重复字段');
             if(input.disabled||input.readOnly||input.matches(':disabled'))return invalid('答案字段已禁用或只读');
-            if(!registry||typeof registry!=='object')return invalid('未找到已存在的编辑器实例');
+            if(!registry||typeof registry!=='object')return invalid('未找到已存在的编辑器实例',true);
             const matches=instances.filter(editor=>editor.key===input.id);
-            if(matches.length!==1)return invalid(matches.length?'编辑器与题目无法唯一对应':'未找到与答案字段对应的编辑器实例');
+            if(matches.length!==1)return invalid(matches.length?'编辑器与题目无法唯一对应':'未找到与答案字段对应的编辑器实例',!matches.length);
             const frameRoot=slotInput?input.closest('.blankItemDiv'):node;
             const editor=matches[0],frames=[...(frameRoot?.querySelectorAll('iframe')||[])];
-            if(![1,true].includes(editor.isReady))return invalid('编辑器实例未就绪');
+            if(![1,true].includes(editor.isReady))return invalid('编辑器实例未就绪',true);
             if('textarea' in editor&&!same(editor.textarea,input))return invalid('编辑器与原生 textarea 关联不一致');
             if(!same(editor.form,form))return invalid('编辑器与答案字段的表单归属不一致');
             if(['setContent','getContent','sync'].some(key=>typeof editor[key]!=='function'))return invalid('编辑器原生内容或同步接口不可用');
@@ -416,6 +416,7 @@
             if(frames.length!==1||!iframe)return invalid('编辑器 iframe 与题目无法唯一对应');
             if(!container||owner(container)!==node||!node.contains(container)||!container.contains(iframe))return invalid('编辑器容器不属于当前题目');
             if(container.closest('form')!==form)return invalid('编辑器容器与答案字段的表单归属不一致');
+            if(!liveBody && inner?.readyState==='loading')return invalid('编辑器正文尚未加载',true);
             const editorDocumentLive=Boolean(editor.document?.body?.isConnected);
             // 行被移动后，iframe 会重建 contentDocument；只要新文档已挂接且仍是同一 iframe，就回绑到新文档。
             const liveDocument=Boolean(liveBody?.isConnected&&same(inner?.defaultView?.frameElement,iframe));

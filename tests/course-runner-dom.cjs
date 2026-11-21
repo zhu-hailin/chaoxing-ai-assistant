@@ -60,7 +60,10 @@ function fixture(chapters,opts={}){
   const timer=opts.holdModelResponse?null:setTimeout(()=>{
    if(cancelled&&!opts.lateResponse)return;
    if(opts.error){request[opts.error==='timeout'?'ontimeout':'onerror']();return;}
-   const payload=JSON.parse(request.data),input=JSON.parse(payload.messages[1].content),answers=input.questions.map(q=>({id:q.id,answer:opts.videoQuizAnswers?opts.videoQuizAnswers[requests.length-1]||['A']:opts.invalid?[]:q.type==='essay'?['模拟简答\n第二行']:['A'],reason:opts.invalid?'条件不明确':'模拟答案'}));
+   const payload=JSON.parse(request.data),input=JSON.parse(payload.messages[1].content),answers=input.questions.map(q=>{
+    const missing=opts.invalid||q.id===opts.missingAnswerId;
+    return {id:q.id,answer:opts.videoQuizAnswers?opts.videoQuizAnswers[requests.length-1]||['A']:missing?[]:q.type==='essay'?['模拟简答\n第二行']:['A'],reason:missing?'条件不明确':'模拟答案'};
+   });
    request.onload({status:200,responseText:JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({answers})}}]})});
   },opts.requestMs||8);if(timer!==null)timers.add(timer);
   return {abort(){cancelled=true;if(!opts.lateResponse)clearTimeout(timer);events.push('api-abort');request.onabort?.();}};
@@ -184,7 +187,7 @@ function fixture(chapters,opts={}){
     const submit=doc.createElement('button');submit.setAttribute('data-quiz-submit','');submit.textContent='提交';quiz.append(submit);
     submit.onclick=()=>{
      submitClicks++;events.push(`submit:${ci}:${ti}`);
-     const ack=()=>{if(opts.submitNoAck)return;container.querySelector('.testTit_status').textContent='已提交';finish(ci,ti,i,container);};
+     const ack=()=>{if(opts.submitNoAck)return;quiz.querySelector('.testTit_status').textContent='已提交';finish(ci,ti,i,container);};
      if(task.confirm){
       const target=task.confirmAt==='owner'?d:doc,dialog=target.createElement('div');
       if(task.confirmAt==='owner'){
@@ -1217,12 +1220,13 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    const r=await f.startWithDefaults({submit:true,continueOnTimeout:false});assert.equal(r.status,'done',r.reason);assert.equal(r.protection.enabled,false);assert.equal(r.chapters[0].status,'timed-out');assert.equal(r.videos,1);
   }finally{f.close();}
  });
- await test('关闭失败保护：字体解析失败后继续同章视频，保留测验未完成',async()=>{
+ await test('关闭失败保护并允许超时继续：测验字体解析失败仍保留当前测验',async()=>{
   const f=fixture([{tabs:[quiz(),video()]},{tabs:[video()]}]);try{
    const style=f.doc.createElement('style');style.textContent='.font-cxsecret{font-family:font-cxsecret}';f.doc.head.append(style);f.doc.querySelector('.fontLabel').classList.add('font-cxsecret');
-   const r=await f.runner.start({failureProtectionEnabled:false,skipUnanswerable:false});
-   assert.equal(r.status,'done',r.reason);assert.equal(r.videos,2);assert.equal(r.quizzes,0);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
-   assert.equal(r.chapters[0].status,'manual-pending');assert.equal(r.chapters[0].tasks[0].errorCode,'CX-PAR-005');assert.match(r.chapters[0].tasks[0].reason,/字体/);assert(f.events.includes('tab:0:1'));assert(f.events.includes('chapter:1'));
+   const r=await f.runner.start({failureProtectionEnabled:false,continueOnTimeout:true,skipUnanswerable:false});
+   assert.equal(r.status,'stopped',r.reason);assert.equal(r.stopCode,'COURSE_QUIZ_REVIEW_REQUIRED');assert.equal(r.videos,0);assert.equal(f.submits,0);assert.equal(f.requests.length,0);
+   assert.equal(r.chapters[0].status,'stopped');assert.match(r.chapters[0].tasks[0].reason,/字体/);
+   assert(!f.events.includes('tab:0:1'));assert(!f.events.includes('chapter:1'));
   }finally{f.close();}
  });
  await test('关闭失败保护：未适配页面继续下一章，记录原错误且不算完成',async()=>{
@@ -1251,10 +1255,67 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
    const r=await f.runner.start({failureProtectionEnabled:false});assert.equal(r.status,'stopped');assert.equal(f.submits,1);assert(!f.events.includes('chapter:1'));assert(r.chapters[0].tasks[0].submissionStarted);
   }finally{f.close();}
  });
+ await test('关闭失败保护：没有授权跳过时保留测验页及成功预填',async()=>{
+  const f=fixture([{tabs:[quiz({count:2,lastUnknown:true})]},{tabs:[video()]}]);
+  try{const r=await f.runner.start({failureProtectionEnabled:false,skipUnanswerable:false});
+   assert.equal(r.status,'stopped');assert.equal(r.stopCode,'COURSE_MANUAL_ANSWER_REQUIRED');
+   assert.equal(f.submits,0);assert(f.doc.querySelector('input:checked'));assert(!f.events.includes('chapter:1'));
+  }finally{f.close();}
+ });
+ await test('部分模型答案缺失时先填写有效答案，记录待处理并继续下一章',async()=>{
+  const f=fixture([{tabs:[quiz({count:2})]},{tabs:[video()]}],{missingAnswerId:'2'});
+  try{
+   const inputs=f.doc.querySelectorAll('input[value="A"]');
+   const r=await f.runner.start({failureProtectionEnabled:true,skipUnanswerable:false});
+   assert.equal(r.status,'done',r.reason);assert.equal(r.chapters[0].status,'manual-pending');assert.match(r.chapters[0].reason,/1\/2/);
+   assert(inputs[0].checked&&!inputs[1].checked);assert.equal(f.submits,0);assert(f.events.includes('chapter:1'));assert.equal(r.protection.consecutiveFailures,0);
+  }finally{f.close();}
+ });
+ for(const count of [1,9])await test(`第 1 题只有计算题标签时连续运行（共 ${count} 题）`,async()=>{
+  const f=fixture([{tabs:[quiz({count,essay:true})]},{tabs:[video()]}]);
+  try{
+   const questions=f.doc.querySelectorAll('.singleQuesId');
+   questions[0].querySelector('.fontLabel').textContent='【计算题】';
+   const fields=[...questions].map(node=>node.querySelector('textarea'));
+   const r=await f.runner.start({skipUnanswerable:false,failureProtectionEnabled:true});
+   assert.equal(r.status,'done',r.reason);assert.equal(r.chapters[0].status,'manual-pending');
+   assert.match(r.chapters[0].reason,/第 1 题缺少可读取题干/);
+   assert(r.chapters[0].tasks[0].manualQuestions.some(q=>q.number===1&&q.reason.includes('题干')));
+   assert.equal(fields[0].value,'');assert(fields.slice(1).every(field=>field.value.includes('模拟简答')));
+   assert.equal(f.requests.length,count-1);assert.equal(f.submits,0);assert.equal(r.videos,1);
+  }finally{f.close();}
+ });
+ await test('后一道题的原生事件清空前一题时拦住提交并留在本测验',async()=>{
+  const f=fixture([{tabs:[quiz({count:2})]},{tabs:[video()]}]);
+  try{
+   const inputs=f.doc.querySelectorAll('input[value="A"]');
+   inputs[1].addEventListener('change',()=>{inputs[0].checked=false;});
+   const r=await f.runner.start({failureProtectionEnabled:false,skipUnanswerable:true});
+   assert.equal(r.status,'stopped');assert.equal(r.stopCode,'COURSE_QUIZ_REVIEW_REQUIRED');
+   assert.equal(f.submits,0);assert(!inputs[0].checked&&inputs[1].checked);assert(!f.events.includes('chapter:1'));
+   assert(r.chapters[0].issues.some(issue=>issue.reason.includes('提交前复核')));
+  }finally{f.close();}
+ });
+ await test('预填成功但找不到唯一提交按钮时保留测验和答案',async()=>{
+  const f=fixture([{tabs:[quiz({ambiguous:true})]},{tabs:[video()]}]);
+  try{const r=await f.runner.start({failureProtectionEnabled:false,skipUnanswerable:true});
+   assert.equal(r.status,'stopped');assert.match(r.reason,/唯一确认/);assert.equal(f.submits,0);
+   assert(f.doc.querySelector('input:checked'));assert(!f.events.includes('chapter:1'));
+  }finally{f.close();}
+ });
+ await test('必做测验的待完成状态先出现时，题目未加载不会继续下一章',async()=>{
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{limits:{loadMs:75}});
+  try{
+   f.doc.querySelector('.singleQuesId').remove();
+   const r=await f.runner.start({failureProtectionEnabled:false,continueOnTimeout:true});
+   assert.equal(r.status,'stopped');assert.equal(r.stopCode,'COURSE_QUIZ_REVIEW_REQUIRED');assert.match(r.reason,/题目尚未加载/);
+   assert.equal(f.requests.length,0);assert.equal(f.submits,0);assert(!f.events.includes('chapter:1'));
+  }finally{f.close();}
+ });
  await test('关闭失败保护：后续章节锁定保留待解锁状态',async()=>{
   const f=fixture([{tabs:[quiz({unknown:true})]},{tabs:[video()]}]);try{
    f.w.getTeacherAjax=()=>{};f.d.getElementById('cur1').setAttribute('onclick','getTeacherAjax()');f.d.getElementById('cur2').setAttribute('aria-disabled','true');
-   const r=await f.runner.start({failureProtectionEnabled:false});assert.equal(r.status,'stopped');assert.equal(r.navigationBoundary?.status,'sequence-locked');assert.equal(r.chapters[1].status,'waiting-unlock');assert(!f.events.includes('chapter:1'));assert.equal(f.submits,0);
+   const r=await f.runner.start({failureProtectionEnabled:false,skipUnanswerable:true});assert.equal(r.status,'stopped');assert.equal(r.navigationBoundary?.status,'sequence-locked');assert.equal(r.chapters[1].status,'waiting-unlock');assert(!f.events.includes('chapter:1'));assert.equal(f.submits,0);
   }finally{f.close();}
  });
  await test('关闭失败保护：手动停止仍取消运行，不进入下一章',async()=>{
@@ -2051,6 +2112,50 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
   for(const q of quizRoot.querySelectorAll('.singleQuesId')){const body=paper.contentDocument.createElement('div');body.className='TiMu';body.append(...q.childNodes);q.append(body);}
   return {cards,container,module,paper,doc:paper.contentDocument,quizRoot,icon};
  };
+ for(const mode of ['立即就绪','表单排除','延迟就绪','未就绪','等待时题干变化'])await test('章节测验编辑器：'+mode,async()=>{
+  const f=fixture([{tabs:[quiz({essay:true,confirm:true,confirmAt:'owner'})]},{tabs:[video()]}],{limits:{loadMs:mode==='未就绪'?150:1500}});
+  const delayed=['延迟就绪','未就绪','等待时题干变化'].includes(mode),submits=['立即就绪','延迟就绪'].includes(mode);
+  try{
+   const {doc,quizRoot}=nestWorkQuiz(f);
+   Object.defineProperty(doc,'URL',{value:'https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew'});
+   const form=doc.createElement('form');form.id='form1';quizRoot.append(form);
+   const q=quizRoot.querySelector('.singleQuesId');form.append(q,quizRoot.querySelector('button'));
+   const input=q.querySelector('textarea');input.id=input.name='answerEditor1';
+   q.insertAdjacentHTML('beforeend','<div class="edui-editor"><div class="edui-editor-iframeholder"><iframe id="ueditor_0"></iframe></div></div>');
+   const iframe=q.querySelector('iframe'),body=iframe.contentDocument.body;
+   body.contentEditable='true';
+   const editor={key:input.id,isReady:!delayed,textarea:input,form,iframe,container:q.querySelector('.edui-editor'),document:iframe.contentDocument,body,
+       setContent(html){body.innerHTML=html;},getContent(){return body.innerHTML;},sync(){input.value=body.innerHTML;}};
+   doc.defaultView.UE={instants:{existing:editor}};
+   if(mode==='表单排除'){const excluded=doc.createElement('datalist');input.before(excluded);excluded.append(input);}
+   const running=f.runner.start({failureProtectionEnabled:false,continueOnTimeout:true});
+   if(delayed) {
+    await waitForTest(()=>f.api.controller.state.message.includes('答题编辑器就绪'));
+    assert.equal(f.requests.length,0);
+    if(mode==='延迟就绪')editor.isReady=true;
+    if(mode==='等待时题干变化')q.querySelector('.fontLabel').textContent='【简答题】替换后的题目';
+   }
+   const r=await running;
+   if(mode==='未就绪'||mode==='等待时题干变化') {
+    assert.equal(f.requests.length,0);assert.equal(input.value,'');assert.equal(r.chapters[0].failureStage,'quiz-editor');
+    assert.match(r.reason,mode==='未就绪'?/编辑器尚未就绪/:/题目已变化/);
+   }else{assert.match(body.textContent,/模拟简答/);assert.equal(input.value,body.innerHTML);}
+   assert.equal(f.submits,submits?1:0);assert.equal(f.events.includes('chapter:1'),submits);
+   assert.equal(r.status,submits?'done':'stopped',r.reason);
+   assert.equal(r.quizzes,submits?1:0);
+  }finally{f.close();}
+ });
+ await test('答卷已确认而目录仍未更新时只记目录待确认',async()=>{
+  const f=fixture([{tabs:[quiz()]}],{noAck:true,limits:{completionMs:70}});
+  try{
+   const button=f.doc.querySelector('[data-quiz-submit]'),submit=button.onclick;
+   button.onclick=()=>{submit();button.closest('[data-course-task]').setAttribute('data-completed','true');};
+   const r=await f.runner.start();
+   assert.equal(r.status,'done',r.reason);assert.equal(f.submits,1);assert.equal(r.quizzes,1);
+   assert.equal(r.protection.consecutiveFailures,0);assert.equal(r.chapters[0].status,'manual-pending');
+   assert.equal(f.api.coursePendingChapters(r).confirmation.length,1);assert.match(f.api.courseReportText(r),/目录待确认/);
+  }finally{f.close();}
+ });
  await test('跨iframe归属：包含判断支持同文档与祖先框架，不能覆盖兄弟任务',async()=>{
   const f=fixture([{tabs:[quiz({essay:true})]}]),nested=nestWorkQuiz(f),q=nested.doc.querySelector('.singleQuesId'),other=nested.cards.createElement('div');other.className='ans-attach-ct';nested.cards.body.append(other);
   try{
@@ -2175,6 +2280,28 @@ const probeSettings=f=>({owner:f.d,submit:false,skipLearned:true});
   const f=fixture([{tabs:[quiz()]}]);try{
    const doc=f.doc;doc.querySelector('[data-quiz-submit]').onclick=()=>{const frame=doc.defaultView.frameElement;frame.contentDocument.open();frame.contentDocument.write('<span class="testTit_status">已提交</span>');frame.contentDocument.close();f.d.querySelector('.orangeNew').textContent='0';};
    const r=await f.runner.start();assert.equal(r.status,'done');assert.equal(r.quizzes,1);
+  }finally{f.close();}
+ });
+ for(const result of ['本测验','兄弟附件','不同测验 ID'])await test('提交回读外层完成标记：'+result,async()=>{
+  const confirmed=result==='本测验';
+  const f=fixture([{tabs:[quiz()]},{tabs:[video()]}],{submitNoAck:result==='兄弟附件'});
+  try{
+   const {doc,cards,container,quizRoot}=nestWorkQuiz(f);
+   const base=doc.createElement('base');base.href='https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?workId=mock-work';doc.head.append(base);
+   const sibling=cards.createElement('div');sibling.className='ans-attach-ct';container.after(sibling);
+   const button=quizRoot.querySelector('[data-quiz-submit]'),submit=button.onclick;
+   button.onclick=()=>{
+    submit();
+    base.href='https://mooc1.chaoxing.com/mooc-ans/work/selectWorkQuestionYiPiYue'+(result==='不同测验 ID'?'?workId=another-work':'');
+    quizRoot.querySelector('.testTit_status').remove();
+    const completed=result==='兄弟附件'?sibling:container;
+    completed.classList.add('ans-job-finished');completed.insertAdjacentHTML('afterbegin','<span>任务点已完成</span>');
+   };
+   const r=await f.runner.start();
+   assert.equal(r.status,confirmed?'done':'stopped',r.reason);
+   if(result==='不同测验 ID')assert.match(r.reason,/其他测验/);
+   assert.equal(r.quizzes,confirmed?1:0);assert.equal(f.submits,1);
+   assert.equal(f.events.includes('chapter:1'),confirmed);
   }finally{f.close();}
  });
  await test('跨域 iframe 无法读取时明确停止，不能假定无任务',async()=>{

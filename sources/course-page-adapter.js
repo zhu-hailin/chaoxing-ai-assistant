@@ -664,6 +664,10 @@
         return [...doc.querySelectorAll('.testTit_status,[data-quiz-status],[data-quiz-completed="true"]')]
             .some(node => courseElementVisible(node) && (node.getAttribute('data-quiz-completed')==='true' || /^(已完成|已提交|提交成功)(?:[·|：:、,，]?(?:最终成绩|成绩|得分)?[（(]?\d+(?:\.\d+)?分[）)]?)?$/.test(clean(node.textContent).replace(/\s/g,''))));
     }
+    function coursePendingQuiz(doc) {
+        return [...doc.querySelectorAll('.testTit_status,[data-quiz-status]')].some(node=>
+            clean(node.textContent).replace(/\s/g,'')==='待完成'&&courseElementVisible(node)&&courseTaskRequired(node)===true);
+    }
     function courseContentFingerprint(owner) {
         const root = owner.querySelector('#mainid #iframe');
         let doc;

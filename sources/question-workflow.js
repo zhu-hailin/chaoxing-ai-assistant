@@ -26,8 +26,7 @@
                 && questionPrefillPolicy(question,entry).status==='auto';
         });
     }
-    function extractQuestionSnapshot(doc = document, parseContext = {}, runtime = {}) {
-        const graph = parseQuestionGraph(doc,parseContext);
+    function extractQuestionSnapshot(doc = document, parseContext = {}, runtime = {}, graph = parseQuestionGraph(doc,parseContext)) {
         if (graph.questions.some(q=>GARBLED.test(q.question) || q.options.some(o=>GARBLED.test(o.text))))
             throw createCxError('CX-PAR-005',{module:'parser',operation:'font'});
         const observations=new Map();
@@ -104,10 +103,18 @@
         // Strict projection: no title/reason/question/answer/history, URL or account fields.
         const states=new Set(['running','done','stopped','timed-out','manual-pending','unvisited','already','no-tasks','skipped']);
         const counts={};
-        for(const chapter of report?.chapters||[])if(states.has(chapter.status))counts[chapter.status]=(counts[chapter.status]||0)+1;
+        const failures=[];
+        for(const [index,chapter] of (report?.chapters||[]).entries()) {
+            if(states.has(chapter.status))counts[chapter.status]=(counts[chapter.status]||0)+1;
+            if(['timed-out','stopped'].includes(chapter.status)||chapter.status==='manual-pending'&&chapter.failureCode) {
+                const stage=Object.hasOwn(COURSE_FAILURE_STAGES,chapter.failureStage)?COURSE_FAILURE_STAGES[chapter.failureStage]:'阶段未记录';
+                const code=typeof chapter.failureCode==='string'&&/^CX-[A-Z]{2,4}-\d{3}$/.test(chapter.failureCode)?chapter.failureCode:null;
+                failures.push({chapterIndex:index+1,status:chapter.status,stage,code});
+            }
+        }
         const count=value=>Number.isSafeInteger(value)&&value>=0?value:0;
         return JSON.stringify({schemaVersion:1,summary:{status:states.has(report?.status)?report.status:'unknown',
-            chapters:counts,videos:count(report?.videos),documents:count(report?.documents),quizzes:count(report?.quizzes)},
+            chapters:counts,videos:count(report?.videos),documents:count(report?.documents),quizzes:count(report?.quizzes),failures},
             diagnostics:JSON.parse(exportCxDiagnostics())},null,2);
     }
     async function prefillChecked(snapshot, answers, options = {}) {
