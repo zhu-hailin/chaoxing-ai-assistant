@@ -79,7 +79,9 @@ async function main() {
     const f = fixture();
     try {
       const providerRows = [...f.s.getElementById('provider-listbox').children];
-      assert.equal(providerRows.length,6);
+      const providerIds = ['deepseek','openai','qwen','kimi','glm','volcengine','qianfan','tokenhub','gemini','groq','openrouter','custom'];
+      assert.deepEqual([...f.s.getElementById('provider').options].map(option=>option.value),providerIds);
+      assert.deepEqual(providerRows.map(row=>row.textContent),providerIds.map(id=>f.api.getModelProvider(id).name));
       assert.equal(providerRows.filter(row => row.querySelector('img')).length,5);
       assert.equal(providerRows.at(-1).querySelector('img'),null);
       for (const provider of ['deepseek','openai','qwen','kimi','glm']) {
@@ -109,10 +111,12 @@ async function main() {
       assert.equal(button.getAttribute('role'),'combobox');
       assert.equal(button.getAttribute('aria-controls'),list.id);
       assert.equal(list.getAttribute('role'),'listbox');
-      assert.equal(f.s.querySelector('label[for="provider-picker"]').textContent,'平台');
+      assert.equal(f.s.querySelector('label[for="provider-picker"]').textContent,'服务商');
       assert.equal(f.s.getElementById('provider').hidden,true);
       key(f,'provider','ArrowDown'); assert.equal(button.getAttribute('aria-expanded'),'true');
-      key(f,'provider','End'); assert.equal(button.getAttribute('aria-activedescendant'),'provider-option-5');
+      key(f,'provider','End');
+      assert.equal(list.lastElementChild.textContent,'自定义');
+      assert.equal(button.getAttribute('aria-activedescendant'),list.lastElementChild.id);
       key(f,'provider','Escape'); assert.equal(list.hidden,true); assert.equal(f.api.readProviderConfiguration().provider,'deepseek');
       key(f,'provider','ArrowDown'); key(f,'provider','ArrowDown'); key(f,'provider','Enter');
       assert.equal(f.s.getElementById('provider').value,'openai');

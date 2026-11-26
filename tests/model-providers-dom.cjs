@@ -357,6 +357,32 @@ async function main() {
       assert.equal(f.api.providerModelCapabilities('openai',list[0].id).images,false);
     } finally {f.close();}
   });
+  const mixedModelLists = [
+    {provider:'qianfan',url:'https://qianfan.baidubce.com/v2/models',models:[
+      {id:'native-chat',type:'chat',endpoints:['/v2/responses','/v2/chat/completions']},
+      {id:'legacy-chat',type:'chat'}, {id:'text-endpoint',endpoints:'/v2/chat/completions'},
+      {id:'responses-only',type:'chat',endpoints:['/v2/responses']}, {id:'vector',type:'embeddings'},
+      {id:'image',type:'text2image'}, {id:'untyped'}
+    ],expected:['native-chat','legacy-chat','text-endpoint','untyped']},
+    {provider:'volcengine',url:'https://ark.cn-beijing.volces.com/api/v3/models',models:[
+      {id:'text',domain:'LLM'}, {id:'vision',domain:'VLM',modalities:{output_modalities:['text']}},
+      {id:'vector',domain:'Embedding'}, {id:'image',domain:'ImageGeneration'},
+      {id:'audio-only',modalities:{output_modalities:['audio']}}, {id:'untyped'}
+    ],expected:['text','vision','untyped']},
+    {provider:'groq',url:'https://api.groq.com/openai/v1/models',models:[
+      {id:'llama-3.1-8b-instant'}, {id:'whisper-large-v3-turbo'}, {id:'distil-whisper-large-v3-en'}, {id:'canopylabs/orpheus-v1-english'}
+    ],expected:['llama-3.1-8b-instant']},
+  ];
+  for(const {provider,url,models,expected} of mixedModelLists)await test(`${provider} 模型列表过滤已知非对话模型`,async()=>{
+    const f=fixture();
+    try {
+      const modelsRequest=f.api.fetchConfiguredModels(config(f,provider));
+      const request=await pending(f,'GET');
+      assert.equal(request.url,url);
+      request.onload({status:200,responseText:JSON.stringify({data:models})});
+      assert.deepEqual(Array.from(await modelsRequest,model=>model.id),expected);
+    }finally{f.close();}
+  });
   await test('外部列表未知视觉名称在界面明确标为未确认，名称只按文字显示',async()=>{
     const f=fixture(essay('q1'));
     try {

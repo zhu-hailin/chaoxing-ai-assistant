@@ -8,6 +8,13 @@
         host.style.cssText = 'position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:2147483647;max-width:calc(100vw - 26px)';
         const shadow = host.attachShadow({ mode: 'open' });
         /* PANEL_TEMPLATE */
+        const providerSelect = shadow.getElementById('provider');
+        for (const provider of MODEL_PROVIDERS) {
+            const option = doc.createElement('option');
+            option.value = provider.id;
+            option.textContent = provider.name;
+            providerSelect.append(option);
+        }
         registerAssistantUiHost(host);
         doc.body.append(host);
         panelView = { host, shadow, sourceDoc: doc, userPosition: null, windowMode: 'closed', floatingPosition: null };
