@@ -119,13 +119,13 @@
                 <section id="settings-model-page" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-model" hidden>
                   <div class="settings-block">
                     <h3 class="settings-section-title">模型连接</h3>
-                    <div class="row settings-field"><label for="provider">服务商</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="kimi">Kimi</option><option value="glm">智谱</option><option value="custom">自定义</option></select></div>
+                    <div class="row settings-field"><label for="provider">服务商</label><select id="provider"></select></div>
                     <div id="preset-model-block"><div class="row settings-field"><label for="model">模型</label><select id="model"><option value="" disabled>请先获取模型列表</option></select><button type="button" id="models" class="secondary">获取模型</button></div></div>
                     <div id="custom-model-block" hidden>
                       <label class="field-caption" for="custom-base">接口地址（OpenAI 兼容）</label><div class="row"><input id="custom-base" type="url" placeholder="https://example.com/v1" autocomplete="off" /></div>
                       <label class="field-caption" for="custom-model">模型 ID</label><div class="row"><input id="custom-model" type="text" placeholder="输入模型 ID" autocomplete="off" /></div>
                       <div class="row"><label class="check-label"><input id="custom-images" type="checkbox" /> 支持图片输入</label><button type="button" id="save-custom">保存接口</button></div>
-                      <p class="note">接口主机名需加入篡改猴用户域名白名单；地址填写到 API 前缀。</p>
+                      <p class="note">地址填写到 API 前缀。脚本未预先授权的主机名，请加入篡改猴的用户域名白名单。</p>
                     </div>
                     <p id="model-capability" class="note settings-inline-status" role="status"></p>
                   </div>

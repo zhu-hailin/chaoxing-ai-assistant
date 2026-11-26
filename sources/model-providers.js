@@ -3,9 +3,15 @@
     const MODEL_PROVIDERS = Object.freeze([
         {id:'deepseek',logo:PROVIDER_LOGOS.deepseek,name:'DeepSeek',baseURL:DEEPSEEK_BASE,models:[]},
         {id:'openai',logo:PROVIDER_LOGOS.openai,name:'OpenAI',baseURL:'https://api.openai.com/v1',models:[]},
-        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'通义千问',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',models:[]},
+        {id:'qwen',logo:PROVIDER_LOGOS.qwen,name:'阿里云百炼（通义千问）',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',models:[]},
         {id:'kimi',logo:PROVIDER_LOGOS.kimi,name:'Kimi',baseURL:'https://api.moonshot.cn/v1',models:[]},
         {id:'glm',logo:PROVIDER_LOGOS.glm,name:'智谱 GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',models:[]},
+        {id:'volcengine',name:'火山方舟',baseURL:'https://ark.cn-beijing.volces.com/api/v3',models:[]},
+        {id:'qianfan',name:'百度千帆',baseURL:'https://qianfan.baidubce.com/v2',models:[]},
+        {id:'tokenhub',name:'腾讯云 TokenHub',baseURL:'https://tokenhub.tencentmaas.com/v1',models:[]},
+        {id:'gemini',name:'Google Gemini',baseURL:'https://generativelanguage.googleapis.com/v1beta/openai',models:[]},
+        {id:'groq',name:'Groq',baseURL:'https://api.groq.com/openai/v1',models:[]},
+        {id:'openrouter',name:'OpenRouter',baseURL:'https://openrouter.ai/api/v1',models:[]},
         {id:'custom',name:'自定义',baseURL:'',models:[]}
     ]);
     const fetchedProviderModelLists = new Map();
